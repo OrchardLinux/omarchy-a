@@ -20,6 +20,9 @@ on:
       hardware_run_id:
         description: Optional exact hardware run supplying first-release components
         required: false
+      reuse_run_id:
+        description: Exact prior run supplying unchanged boot and userspace artifacts
+        required: false
 permissions:
   contents: read
   actions: read
@@ -63,14 +66,26 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     steps:
+      - name: Reuse unchanged successful outputs
+        if: inputs.reuse_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: omarchy-boot-inputs
+          path: out
+          run-id: ${{ inputs.reuse_run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/checkout@v4
+        if: inputs.reuse_run_id == ''
         with:
           persist-credentials: false
       - uses: actions/setup-python@v5
+        if: inputs.reuse_run_id == ''
         with:
           python-version: '3.12'
       - run: brew install imagemagick librsvg
+        if: inputs.reuse_run_id == ''
       - name: Build branded Pongo and matching loader artwork
+        if: inputs.reuse_run_id == ''
         run: |
           python boot/build-pongo.py --output out/boot/pongo.bin
           python boot/pongo/generate-logo.py --size 480 --output out/boot/omarchy-logo.h
@@ -99,16 +114,27 @@ jobs:
       ORCHARD_BUILD_ENV_ID: debian-bookworm-arm64-llvm19-rust1.90.0
       RUSTUP_TOOLCHAIN: '1.90.0'
     steps:
+      - name: Reuse unchanged successful outputs
+        if: inputs.reuse_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: omarchy-loader
+          path: out
+          run-id: ${{ inputs.reuse_run_id }}
+          github-token: ${{ github.token }}
       - run: apt-get update && apt-get install -y git curl ca-certificates python3 python3-venv
+        if: inputs.reuse_run_id == ''
       - uses: actions/checkout@v4
+        if: inputs.reuse_run_id == ''
         with:
           persist-credentials: false
       - uses: actions/download-artifact@v4
+        if: inputs.reuse_run_id == ''
         with:
           name: omarchy-boot-inputs
           path: out/downloads
       - name: Reuse the tested first-release wheel pair
-        if: inputs.cli_run_id != ''
+        if: inputs.reuse_run_id == '' && inputs.cli_run_id != ''
         uses: actions/download-artifact@v4
         with:
           name: cli-wheel-pair
@@ -116,7 +142,8 @@ jobs:
           repository: OrchardLinux/cli
           run-id: ${{ inputs.cli_run_id }}
           github-token: ${{ github.token }}
-      - run: |
+      - if: inputs.reuse_run_id == ''
+        run: |
           bash ci/dependencies --wheels-only
           HW=$(.venv/bin/python -c 'from pathlib import Path; import orchard_hardware; print(Path(orchard_hardware.__file__).parent)')
           bash "$HW/boot/m1n1/install-toolchain"
@@ -124,6 +151,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
           tar -xzf out/downloads/boot-inputs.tar.gz -C out
       - name: Build branded loader with the shared recipe
+        if: inputs.reuse_run_id == ''
         run: |
           python boot/build-loader --logo-header out/boot/omarchy-logo.h --output out/boot/m1n1.bin
           tar -C out -czf out/distro-boot.tar.gz boot
@@ -147,11 +175,20 @@ jobs:
       ORCHARD_BUILD_NATIVE: '1'
       ORCHARD_BUILD_ENV_ID: archlinuxarm-1db43d1-desktop-and-system
     steps:
+      - name: Reuse unchanged successful outputs
+        if: inputs.reuse_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: omarchy-userspace
+          path: out
+          run-id: ${{ inputs.reuse_run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/checkout@v4
+        if: inputs.reuse_run_id == ''
         with:
           persist-credentials: false
       - name: Reuse the tested first-release wheel pair
-        if: inputs.cli_run_id != ''
+        if: inputs.reuse_run_id == '' && inputs.cli_run_id != ''
         uses: actions/download-artifact@v4
         with:
           name: cli-wheel-pair
@@ -160,6 +197,7 @@ jobs:
           run-id: ${{ inputs.cli_run_id }}
           github-token: ${{ github.token }}
       - name: Install the same signed-package toolchains as local builds
+        if: inputs.reuse_run_id == ''
         run: |
           bash desktop/install-toolchain
           bash desktop/labwc/install-toolchain
@@ -170,6 +208,7 @@ jobs:
           useradd --create-home --uid 2000 builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
       - name: Build source components as an unprivileged user
+        if: inputs.reuse_run_id == ''
         run: |
           runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
             python desktop/build --output out/desktop
@@ -180,6 +219,7 @@ jobs:
           runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
             python desktop/build-labwc --output out/labwc
       - name: Build the signed Arch root filesystem
+        if: inputs.reuse_run_id == ''
         env:
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
