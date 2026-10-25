@@ -29,7 +29,7 @@ def normalize(archive, receipt):
     try:
         with tarfile.open(archive, 'r:gz') as source, temporary.open('xb') as raw, \
                 gzip.GzipFile(fileobj=raw, mode='wb', mtime=0, filename='', compresslevel=1) as zipped, \
-                tarfile.open(fileobj=zipped, mode='w|') as target:
+                tarfile.open(fileobj=zipped, mode='w|', format=tarfile.GNU_FORMAT) as target:
             for entry in source:
                 name = entry.name.removeprefix('./')
                 if entry.islnk() and re.fullmatch(r'usr/(?:bin|sbin)/(?:blkid|sfdisk|mke2fs)', name):

@@ -175,6 +175,9 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
                         if member.name in ('.', './'):
                             continue
                         member.name = safe_name(member.name)
+                        # Stale PAX path/size fields override the normalized header.
+                        member.pax_headers = {key: value for key, value in member.pax_headers.items()
+                                              if key not in ('path', 'size')}
                         if member.name in additions:
                             continue
                         if not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
