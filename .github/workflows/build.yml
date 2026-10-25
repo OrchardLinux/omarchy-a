@@ -293,6 +293,7 @@ jobs:
         run: |
           . .venv/bin/activate
           tar -xzf out/downloads/omarchy-userspace.tar.gz -C out
+          python ci/normalize-recovery-tools.py --archive out/base/rootfs.tar.gz --receipt out/base/rootfs.tar.gz.json
           tar -xzf out/downloads/distro-boot.tar.gz -C out
           VERSION="preview-$RUN_ID"
           TAG="v$VERSION"

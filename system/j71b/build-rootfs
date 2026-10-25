@@ -48,7 +48,7 @@ install -d "$root/etc/ipadlinux"
 printf '%s\n' "$release" > "$root/etc/ipadlinux/release"
 mkdir -p "$(dirname "$output")"
 pacman --root "$root" -Q > "$(dirname "$output")/packages.lock"
-tar --numeric-owner --one-file-system -C "$root" \
+tar --hard-dereference --numeric-owner --one-file-system -C "$root" \
   --exclude='./dev/*' --exclude='./proc/*' --exclude='./sys/*' \
   --exclude='./run/*' --exclude='./tmp/*' --exclude='./var/cache/pacman/pkg/*' \
   -cf - . | gzip -1 > "$output"
