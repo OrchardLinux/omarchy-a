@@ -14,11 +14,20 @@ on:
         description: Published compatible CLI wheel requirements
         required: true
         default: v0.1.8
+      cli_run_id:
+        description: Optional exact CLI run for first-release wheel reuse
+        required: false
+      hardware_run_id:
+        description: Optional exact hardware run supplying first-release components
+        required: false
 permissions:
   contents: read
+  actions: read
 env:
   HARDWARE_TAG: ${{ inputs.hardware_tag || 'v0.1.9' }}
   CLI_TAG: ${{ inputs.cli_tag || 'v0.1.8' }}
+  CLI_ARTIFACT_DIR: ${{ inputs.cli_run_id != '' && 'out/dependency-wheels' || '' }}
+  HARDWARE_ARTIFACT_DIR: ${{ inputs.hardware_run_id != '' && 'out/downloads/hardware' || '' }}
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -37,7 +46,16 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: '[[ "$TAG" =~ ^v[A-Za-z0-9][A-Za-z0-9._-]*$ ]]'
-      - run: bash ci/dependencies
+      - name: Reuse the tested first-release wheel pair
+        if: inputs.cli_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-wheel-pair
+          path: out/dependency-wheels
+          repository: OrchardLinux/cli
+          run-id: ${{ inputs.cli_run_id }}
+          github-token: ${{ github.token }}
+      - run: bash ci/dependencies --wheels-only
       - run: .venv/bin/python -m unittest discover -s tests -v
   pongo:
     if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
@@ -67,7 +85,7 @@ jobs:
             out/pongo-source.tar.gz
           compression-level: 0
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 2
   loader:
     needs: pongo
     runs-on: ubuntu-24.04-arm
@@ -89,8 +107,17 @@ jobs:
         with:
           name: omarchy-boot-inputs
           path: out/downloads
+      - name: Reuse the tested first-release wheel pair
+        if: inputs.cli_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-wheel-pair
+          path: out/dependency-wheels
+          repository: OrchardLinux/cli
+          run-id: ${{ inputs.cli_run_id }}
+          github-token: ${{ github.token }}
       - run: |
-          bash ci/dependencies
+          bash ci/dependencies --wheels-only
           HW=$(.venv/bin/python -c 'from pathlib import Path; import orchard_hardware; print(Path(orchard_hardware.__file__).parent)')
           bash "$HW/boot/m1n1/install-toolchain"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -106,7 +133,7 @@ jobs:
           path: out/distro-boot.tar.gz
           compression-level: 0
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 2
   userspace:
     if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     needs: test
@@ -123,12 +150,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Reuse the tested first-release wheel pair
+        if: inputs.cli_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-wheel-pair
+          path: out/dependency-wheels
+          repository: OrchardLinux/cli
+          run-id: ${{ inputs.cli_run_id }}
+          github-token: ${{ github.token }}
       - name: Install the same signed-package toolchains as local builds
         run: |
           bash desktop/install-toolchain
           bash desktop/labwc/install-toolchain
           bash system/install-toolchain
-          bash ci/dependencies
+          bash ci/dependencies --wheels-only
           .venv/bin/python -m pip install -r requirements-build.txt
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
           useradd --create-home --uid 2000 builder
@@ -159,7 +195,7 @@ jobs:
           path: out/omarchy-userspace.tar.gz
           compression-level: 0
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 2
   assets:
     needs: [test, pongo, loader, userspace]
     runs-on: ubuntu-24.04-arm
@@ -182,6 +218,32 @@ jobs:
           path: out/downloads
           merge-multiple: true
       - run: sudo apt-get update && sudo apt-get install -y zstd
+      - name: Reuse the tested first-release wheel pair
+        if: inputs.cli_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-wheel-pair
+          path: out/dependency-wheels
+          repository: OrchardLinux/cli
+          run-id: ${{ inputs.cli_run_id }}
+          github-token: ${{ github.token }}
+      - name: Await the exact hardware run without rebuilding components
+        if: inputs.hardware_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HARDWARE_RUN_ID: ${{ inputs.hardware_run_id }}
+        run: |
+          [[ "$HARDWARE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh run watch "$HARDWARE_RUN_ID" --repo OrchardLinux/hardware --interval 20 --exit-status
+      - name: Reuse verified first-release components
+        if: inputs.hardware_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: hardware-release-assets
+          path: out/downloads/hardware
+          repository: OrchardLinux/hardware
+          run-id: ${{ inputs.hardware_run_id }}
+          github-token: ${{ github.token }}
       - run: bash ci/dependencies
       - name: Assemble, audit and stage hosted assets
         env:
@@ -228,7 +290,7 @@ jobs:
           path: out/publication/*
           compression-level: 0
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 2
   draft:
     if: github.ref_type == 'tag'
     needs: assets
