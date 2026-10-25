@@ -31,6 +31,6 @@ else
   curl -fL --retry 3 "$base/SHA256SUMS" -o out/downloads/SHA256SUMS
 fi
 grep -Eq ' (\./)?j71b-components.tar.gz$' out/downloads/SHA256SUMS
-(cd out/downloads && sha256sum --check --ignore-missing SHA256SUMS)
+(cd out/downloads && grep -E ' (\./)?j71b-components.tar.gz$' SHA256SUMS | sha256sum --check --strict)
 tar -xzf out/downloads/j71b-components.tar.gz -C out
 .venv/bin/python -m pip check
