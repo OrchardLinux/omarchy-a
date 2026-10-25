@@ -1,0 +1,49 @@
+name: Publish verified assets
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful build run containing the final release artifact
+        required: true
+      artifact:
+        description: Final release artifact name
+        required: true
+      tag:
+        description: Release tag matching the embedded asset URLs
+        required: true
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ inputs.run_id }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Require a successful exact build
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$TAG" =~ ^v[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          [[ "$(gh run view "$RUN_ID" --json conclusion --jq .conclusion)" == success ]]
+          source=$(gh run view "$RUN_ID" --json headSha --jq .headSha)
+          echo "SOURCE_SHA=$source" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: assets
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify the existing checksums and build attestation
+        run: |
+          (cd assets && sha256sum --check --strict SHA256SUMS)
+          gh attestation verify assets/SHA256SUMS --repo "$GH_REPO"
+      - name: Publish the exact existing assets without rebuilding or overwriting
+        run: |
+          gh release create "$TAG" assets/* --target "$SOURCE_SHA" --latest --title "$TAG" \
+            --notes 'Automated build and checksum verification passed. Experimental: physical-device qualification is not claimed.'
