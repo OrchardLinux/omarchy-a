@@ -1,0 +1,61 @@
+#!/bin/sh
+# Disposable artifact/source validation; never expose hardware or host sysfs.
+set -eu
+mkdir /candidate
+zstd -dq -c /release/rootfs.tar.zst | tar --numeric-owner -xpf - -C /candidate --exclude='usr/lib/firefox*' --exclude='usr/share/doc' --exclude='usr/share/man' --exclude='usr/share/locale'
+mount --bind /proc /candidate/proc
+mount --rbind /dev /candidate/dev
+install -d -m 700 -o 1000 -g 1000 /candidate/run/user/1000
+mkdir -p /candidate/tmp/pairing-ui /candidate/tmp/pairing-desktop/shell/bluetooth-pairing
+if test "${OMA_INPUT_ARTIFACT_ONLY:-0}" = 1; then
+    ui=/candidate/home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml
+    cli=/candidate/home/tablet/.local/share/omarchy-ipad/bin/omarchy-bluetooth-device
+else
+    mkdir -p /candidate/usr/lib/omarchy-bluetooth
+    cp -a /source/dbus_next /candidate/usr/lib/omarchy-bluetooth/
+    cp /source/policy.py /candidate/usr/lib/omarchy-bluetooth/policy.py
+    cp /source/agent /candidate/usr/libexec/omarchy-bluetooth-pair
+    chmod 755 /candidate/usr/libexec/omarchy-bluetooth-pair
+    ui=/source/ui/shell.qml
+    cli=/source/pairing-cli.sh
+fi
+cp "$ui" /candidate/tmp/pairing-ui/shell.qml
+cp "$ui" /candidate/tmp/pairing-desktop/shell/bluetooth-pairing/shell.qml
+cp "$cli" /candidate/tmp/pairing-cli.sh
+cp /source/wire-test.py /candidate/tmp/wire-test.py
+chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env PYTHONPATH=/usr/lib/omarchy-bluetooth /usr/bin/python3 /tmp/wire-test.py >/evidence/wire-tests.jsonl 2>/evidence/wire-errors.log
+printf 'WIRE_TESTS_OK\n'
+# No main desktop autostart; use the candidate compositor for input tests only.
+if test "${OMA_INPUT_ARTIFACT_ONLY:-0}" != 1; then
+    cp /source/labwc /candidate/usr/bin/labwc
+    chmod 755 /candidate/usr/bin/labwc
+    cp /source/rc.xml /candidate/home/tablet/.config/labwc/rc.xml
+fi
+: >/candidate/home/tablet/.config/labwc/autostart
+cp /source/key-test.py /candidate/tmp/key-test.py
+cp /pointer-helper /candidate/tmp/pointer-helper
+chmod 755 /candidate/tmp/pointer-helper
+python3 - <<'PY'
+from pathlib import Path
+import xml.etree.ElementTree as ET
+p=Path('/candidate/home/tablet/.config/labwc/rc.xml')
+tree=ET.parse(p)
+for action in tree.findall('.//keybind/action'):
+ if action.get('command')=='omarchy-shell omarchy.dock apps':
+  action.set('command','/usr/bin/python3 /tmp/launcher-mark.py')
+tree.write(p)
+Path('/candidate/tmp/launcher-mark.py').write_text('from pathlib import Path\nwith Path("/run/user/1000/launcher-marks").open("a") as f:f.write("launch\\n")\n')
+PY
+chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env HOME=/home/tablet USER=tablet XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=wayland WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 LABWC_UPDATE_ACTIVATION_ENV=0 /usr/bin/dbus-run-session /usr/bin/labwc >/evidence/labwc.log 2>&1 &
+scene=$!
+trap 'kill "$scene" 2>/dev/null || true; for name in pairing-confirm.png pairing-passkey.png pairing-pin.png pairing-ui.log; do test ! -f "/candidate/tmp/$name" || cp "/candidate/tmp/$name" "/evidence/$name"; done' EXIT
+for attempt in $(seq 1 100); do
+ test ! -S /candidate/run/user/1000/wayland-0 || break
+ kill -0 "$scene"
+ sleep .05
+done
+chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env HOME=/home/tablet USER=tablet XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /usr/bin/python3 /tmp/key-test.py >/evidence/key-tests.jsonl 2>/evidence/key-errors.log
+printf 'KEY_TESTS_OK\n'
+chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env HOME=/home/tablet USER=tablet XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 PYTHONPATH=/usr/lib/omarchy-bluetooth /usr/bin/dbus-run-session /usr/bin/python3 /tmp/wire-test.py --gui >/evidence/gui-tests.jsonl 2>/evidence/gui-errors.log
+cp /candidate/tmp/pairing-confirm.png /evidence/pairing-confirm.png
+printf 'GUI_TESTS_OK\n'

@@ -1,0 +1,4 @@
+# Dedicated demo VT only. PAM/logind owns the session and /run/user/1000.
+if [[ $(tty) == /dev/tty1 && -z ${SSH_CONNECTION:-} ]]; then
+  exec /usr/local/libexec/arch-ipad-login-session
+fi

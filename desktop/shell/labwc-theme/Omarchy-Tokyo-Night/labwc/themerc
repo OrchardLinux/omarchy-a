@@ -1,0 +1,31 @@
+# Generated from Omarchy Tokyo Night colors.toml and shell.toml.
+# Hyprland default/looknfeel.lua: 2px border, inactive #595959aa,
+# rounding 0, shadow off, blur off. labwc keeps functional titlebar buttons.
+border.width: 2
+window.active.border.color: #7aa2f7
+window.inactive.border.color: #595959aa
+window.active.title.bg: Solid
+window.active.title.bg.color: #24283b
+window.inactive.title.bg: Solid
+window.inactive.title.bg.color: #13141c
+window.active.label.text.color: #a9b1d6
+window.inactive.label.text.color: #565f89
+window.label.text.justify: Center
+window.button.width: 24
+window.button.height: 24
+window.button.spacing: 2
+window.active.button.unpressed.image.color: #a9b1d6
+window.inactive.button.unpressed.image.color: #565f89
+window.button.hover.bg.color: #7aa2f733
+window.button.hover.bg.corner-radius: 0
+menu.items.bg.color: #1a1b26
+menu.items.text.color: #a9b1d6
+menu.items.active.bg.color: #292e42
+menu.items.active.text.color: #a9b1d6
+menu.border.color: #7aa2f7
+menu.border.width: 2
+osd.bg.color: #1a1b26
+osd.label.text.color: #a9b1d6
+osd.border.color: #7aa2f7
+osd.border.width: 2
+

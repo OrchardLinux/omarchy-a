@@ -1,0 +1,20 @@
+[Unit]
+Description=J71b guarded 425mA charging lease (kernel PM coordinated)
+Requires=j71b-platform-ready.service
+After=systemd-udev-trigger.service j71b-platform-ready.service
+ConditionPathExists=/sys/module/j71b_charge_policy/parameters/sleep_parked
+
+[Service]
+Type=simple
+ExecStartPre=/usr/libexec/j71b-check-platform
+ExecStart=/usr/libexec/j71b-charge-lease
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=10
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+# Do not ProtectKernelTunables: this service needs its root-only lease sysfs.
+
+[Install]
+WantedBy=multi-user.target

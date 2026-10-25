@@ -1,0 +1,65 @@
+#!/bin/sh
+# Runs only inside the disposable validation container, never on a device.
+set -eu
+mkdir /candidate
+# Exclude heavyweight applications/docs not used by this GUI smoke test.
+# The host auditor has checked the entire original public archive.
+zstd -dq -c "/release/$OMA_ROOT_FILENAME" | tar --numeric-owner -xpf - -C /candidate --exclude='usr/lib/firefox*' --exclude='usr/share/doc' --exclude='usr/share/man' --exclude='usr/share/locale'
+mount --bind /proc /candidate/proc
+mount --rbind /dev /candidate/dev
+install -d -m 700 -o 1000 -g 1000 /candidate/run/user/1000
+# /candidate/sys is a private, unmounted directory, never host/device sysfs.
+mkdir -p /candidate/sys/class/backlight/20e200080.backlight
+printf '2047\n' >/candidate/sys/class/backlight/20e200080.backlight/max_brightness
+printf '731\n' >/candidate/sys/class/backlight/20e200080.backlight/brightness
+chown 1000:1000 /candidate/sys/class/backlight/20e200080.backlight/brightness
+chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/sudo -n /usr/bin/id -u >/evidence/sudo.txt
+test "$(cat /evidence/sudo.txt)" = 0
+printf 'PASSWORDLESS_SUDO_OK\n' >>/evidence/sudo.txt
+mkdir -p /candidate/tmp/power/BAT0 /candidate/tmp/power/AC
+printf 'Battery\n' >/candidate/tmp/power/BAT0/type
+printf '1\n' >/candidate/tmp/power/BAT0/present
+printf '73\n' >/candidate/tmp/power/BAT0/capacity
+printf 'Mains\n' >/candidate/tmp/power/AC/type
+printf '1\n' >/candidate/tmp/power/AC/online
+chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env OMARCHY_POWER_SUPPLY_PATH=/tmp/power /usr/local/bin/omarchy-battery-status --shell >/evidence/battery.txt
+chroot /candidate /usr/bin/python3 -c 'import sys; sys.path.insert(0,"/usr/libexec/orchard-j71b"); from permissions import verify,verify_session_access; print("Verified privileged entries:",verify("/")); verify_session_access("/")'
+chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env HOME=/home/tablet USER=tablet XDG_RUNTIME_DIR=/run/user/1000 XDG_SESSION_TYPE=wayland WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 LABWC_UPDATE_ACTIVATION_ENV=0 OMARCHY_POWER_SUPPLY_PATH=/tmp/power /usr/bin/dbus-run-session /usr/bin/labwc >/evidence/labwc.log 2>&1 &
+scene=$!
+trap 'kill "$scene" 2>/dev/null || true' EXIT
+for attempt in $(seq 1 60); do
+    test ! -s /candidate/run/user/1000/omarchy-desktop-ready.json || break
+    kill -0 "$scene" || break
+    sleep .5
+done
+cp /candidate/run/user/1000/omarchy-shell.log /evidence/shell.log || true
+cp /candidate/run/user/1000/omarchy-startup-cursor.log /evidence/cursor.log || true
+cp /candidate/run/user/1000/omarchy-desktop-ready.log /evidence/readiness.log || true
+cp /candidate/run/user/1000/omarchy-desktop-ready.json /evidence/readiness.json || true
+chroot /candidate /usr/bin/orchard-device status >/evidence/status.json
+python3 -c 'import json; r=json.load(open("/evidence/status.json")); assert r["result"]["ready"],r; print("ACTUAL_ARTIFACT_HEADLESS_DESKTOP_READY_OK")'
+# Exercise the shipped binding and helper with balanced virtual power-key events.
+# Condition polling waits for the compositor's asynchronous Execute action.
+for expected in 0 731; do
+    chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /usr/libexec/omarchy-wtype -k XF86PowerOff
+    for attempt in $(seq 1 40); do
+        test "$(cat /candidate/sys/class/backlight/20e200080.backlight/brightness)" != "$expected" || break
+        sleep .05
+    done
+    test "$(cat /candidate/sys/class/backlight/20e200080.backlight/brightness)" = "$expected"
+    printf '%s\n' "$expected" >>/evidence/power-key-toggle.txt
+done
+printf 'POWER_KEY_BACKLIGHT_ROUND_TRIP_OK\n' >>/evidence/power-key-toggle.txt
+# Visual-only settling AFTER the independent readiness assertion. This does
+# not introduce a production startup delay or change installation timing.
+sleep 2
+chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /usr/bin/grim -c /tmp/desktop.png
+cp /candidate/tmp/desktop.png /evidence/desktop.png
+if test -f /pointer-helper; then
+    # Test-only binary; never installed into the public root image.
+    cp /pointer-helper /candidate/tmp/pointer-helper
+    chmod 755 /candidate/tmp/pointer-helper
+    chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /tmp/pointer-helper pointer move 80 40
+    chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /usr/bin/grim -c /tmp/pointer-restored.png
+    cp /candidate/tmp/pointer-restored.png /evidence/pointer-restored.png
+fi

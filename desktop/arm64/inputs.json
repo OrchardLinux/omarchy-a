@@ -1,0 +1,8 @@
+{
+  "architecture": "aarch64",
+  "omafox_xpi": "8a4f28162b6fd5098ff2e6e671d1bcbe69eb1606b277f4822bc1aaf14e76dec1",
+  "omafox_xpi_url": "https://addons.mozilla.org/firefox/downloads/file/4985428/omafox-1.0.3.xpi",
+  "omacalc_package": "165c8fef7323db43ca47c5b933de6382c1020b4962c77b9e9d52e2be697b1618",
+  "omacalc_url": "https://pkgs.omarchy.org/stable/aarch64/omacalc-0.3.1-1-aarch64.pkg.tar.zst",
+  "omacalc_signer": "40DFB630FF42BCFFB047046CF0134EE680CAC571"
+}

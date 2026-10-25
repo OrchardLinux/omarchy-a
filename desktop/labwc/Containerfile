@@ -1,0 +1,4 @@
+FROM localhost/omarchy-a-desktop-builder:arm64
+COPY install-toolchain /tmp/install-toolchain
+RUN bash /tmp/install-toolchain && rm /tmp/install-toolchain
+WORKDIR /work

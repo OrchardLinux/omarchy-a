@@ -1,0 +1,4 @@
+# Arch Linux ARM build environment; native CI uses the same installer.
+FROM docker.io/arch4edu/archlinuxarm@sha256:1db43d1af9917db5fd34af3dab64e2b229a21240e81bb765e3d2d3c34739d587
+COPY install-toolchain /tmp/install-toolchain
+RUN bash /tmp/install-toolchain && rm /tmp/install-toolchain

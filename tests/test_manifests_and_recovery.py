@@ -1,0 +1,110 @@
+"""New publication/sealing checks; no kernel execution or physical devices."""
+import gzip
+import hashlib
+import io
+import json
+from pathlib import Path, PurePosixPath
+import stat
+import tempfile
+import unittest
+
+from orchard_hardware import firmware_path
+from orchard_hardware.boot.initramfs.pack import record
+from release import manifests
+from release.j71b.recovery_audit import read_newc, audit_runtime
+
+
+class Publication(unittest.TestCase):
+    def test_single_target_manifest_and_index_pin_exact_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            for name in ('rootfs.tar.zst', 'recovery.bin', 'pongo.bin'):
+                (output / name).write_bytes(name.encode())
+            root = {'compression': 'zstd', 'expanded_bytes': 100, 'members': 3}
+            path = manifests.write(output, 'test-1', root)
+            doc = manifests.tomllib.loads(path.read_text())
+            index = manifests.tomllib.loads((output / 'index.toml').read_text())
+            pin = index['devices']['j71b']['checkm8-pongo']
+            self.assertEqual(pin, manifests.receipt(path))
+            self.assertEqual(doc['device'], 'j71b')
+            self.assertEqual(doc['install']['default_root'], '/omarchy')
+            self.assertEqual(doc['root']['sha256'], hashlib.sha256(b'rootfs.tar.zst').hexdigest())
+            self.assertEqual(doc['min_orchard'], '0.1.5')
+            self.assertEqual(manifests.read_release(path)['assets']['recovery'], doc['boot'])
+            with self.assertRaises(FileExistsError):
+                manifests.write(output, 'test-1', root)
+            path.write_text(path.read_text() + '# modified\n')
+            self.assertNotEqual(pin['sha256'], manifests.receipt(path)['sha256'])
+
+    def test_another_distro_is_not_accepted_by_omarchy_auditor_adapter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'manifest.toml'
+            path.write_text('schema=1\nkind="orchard.install"\ndistro="another"\n')
+            with self.assertRaises(ValueError):
+                manifests.read_release(path)
+
+
+class RecoverySealing(unittest.TestCase):
+    @staticmethod
+    def archive(entries):
+        output = io.BytesIO()
+        for index, (name, mode, data) in enumerate(entries, 1):
+            record(output, index, name, mode, data)
+        record(output, len(entries)+1, 'TRAILER!!!', 0, b'')
+        output.write(b'\0' * 512)
+        return output.getvalue()
+
+    def test_newc_round_trip_and_unsafe_names_duplicates_rejected(self):
+        entry = ('init', stat.S_IFREG | 0o755, b'#!/bin/sh\n')
+        self.assertEqual(list(read_newc(io.BytesIO(self.archive([entry])))), [entry])
+        for entries in ([entry, entry], [('../escape', entry[1], b'bad')], [('/escape', entry[1], b'bad')]):
+            with self.subTest(entries=entries), self.assertRaises(ValueError):
+                list(read_newc(io.BytesIO(self.archive(entries))))
+
+    def test_newc_truncation_limits_and_unexpected_trailer_data_rejected(self):
+        raw = self.archive([('init', stat.S_IFREG | 0o755, b'#!/bin/sh\n')])
+        for bad in (raw[:100], raw[:-1], raw + b'extra', raw[:54] + b'ffffffff' + raw[62:]):
+            with self.subTest(length=len(bad)), self.assertRaises(ValueError):
+                list(read_newc(io.BytesIO(bad)))
+
+    def exercise(self, *, different_root=False, private_file=None, corrupt_public=False):
+        root = {'sha256': 'a' * 64, 'bytes': 1, 'expanded_bytes': 2, 'members': 1, 'compression': 'zstd'}
+        files = {name: b'executable' for name in (
+            'init', 'usr/bin/orchard-device', 'usr/bin/python3', 'sbin/capture-adt',
+            'sbin/authorize-key', 'sbin/recovery-start-ssh', 'usr/sbin/blkid', 'usr/sbin/sfdisk',
+            'usr/sbin/mke2fs', 'etc/mke2fs.conf')}
+        for name in ('device.py', 'archive.py', 'staging.py', 'handoff.py', 'image_policy.py', 'permissions.py', 'storage.py', 'identity.py', 'adt.py'):
+            files['usr/libexec/orchard-j71b/' + name] = b'# runtime\n'
+        config = {'root': {**root, 'sha256': 'b' * 64} if different_root else root,
+                  'release': 'test-1', 'protocol': 1, 'profile': 'j71b'}
+        files['etc/orchard/release.json'] = json.dumps(config).encode()
+        files['etc/orchard/firmware.json'] = firmware_path('j71b').read_bytes()
+        public = ''.join(hashlib.sha256(data).hexdigest() + '  /' + name + '\n' for name, data in sorted(files.items()))
+        if corrupt_public:
+            public = '0' * 64 + public[64:]
+        files['etc/orchard/public.SHA256SUMS'] = public.encode()
+        if private_file:
+            files[private_file] = b'not public'
+        entries = [(name, stat.S_IFREG | 0o755, data) for name, data in sorted(files.items())]
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / 'recovery.bin'
+            image.write_bytes(gzip.compress(self.archive(entries)))
+            Path(str(image) + '.json').write_text(json.dumps({'components': [
+                {'name': 'initramfs', 'offset': 0, 'bytes': image.stat().st_size}]}))
+            return audit_runtime(image, root, 'test-1')
+
+    def test_actual_recovery_root_lock_and_public_hashes_are_checked(self):
+        self.assertGreater(self.exercise()['members'], 0)
+        for arguments in ({'different_root': True}, {'corrupt_public': True}):
+            with self.subTest(arguments=arguments), self.assertRaises(ValueError):
+                self.exercise(**arguments)
+
+    def test_public_recovery_cannot_contain_firmware_or_session_credentials(self):
+        recipe = json.loads(firmware_path('j71b').read_text())
+        for name in (recipe['files'][0]['destination'], 'run/recovery/ssh_host_ed25519_key'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.exercise(private_file=name)
+
+
+if __name__ == '__main__':
+    unittest.main()

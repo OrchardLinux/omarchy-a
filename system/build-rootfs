@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+here=$(cd "$(dirname "$0")" && pwd)
+project=$(cd "$here/.." && pwd)
+device=${1:-}
+[[ $# -gt 0 ]] && shift
+output='' desktop='' release=''
+while (($#)); do
+  case "$1" in
+    --output) output=$2; shift 2;;
+    --desktop) desktop=$2; shift 2;;
+    --release) release=$2; shift 2;;
+    *) echo "Unknown argument: $1" >&2; exit 2;;
+  esac
+done
+if [[ ! "$device" =~ ^[a-z0-9][a-z0-9_-]*$ || -z "$output" || -z "$release" ||
+      ! -x "$here/$device/build-rootfs" || ! -d "$desktop/payload" ||
+      ! -d "$desktop/packages" || -e "$output" ]]; then
+  echo 'Usage: ./system/build-rootfs DEVICE --output DIRECTORY --desktop DIRECTORY --release NAME' >&2
+  exit 2
+fi
+podman=$(command -v podman || true)
+if [[ ${ORCHARD_BUILD_NATIVE:-0} != 1 ]]; then
+  [[ -n "$podman" ]] || { echo 'Podman is required' >&2; exit 1; }
+  "$podman" info >/dev/null || { echo 'Podman is unavailable' >&2; exit 1; }
+else
+  [[ $EUID == 0 && $(uname -m) == aarch64 ]] || { echo 'Native rootfs assembly requires Linux ARM64 as root' >&2; exit 1; }
+fi
+absolute() { python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).expanduser().resolve())' "$1"; }
+output=$(absolute "$output")
+desktop=$(absolute "$desktop")
+"$project/desktop/build" --verify "$desktop"
+
+mkdir -p "$here/.work/$device"
+stage=$(mktemp -d "$here/.work/$device/result.XXXXXX")
+volume=
+native_work=
+cleanup() {
+  [[ -z "$native_work" ]] || rm -rf -- "$native_work"
+  if [[ -n "$volume" ]]; then
+    "$podman" volume rm "$volume" >/dev/null || echo "Remove temporary Podman volume: $volume" >&2
+  fi
+  [[ ! -d "$stage" ]] || rm -rf -- "$stage"
+}
+trap cleanup EXIT
+if [[ ${ORCHARD_BUILD_NATIVE:-0} == 1 ]]; then
+  native_work=$(mktemp -d "$here/.work/$device/native.XXXXXX")
+  "$here/$device/build-rootfs" --root "$native_work/root" \
+    --output "$native_work/rootfs.tar.gz" --desktop "$desktop" --release "$release"
+  cp "$native_work/rootfs.tar.gz" "$native_work/rootfs.tar.gz.json" "$native_work/packages.lock" "$stage/"
+else
+  "$podman" build -f "$here/Containerfile" -t localhost/omarchy-a-arch-builder:latest "$here"
+  volume_name="omarchy-a-rootfs-$device-${stage##*/}-$$"
+  "$podman" volume create "$volume_name" >/dev/null
+  volume=$volume_name
+  "$podman" run --rm \
+    -v "$volume:/work:rw" \
+    -v "$here:/repo/system:ro" -v "$desktop:/inputs/desktop:ro" \
+    localhost/omarchy-a-arch-builder:latest \
+    "/repo/system/$device/build-rootfs" \
+      --root /work/root --output /work/rootfs.tar.gz \
+      --desktop /inputs/desktop --release "$release"
+  "$podman" run --rm --network none -v "$volume:/work:ro" \
+    localhost/omarchy-a-arch-builder:latest \
+    tar -C /work -cf - rootfs.tar.gz rootfs.tar.gz.json packages.lock \
+    | tar -C "$stage" -xf -
+fi
+python3 - "$stage" <<'PY'
+import hashlib, json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+archive = root / 'rootfs.tar.gz'
+receipt = json.loads((root / 'rootfs.tar.gz.json').read_text())
+digest = hashlib.sha256()
+with archive.open('rb') as stream:
+    for block in iter(lambda: stream.read(1024 * 1024), b''):
+        digest.update(block)
+assert archive.stat().st_size == receipt['bytes']
+assert digest.hexdigest() == receipt['sha256']
+lock = root / 'packages.lock'
+assert lock.stat().st_size > 0
+assert hashlib.sha256(lock.read_bytes()).hexdigest() == receipt['packages_lock_sha256']
+print('Verified rootfs:', archive)
+PY
+[[ ! -e "$output" ]] || { echo "Output exists: $output" >&2; exit 1; }
+mkdir -p "$(dirname "$output")"
+mv "$stage" "$output"
+echo "Rootfs output: $output"

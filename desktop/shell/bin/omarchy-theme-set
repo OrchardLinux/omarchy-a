@@ -1,0 +1,59 @@
+#!/bin/bash
+# labwc compatibility backend for Omarchy's unchanged Theme picker.
+# The selected assets and rendered shell/Foot templates remain upstream Omarchy.
+set -euo pipefail
+
+name=${1:-}
+[[ -n $name && $name != */* && $name != .* ]] || { echo 'Usage: omarchy-theme-set <theme-name>' >&2; exit 2; }
+root=${OMARCHY_PATH:?OMARCHY_PATH is required}
+source_theme="$root/themes/$name"
+[[ -f $source_theme/colors.toml && -d $source_theme/backgrounds ]] || { echo "Theme not found: $name" >&2; exit 1; }
+
+state="$HOME/.local/state/omarchy/current"
+next="$state/next-theme"
+labwc_theme="$HOME/.local/share/themes/Omarchy-Current/labwc"
+mkdir -p "$state" "$labwc_theme"
+[[ ! -e $next ]] || { echo 'A theme switch is already staged' >&2; exit 1; }
+cp -a "$source_theme" "$next"
+rendered="$state/.labwc-themerc.$$"
+cleanup() { rm -rf -- "$next"; rm -f -- "$rendered"; }
+trap cleanup EXIT
+
+omarchy-theme-set-templates
+for file in colors.toml shell.toml foot.ini; do [[ -s $next/$file ]] || { echo "Missing rendered $file" >&2; exit 1; }; done
+python3 "$root/render-labwc-theme.py" "$next/colors.toml" "$next/shell.toml" >"$rendered"
+
+mapfile -t backgrounds < <(find -L "$next/backgrounds" -maxdepth 1 -type f ! -name '._*' \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -printf '%f\n' | sort)
+((${#backgrounds[@]})) || { echo "No image backgrounds in $name" >&2; exit 1; }
+selected=${backgrounds[0]}
+if [[ -f $state/theme.name && $(<"$state/theme.name") == "$name" && -L $state/background ]]; then
+  old=$(basename "$(readlink "$state/background")")
+  for i in "${!backgrounds[@]}"; do
+    if [[ ${backgrounds[i]} == "$old" ]]; then selected=${backgrounds[(i + 1) % ${#backgrounds[@]}]}; break; fi
+  done
+fi
+
+# Replace only the generated current-theme directory; immutable sources in
+# OMARCHY_PATH/themes and the guest's prior config backup are never changed.
+previous="$state/.previous-theme"
+rm -rf -- "$previous"
+if [[ -d $state/theme ]]; then mv "$state/theme" "$previous"; fi
+mv "$next" "$state/theme"
+printf '%s\n' "$name" >"$state/theme.name"
+ln -nsf "$state/theme/backgrounds/$selected" "$state/background"
+install -m644 "$rendered" "$labwc_theme/themerc"
+python3 "$root/render-labwc-buttons.py" "$state/theme/colors.toml" "$labwc_theme"
+
+colors_payload=$(base64 -w0 "$state/theme/colors.toml")
+shell_payload=$(base64 -w0 "$state/theme/shell.toml")
+omarchy-shell -q shell applyTheme "$colors_payload" "$shell_payload"
+omarchy-shell -q background set "$state/theme/backgrounds/$selected"
+kill -HUP "$(pgrep -x labwc | head -n1)"
+omarchy-theme-set-foot || true
+# Recreate only the keyboard process so its runtime colours follow this theme.
+[[ ! -x $root/bin/omarchy-keyboard ]] || "$root/bin/omarchy-keyboard" restart || true
+# Match upstream's post-commit theme hook without its Hyprland backend.
+if command -v omarchy-hook >/dev/null 2>&1; then
+  omarchy-hook theme-set "$name" >/dev/null
+fi
+printf 'Theme: %s; Background: %s\n' "$name" "$selected"

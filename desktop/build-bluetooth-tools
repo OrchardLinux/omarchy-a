@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Prepare the pinned, zero-dependency Python D-Bus library; no pip execution."""
+import argparse
+import hashlib
+import io
+import json
+from pathlib import Path, PurePosixPath
+import tempfile
+import urllib.request
+import zipfile
+import os
+
+HERE = Path(__file__).resolve().parent
+
+
+def prepare(data, pin, output):
+    if hashlib.sha256(data).hexdigest() != pin['sha256']:
+        raise ValueError('D-Bus library archive differs from pin')
+    if output.exists():
+        raise ValueError('Choose a new Bluetooth tools directory')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.bluetooth-') as work:
+        root = Path(work)
+        files = {}
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            for entry in archive.infolist():
+                path = PurePosixPath(entry.filename)
+                if path.is_absolute() or '..' in path.parts:
+                    raise ValueError('Unsafe wheel path')
+                if entry.filename.startswith('dbus_next/') and path.suffix == '.py':
+                    destination = 'lib/' + str(path)
+                elif entry.filename == 'dbus_next-0.2.3.dist-info/LICENSE':
+                    destination = 'LICENSE'
+                else:
+                    continue
+                if destination in files:
+                    raise ValueError('Duplicate wheel member')
+                content = archive.read(entry)
+                target = root / destination
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+                files[destination] = hashlib.sha256(content).hexdigest()
+        if 'lib/dbus_next/__init__.py' not in files or 'LICENSE' not in files:
+            raise ValueError('Incomplete D-Bus library archive')
+        (root / 'manifest.json').write_text(json.dumps({'schema': 1, 'source': pin, 'files': files}, indent=2) + '\n')
+        os.replace(root, output)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--archive', type=Path, help='optional already-downloaded pinned wheel')
+    args = parser.parse_args()
+    pin = json.loads((HERE / 'bluetooth/dbus-next.json').read_text())
+    data = args.archive.read_bytes() if args.archive else urllib.request.urlopen(pin['url'], timeout=30).read()
+    prepare(data, pin, args.output)
+    print('Bluetooth dependency prepared:', args.output)
+
+
+if __name__ == '__main__':
+    main()

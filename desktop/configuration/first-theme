@@ -1,0 +1,33 @@
+#!/bin/bash
+# Per-user first-start initialization, before labwc/Quickshell/keyboard map.
+set -euo pipefail
+export OMARCHY_PATH=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
+export PATH=/usr/local/bin:/usr/bin
+state="$HOME/.local/state/omarchy/current"
+source_theme="$OMARCHY_PATH/themes/tokyo-night"
+[[ -s "$source_theme/colors.toml" && -d "$source_theme/backgrounds" ]] || exit 1
+mkdir -p "$state" "$HOME/.local/share/themes/Omarchy-Current/labwc"
+if [[ ! -s "$state/theme.name" ]]; then
+  [[ ! -e "$state/next-theme" && ! -e "$state/theme" ]] || {
+    echo 'Partial theme initialization: inspect before retrying' >&2; exit 1;
+  }
+  cp -a "$source_theme" "$state/next-theme"
+  omarchy-theme-set-templates
+  [[ -s "$state/next-theme/shell.toml" && -s "$state/next-theme/foot.ini" ]] || exit 1
+  mv "$state/next-theme" "$state/theme"
+  printf '%s\n' 'tokyo-night' > "$state/theme.name"
+  background=$(find "$state/theme/backgrounds" -maxdepth 1 -type f -name '*.webp' -printf '%f\n' | sort | head -n1)
+  [[ -n "$background" ]] || exit 1
+  ln -s "$state/theme/backgrounds/$background" "$state/background"
+  python3 "$OMARCHY_PATH/render-labwc-theme.py" "$state/theme/colors.toml" "$state/theme/shell.toml" > "$HOME/.local/share/themes/Omarchy-Current/labwc/themerc"
+  python3 "$OMARCHY_PATH/render-labwc-buttons.py" "$state/theme/colors.toml" "$HOME/.local/share/themes/Omarchy-Current/labwc"
+fi
+[[ -s "$state/theme/colors.toml" && -s "$state/theme/shell.toml" && -e "$state/background" ]] || exit 1
+# This only registers the user hook and queues local theme state; it does not
+# copy or reuse the VM's Firefox profile. Package installation is a separate step.
+if command -v omafox >/dev/null; then
+  if [[ ! -s "$HOME/.config/omarchy/hooks/theme-set.d/omafox" || ! -s "$HOME/.local/state/omafox/theme.json" ]]; then
+    omafox setup
+  fi
+  [[ -s "$HOME/.config/omarchy/hooks/theme-set.d/omafox" && -s "$HOME/.local/state/omafox/theme.json" ]] || exit 1
+fi

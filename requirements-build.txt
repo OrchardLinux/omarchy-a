@@ -1,0 +1,2 @@
+# Install the local wheel until public package distribution is published.
+orchard-hardware>=0.1.1

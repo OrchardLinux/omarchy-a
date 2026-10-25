@@ -1,0 +1,7 @@
+# Configure the output synchronously before any shell surface is mapped.
+wlr-randr --output Virtual-1 --custom-mode 1536x2048@60 --scale 2
+# The touch keyboard reports its actual visible state to the menu host.
+printf '0\n' > /run/tablet-lab/omarchy-keyboard-visible
+OMARCHY_PATH=/home/tablet/.local/share/omarchy-ipad /home/tablet/.local/share/omarchy-ipad/bin/omarchy-keyboard run > /run/tablet-lab/omarchy-keyboard.log 2>&1 &
+# Omarchy's background plugin owns the wallpaper and its transitions.
+PIPEWIRE_RUNTIME_DIR=/run/user/1000 OMARCHY_PATH=/home/tablet/.local/share/omarchy-ipad qs -p /home/tablet/.local/share/omarchy-ipad/shell/shell.qml &

@@ -1,0 +1,53 @@
+#!/usr/bin/python3
+"""J71b backlight toggle only: no suspend, session lock, or input changes."""
+import fcntl
+import os
+from pathlib import Path
+import stat
+import sys
+
+
+def toggle(device, runtime):
+    info = runtime.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise ValueError('Expected a private, owned XDG_RUNTIME_DIR')
+    lock = os.open(runtime / 'omarchy-screen.lock', os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(lock, 'w') as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        maximum = int((device / 'max_brightness').read_text())
+        current = int((device / 'brightness').read_text())
+        if maximum < 1 or not 0 <= current <= maximum:
+            raise ValueError('Invalid backlight range')
+        saved = runtime / 'omarchy-screen-brightness'
+        if current > 0:
+            fd = os.open(saved, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'w') as state:
+                state.write(str(current) + '\n')
+            target = 0
+        else:
+            target = max(1, maximum // 2)
+            try:
+                fd = os.open(saved, os.O_RDONLY | os.O_NOFOLLOW)
+                with os.fdopen(fd) as state:
+                    value = int(state.read(64))
+                if value > 0:
+                    target = min(value, maximum)
+            except (FileNotFoundError, ValueError):
+                pass
+        (device / 'brightness').write_text(str(target) + '\n')
+        return target
+
+
+def main():
+    # Keep physical output selection device-owned; never toggle unrelated displays.
+    device = Path('/sys/class/backlight/20e200080.backlight')
+    runtime = Path(os.environ['XDG_RUNTIME_DIR'])
+    toggle(device, runtime)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, KeyError) as error:
+        print('Screen toggle failed: ' + str(error), file=sys.stderr)
+        sys.exit(1)

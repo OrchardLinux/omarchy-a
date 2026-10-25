@@ -1,0 +1,52 @@
+#!/bin/bash
+# Labwc/iPad preview: optional measured battery details for the UPower panel.
+# UPower supplies net battery flow. Report physical power separately using
+# standard power_supply online. USB gadget enumeration is NOT power presence.
+# Never infer an adapter rating, charge threshold or time-to-full.
+set -euo pipefail
+[[ $# == 1 && $1 == --shell ]] || { echo 'Usage: omarchy-battery-status --shell' >&2; exit 2; }
+base=${OMARCHY_POWER_SUPPLY_PATH:-/sys/class/power_supply}
+battery=''
+for candidate in "$base"/*; do
+  [[ -r $candidate/type && $(<"$candidate/type") == Battery ]] || continue
+  [[ ! -r $candidate/present || $(<"$candidate/present") == 1 ]] || continue
+  [[ -z $battery ]] || exit 0  # Ambiguous: show UPower alone.
+  battery=$candidate
+done
+[[ -n $battery && -r $battery/capacity ]] || exit 0
+read -r percentage < "$battery/capacity"
+[[ $percentage =~ ^[0-9]+$ && $percentage -le 100 ]] || exit 0
+printf 'percentage\t%s%%\n' "$percentage"
+
+external=unknown
+for candidate in "$base"/*; do
+  [[ -r $candidate/type && $(<"$candidate/type") != Battery && -r $candidate/online ]] || continue
+  if read -r online < "$candidate/online"; then
+    case "$online" in
+      1) external=connected; break ;;
+      0) external=disconnected ;;
+    esac
+  fi
+done
+printf 'external_power\t%s\n' "$external"
+
+if [[ -r $battery/energy_full ]]; then
+  read -r full < "$battery/energy_full"
+  if [[ $full =~ ^[0-9]+$ && $full -gt 0 ]]; then
+    awk -v uwh="$full" 'BEGIN { printf "size\t%.1fWh\n", uwh / 1000000 }'
+  fi
+fi
+if [[ -r $battery/cycle_count ]]; then
+  read -r cycles < "$battery/cycle_count"
+  [[ ! $cycles =~ ^[0-9]+$ ]] || printf 'cycles\t%s\n' "$cycles"
+fi
+if [[ -r $battery/power_now ]]; then
+  read -r microwatts < "$battery/power_now"
+  [[ ! $microwatts =~ ^-?[0-9]+$ ]] || awk -v u="$microwatts" 'BEGIN { if (u < 0) u = -u; printf "rate\t%.1fW\n", u / 1000000 }'
+elif [[ -r $battery/current_now && -r $battery/voltage_now ]]; then
+  read -r microamps < "$battery/current_now"
+  read -r microvolts < "$battery/voltage_now"
+  if [[ $microamps =~ ^-?[0-9]+$ && $microvolts =~ ^[0-9]+$ ]]; then
+    awk -v i="$microamps" -v v="$microvolts" 'BEGIN { if (i < 0) i = -i; printf "rate\t%.1fW\n", i * v / 1000000000000 }'
+  fi
+fi

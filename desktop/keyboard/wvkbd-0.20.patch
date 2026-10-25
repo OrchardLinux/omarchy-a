@@ -1,0 +1,58 @@
+--- a/config.mobintl.h
++++ b/config.mobintl.h
+@@ -1,7 +1,8 @@
+ #ifndef config_h_INCLUDED
+ #define config_h_INCLUDED
+ 
+-#define DEFAULT_FONT "Sans 14"
++#define DEFAULT_FONT "JetBrainsMono Nerd Font 16"
++#define SPECIAL_FONT "JetBrainsMono Nerd Font 13"
+ #define DEFAULT_ROUNDING 5
+ #define SHIFT_SPACE_IS_TAB
+ static const int transparency = 255;
+@@ -28,7 +29,7 @@
+   .text_press = {.color = UINT32_MAX},
+   .text_swipe = {.color = UINT32_MAX},
+   .text = {.color = UINT32_MAX},
+-  .font = DEFAULT_FONT,
++  .font = SPECIAL_FONT,
+   .rounding = DEFAULT_ROUNDING,
+ }
+ };
+--- a/main.c
++++ b/main.c
+@@ -74,6 +74,18 @@
+ static int rounding = DEFAULT_ROUNDING;
+ static bool hidden = false;
+ static bool im_auto = false;
++
++/* Report the actual layer-surface state to the tablet shell. No protocol or
++ * key behavior changes; absent WVKBD_STATE_FILE this is upstream behavior. */
++static void report_visibility(bool visible)
++{
++    const char *path = getenv("WVKBD_STATE_FILE");
++    if (!path || !*path) return;
++    FILE *file = fopen(path, "w");
++    if (!file) return;
++    fputs(visible ? "1\n" : "0\n", file);
++    fclose(file);
++}
+ 
+ /* event handler prototypes */
+ static void wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
+@@ -605,6 +617,7 @@
+ 
+     keyboard.scale = scale;
+     hidden = false;
++    report_visibility(true);
+ 
+     if (wfs_mgr && viewporter) {
+         wp_viewport_set_destination(draw_surf_viewport, keyboard.w,
+@@ -758,6 +771,7 @@
+     draw_surf.attached = false;
+ 
+     hidden = true;
++    report_visibility(false);
+ }
+ 
+ void

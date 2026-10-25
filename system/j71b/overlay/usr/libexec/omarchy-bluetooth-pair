@@ -1,0 +1,331 @@
+#!/usr/bin/python3
+"""One explicit pairing transaction with a selected-device-only BlueZ agent.
+
+JSON lines go directly to the dedicated pairing UI, never the shell log. The
+agent and its D-Bus connection live until bonding and connection finish or the
+user cancels. No default-agent takeover and no automatic authentication approval.
+"""
+import asyncio
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import stat
+import sys
+
+sys.path.insert(0, '/usr/lib/omarchy-bluetooth')
+from policy import PromptBroker, Rejected, needs_repair
+from dbus_next import BusType, DBusError, Message, MessageType, Variant
+from dbus_next.aio import MessageBus
+from dbus_next.service import ServiceInterface, method
+
+AGENT_PATH = '/org/omarchy/BluetoothPairing'
+PROPERTIES = 'org.freedesktop.DBus.Properties'
+
+
+def emit(record):
+    print(json.dumps(record, ensure_ascii=True), flush=True)
+
+
+class Agent(ServiceInterface):
+    def __init__(self, session):
+        super().__init__('org.bluez.Agent1')
+        self.session = session
+
+    def selected(self, device):
+        if device != self.session.device:
+            raise DBusError('org.bluez.Error.Rejected', 'Unrequested device')
+
+    async def ask(self, device, kind, **fields):
+        self.selected(device)
+        try:
+            return await self.session.prompts.request(kind, **fields)
+        except Rejected:
+            raise DBusError('org.bluez.Error.Rejected', 'Pairing rejected or cancelled') from None
+
+    @method()
+    def Release(self):
+        self.session.cancel()
+
+    @method()
+    def Cancel(self):
+        self.session.cancel()
+
+    @method()
+    async def RequestPinCode(self, device: 'o') -> 's':
+        return await self.ask(device, 'pin')
+
+    @method()
+    async def RequestPasskey(self, device: 'o') -> 'u':
+        return await self.ask(device, 'passkey')
+
+    @method()
+    async def RequestConfirmation(self, device: 'o', passkey: 'u'):
+        await self.ask(device, 'confirm', code=f'{passkey:06d}')
+
+    @method()
+    async def RequestAuthorization(self, device: 'o'):
+        await self.ask(device, 'authorize')
+
+    @method()
+    async def AuthorizeService(self, device: 'o', uuid: 's'):
+        await self.ask(device, 'authorize', service=uuid)
+
+    @method()
+    def DisplayPinCode(self, device: 'o', pincode: 's'):
+        self.selected(device)
+        emit({'event': 'display', 'kind': 'pin', 'code': pincode[:16]})
+
+    @method()
+    def DisplayPasskey(self, device: 'o', passkey: 'u', entered: 'q'):
+        self.selected(device)
+        emit({'event': 'display', 'kind': 'passkey', 'code': f'{passkey:06d}', 'entered': entered})
+
+
+class Session:
+    def __init__(self, bus, address):
+        self.bus = bus
+        self.address = address
+        self.owner = ''
+        self.device = ''
+        self.adapter = ''
+        self.registered = False
+        self.restore_pairable = False
+        self.discovering = False
+        self.pair_in_flight = False
+        self.cancelled = asyncio.Event()
+        self.prompts = PromptBroker(emit)
+        self.agent = Agent(self)
+
+    def cancel(self):
+        self.prompts.cancel()
+        self.cancelled.set()
+
+    def guard(self, message):
+        # Exported service methods otherwise accept calls from any bus peer.
+        if message.message_type == MessageType.METHOD_CALL and message.path == AGENT_PATH:
+            if message.sender != self.owner:
+                return Message.new_error(message, 'org.bluez.Error.Rejected', 'Only BlueZ may call this agent')
+        return None
+
+    async def call(self, path, interface, member, signature='', body=None, timeout=8):
+        reply = await asyncio.wait_for(self.bus.call(Message(
+            destination=self.owner, path=path, interface=interface,
+            member=member, signature=signature, body=body or [])), timeout)
+        if reply.message_type == MessageType.ERROR:
+            raise DBusError(reply.error_name, 'Bluetooth operation failed')
+        return reply.body
+
+    async def properties(self, path, interface):
+        body = await self.call(path, PROPERTIES, 'GetAll', 's', [interface])
+        return {key: value.value for key, value in body[0].items()}
+
+    async def set_property(self, path, interface, name, value):
+        await self.call(path, PROPERTIES, 'Set', 'ssv', [interface, name, Variant('b', value)])
+
+    async def find_device(self):
+        objects = (await self.call('/', 'org.freedesktop.DBus.ObjectManager', 'GetManagedObjects'))[0]
+        for path, interfaces in objects.items():
+            props = interfaces.get('org.bluez.Device1', {})
+            if props.get('Address') and props['Address'].value.upper() == self.address:
+                return path, {key: value.value for key, value in props.items()}
+        return None, {}
+
+    async def perform(self):
+        reply = await asyncio.wait_for(self.bus.call(Message(
+            destination='org.freedesktop.DBus', path='/org/freedesktop/DBus',
+            interface='org.freedesktop.DBus', member='GetNameOwner', signature='s', body=['org.bluez'])), 5)
+        if reply.message_type == MessageType.ERROR:
+            raise RuntimeError('Bluetooth service is unavailable')
+        self.owner = reply.body[0]
+        self.device, properties = await self.find_device()
+        if not self.device:
+            raise RuntimeError('Device unavailable; rescan and try again')
+        self.adapter = properties['Adapter']
+        emit({'event': 'device', 'name': str(properties.get('Alias') or properties.get('Name') or self.address)[:128]})
+        adapter = await self.properties(self.adapter, 'org.bluez.Adapter1')
+        if not adapter.get('Powered'):
+            raise RuntimeError('Bluetooth is off')
+        # RegisterAgent itself can change bondability; snapshot beforehand.
+        self.restore_pairable = not adapter.get('Pairable', False)
+        self.bus.add_message_handler(self.guard)
+        self.bus.export(AGENT_PATH, self.agent)
+        await self.call('/org/bluez', 'org.bluez.AgentManager1', 'RegisterAgent', 'os', [AGENT_PATH, 'KeyboardDisplay'])
+        self.registered = True
+        if self.restore_pairable:
+            await self.set_property(self.adapter, 'org.bluez.Adapter1', 'Pairable', True)
+        if needs_repair(properties):
+            await self.prompts.request('repair')
+            await self.call(self.adapter, 'org.bluez.Adapter1', 'RemoveDevice', 'o', [self.device])
+            self.device = ''
+            await self.call(self.adapter, 'org.bluez.Adapter1', 'StartDiscovery')
+            self.discovering = True
+            emit({'event': 'progress', 'message': 'Switch the accessory off and on again. Waiting for discovery…'})
+            for _ in range(120):
+                path, properties = await self.find_device()
+                if path:
+                    self.device = path
+                    break
+                await asyncio.sleep(0.5)
+            if not self.device:
+                raise RuntimeError('Accessory not rediscovered; switch it off/on and try again')
+        if not properties.get('Bonded'):
+            emit({'event': 'progress', 'message': 'Pairing… Keep the accessory nearby.'})
+            self.pair_in_flight = True
+            try:
+                await self.call(self.device, 'org.bluez.Device1', 'Pair', timeout=150)
+            finally:
+                self.pair_in_flight = False
+        properties = await self.properties(self.device, 'org.bluez.Device1')
+        if not properties.get('Bonded'):
+            raise RuntimeError('No saved bond was created; pairing was not completed')
+        await self.set_property(self.device, 'org.bluez.Device1', 'Trusted', True)
+        emit({'event': 'progress', 'message': 'Bond saved. Connecting…'})
+        await self.call(self.device, 'org.bluez.Device1', 'Connect', timeout=30)
+        for _ in range(20):
+            properties = await self.properties(self.device, 'org.bluez.Device1')
+            if properties.get('Bonded') and properties.get('Connected') and properties.get('ServicesResolved'):
+                emit({'event': 'complete'})
+                return
+            await asyncio.sleep(0.25)
+        raise RuntimeError('Bond saved, but the connection did not finish; try Connect again')
+
+    async def cleanup(self):
+        self.prompts.cancel()
+        if self.pair_in_flight and self.device:
+            try:
+                await self.call(self.device, 'org.bluez.Device1', 'CancelPairing', timeout=3)
+            except Exception:
+                pass
+        if self.discovering:
+            try:
+                await self.call(self.adapter, 'org.bluez.Adapter1', 'StopDiscovery', timeout=3)
+            except Exception:
+                pass
+        if self.restore_pairable:
+            try:
+                await self.set_property(self.adapter, 'org.bluez.Adapter1', 'Pairable', False)
+            except Exception:
+                pass
+        if self.registered:
+            try:
+                await self.call('/org/bluez', 'org.bluez.AgentManager1', 'UnregisterAgent', 'o', [AGENT_PATH], timeout=3)
+            except Exception:
+                pass
+        self.bus.unexport(AGENT_PATH)
+        self.bus.remove_message_handler(self.guard)
+
+
+async def input_messages(session):
+    reader = asyncio.StreamReader(limit=4096)
+    transport, _ = await asyncio.get_running_loop().connect_read_pipe(
+        lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+    try:
+        while line := await reader.readline():
+            message = json.loads(line)
+            if not isinstance(message, dict):
+                break
+            if message.get('action') == 'cancel':
+                break
+            if message.get('action') == 'reply':
+                session.prompts.reply(message)
+    except (ValueError, OSError):
+        pass
+    finally:
+        transport.close()
+        session.cancel()
+
+
+def emit_theme():
+    colors = {'background': '#121212', 'foreground': '#eeeeee', 'accent': '#a0c980'}
+    try:
+        import tomllib
+        configured = tomllib.loads((Path.home() / '.local/state/omarchy/current/theme/colors.toml').read_text())
+        for name in colors:
+            value = configured.get(name)
+            if isinstance(value, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', value):
+                colors[name] = value
+    except (OSError, ValueError, ImportError):
+        pass
+    emit({'event': 'theme', **colors})
+
+
+async def run(address):
+    emit_theme()
+    bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    session = Session(bus, address)
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, session.cancel)
+    input_task = asyncio.create_task(input_messages(session))
+    operation = asyncio.create_task(session.perform())
+    cancel = asyncio.create_task(session.cancelled.wait())
+    disconnected = asyncio.create_task(bus.wait_for_disconnect())
+    try:
+        done, _ = await asyncio.wait([operation, cancel, disconnected], timeout=195,
+                                     return_when=asyncio.FIRST_COMPLETED)
+        if session.cancelled.is_set():
+            emit({'event': 'cancelled'})
+            return 2
+        if operation in done:
+            await operation
+            return 0
+        raise RuntimeError('Bluetooth service disconnected or pairing timed out')
+    except Rejected:
+        emit({'event': 'cancelled'})
+        return 2
+    except (Exception, asyncio.TimeoutError) as error:
+        # Never serialize a raw D-Bus error body, peer address, PIN or passkey.
+        message = str(error) if isinstance(error, RuntimeError) else 'Bluetooth pairing failed. Cancel and try again.'
+        emit({'event': 'error', 'message': message})
+        return 1
+    finally:
+        # CancelPairing must run before cancellation clears the in-flight flag.
+        await session.cleanup()
+        for task in (input_task, operation, cancel, disconnected):
+            task.cancel()
+        await asyncio.gather(input_task, operation, cancel, disconnected, return_exceptions=True)
+        bus.disconnect()
+
+
+def main():
+    if len(sys.argv) != 2 or not re.fullmatch(r'(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}', sys.argv[1]):
+        raise ValueError('Expected one Bluetooth device address')
+    runtime = Path(os.environ['XDG_RUNTIME_DIR'])
+    info = runtime.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise ValueError('Expected private owned XDG_RUNTIME_DIR')
+    fd = os.open(runtime / 'omarchy-bluetooth-pair.lock', os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return asyncio.run(run(sys.argv[1].upper()))
+
+
+def record_result(code):
+    # The shell launcher owns this existing private RAM file. No credentials.
+    value = os.environ.get('OMARCHY_PAIR_RESULT')
+    if not value:
+        return
+    path = Path(value)
+    runtime = Path(os.environ['XDG_RUNTIME_DIR'])
+    if path.parent != runtime:
+        raise ValueError('Result must be directly inside XDG_RUNTIME_DIR')
+    fd = os.open(path, os.O_WRONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, 'w') as result:
+        info = os.fstat(result.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ValueError('Result file is not private and owned')
+        result.truncate(0)
+        result.write(str(code) + '\n')
+
+
+if __name__ == '__main__':
+    try:
+        code = main()
+    except Exception:
+        emit({'event': 'error', 'message': 'Cannot start pairing; another request may be active.'})
+        code = 1
+    record_result(code)
+    sys.exit(code)

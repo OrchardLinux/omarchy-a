@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Build the pinned, MIT-licensed startup keyboard helper; no device access."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+from orchard_hardware import buildenv
+from urllib.request import urlopen
+import xml.etree.ElementTree as ET
+
+HERE = Path(__file__).resolve().parent
+IMAGE = 'localhost/omarchy-a-desktop-builder:arm64'
+
+
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--image', default=IMAGE, help='existing desktop compiler image')
+    args = parser.parse_args()
+    output = args.output.resolve()
+    if output.exists():
+        parser.error('Choose a new output directory')
+    pin = json.loads((HERE / 'cursor/wtype.json').read_text())
+    cache = HERE / '.work/cursor'
+    cache.mkdir(parents=True, exist_ok=True)
+    archive = cache / ('wtype-v' + pin['version'] + '.tar.gz')
+    if not archive.exists():
+        with urlopen(pin['url'], timeout=60) as source, archive.open('wb') as target:
+            shutil.copyfileobj(source, target)
+    if sha(archive) != pin['sha256']:
+        parser.error('Cached wtype source differs from pin')
+    with tempfile.TemporaryDirectory(prefix='build-', dir=cache) as folder:
+        work = Path(folder)
+        shutil.copyfile(archive, work / 'source.tar.gz')
+        script = r'''
+set -eu
+source=$(mktemp -d "$ORCHARD_TMP/cursor.XXXXXX")
+tar -xzf "$ORCHARD_WORK/source.tar.gz" --strip-components=1 -C "$source"
+cd "$source"
+wayland-scanner private-code protocol/virtual-keyboard-unstable-v1.xml virtual-keyboard-unstable-v1-protocol.c
+wayland-scanner client-header protocol/virtual-keyboard-unstable-v1.xml virtual-keyboard-unstable-v1-client-protocol.h
+# shellcheck disable=SC2046 # pkg-config emits compiler argument words.
+cc -O2 '-DVERSION="0.4"' -I. main.c virtual-keyboard-unstable-v1-protocol.c $(pkg-config --cflags --libs wayland-client wayland-cursor xkbcommon) -lrt -o "$ORCHARD_WORK/wtype"
+readelf -h "$ORCHARD_WORK/wtype" | grep -q 'Machine:.*AArch64'
+cp LICENSE "$ORCHARD_WORK/LICENSE"
+cp protocol/virtual-keyboard-unstable-v1.xml "$ORCHARD_WORK/protocol.xml"
+'''
+        buildenv.run(args.image, ['sh', '-ec', script], [(work, '/work', False)])
+        image = buildenv.identity(args.image)
+        result = work / 'result'
+        result.mkdir()
+        for name in ('wtype', 'LICENSE'):
+            shutil.copyfile(work / name, result / name)
+        (result / 'wtype').chmod(0o755)
+        protocol_license = ET.parse(work / 'protocol.xml').getroot().find('copyright').text.strip()
+        with (result / 'LICENSE').open('a') as notices:
+            notices.write('\nVirtual keyboard protocol:\n\n' + protocol_license + '\n')
+        record = {'schema': 1, 'architecture': 'aarch64', 'source': pin, 'compiler_image': image,
+                  'files': {name: sha(result / name) for name in ('wtype', 'LICENSE')}}
+        (result / 'manifest.json').write_text(json.dumps(record, indent=2) + '\n')
+        output.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(result, output)
+    print('Startup cursor helper built:', output)
+
+
+if __name__ == '__main__':
+    main()

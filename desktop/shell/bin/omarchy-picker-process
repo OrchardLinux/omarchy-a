@@ -1,0 +1,73 @@
+#!/bin/bash
+# Start one transient OpenGL image picker, leaving the main Qt software shell alone.
+set -euo pipefail
+
+mode=${1:-}
+payload=${2:-}
+config=${OMARCHY_PATH:?}/shell/picker.qml
+runtime=${XDG_RUNTIME_DIR:-/run/user/$UID}
+
+picker_ipc() { qs ipc -n -p "$config" call -- picker "$@"; }
+picker_alive() { [[ $(picker_ipc ping 2>/dev/null) == ok ]]; }
+
+if [[ $mode == cancel ]]; then
+  if picker_alive; then
+    picker_ipc cancel "$payload" >/dev/null || true
+  elif [[ -n $payload ]]; then
+    : > "$payload"
+  fi
+  exit 0
+fi
+[[ $mode == open && -n $payload ]] || exit 2
+
+readarray -t request_files < <(python3 -c 'import json,sys; p=json.loads(sys.argv[1]); print(p.get("selectionFile", "")); print(p.get("doneFile", ""))' "$payload")
+selection_file=${request_files[0]:-}
+done_file=${request_files[1]:-}
+# omarchy-menu-images removes both temp files on normal completion. Only wake
+# a still-live caller after an abnormal picker exit; do not recreate orphans.
+release_waiter() { [[ -z $done_file || ! -e $selection_file || -e $done_file ]] || : > "$done_file"; }
+
+exec 9>"$runtime/omarchy-picker-process.lock"
+flock -x 9
+if picker_alive; then
+  existing=$(pgrep -f "^qs -p $config$" | head -n1 || true)
+  if picker_ipc open "$payload" >/dev/null; then
+    flock -u 9
+    # A replaced request must also release its caller if the picker crashes.
+    if [[ -n $existing ]]; then
+      while kill -0 "$existing" 2>/dev/null; do sleep 0.2; done
+    fi
+    release_waiter
+    exit 0
+  fi
+  release_waiter
+  exit 1
+fi
+
+umask 077
+request=$(mktemp "$runtime/omarchy-picker-request.XXXXXX")
+printf '%s' "$payload" > "$request"
+export OMARCHY_PICKER_REQUEST_FILE=$request
+# The inherited QT_QUICK_BACKEND=software prevents Omarchy's shader mask from
+# drawing; llvmpipe executes OpenGL on the CPU without changing the compositor.
+env -u QT_QUICK_BACKEND LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl \
+  qs -p "$config" >"$runtime/omarchy-picker.log" 2>&1 9>&- &
+child=$!
+ready=false
+for ((i=0; i<60; i++)); do
+  if picker_alive; then ready=true; break; fi
+  if ! kill -0 "$child" 2>/dev/null; then break; fi
+  sleep 0.1
+done
+flock -u 9
+if [[ $ready != true ]]; then
+  kill "$child" 2>/dev/null || true
+  wait "$child" 2>/dev/null || true
+  release_waiter
+  rm -f "$request"
+  echo 'Omarchy picker failed to start; see omarchy-picker.log' >&2
+  exit 1
+fi
+wait "$child" || true
+release_waiter
+rm -f "$request"

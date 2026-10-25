@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# omarchy:summary=Control a Bluetooth device
+# omarchy:group=bluetooth
+# omarchy:args=[pair|connect|disconnect|forget] <address>
+# omarchy:examples=omarchy bluetooth device connect 00:11:22:33:44:55
+
+set -e
+
+usage() {
+  echo "Usage: omarchy-bluetooth-device [pair|connect|disconnect|forget] <address>" >&2
+  exit 1
+}
+
+action=${1:-}
+address=${2:-}
+
+[[ $action == "pair" || $action == "connect" || $action == "disconnect" || $action == "forget" ]] || usage
+[[ $address =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || usage
+
+power_on() {
+  [[ $(timeout 2s bluetoothctl show 2>/dev/null) == *"Powered: yes"* ]] && return
+  # BlueZ cannot power an rfkill-blocked adapter on by itself. Refusal must
+  # reach the panel rather than leaving a spinner which disappears silently.
+  omarchy-bluetooth-power on || { echo 'Bluetooth power-on failed' >&2; return 1; }
+}
+
+trust_device() {
+  bluetoothctl trust "$address" >/dev/null 2>&1 || true
+}
+
+attempt() {
+  local operation=$1 duration=$2 output
+  if output=$(timeout "$duration" bluetoothctl "$operation" "$address" 2>&1); then
+    # Some bluetoothctl builds exit zero after printing an asynchronous
+    # BlueZ failure. The panel also waits for the actual device state.
+    [[ $output != *"Failed to "* && $output != *"org.bluez.Error"* ]] && return 0
+  fi
+  printf 'Bluetooth %s failed: %s\n' "$operation" "${output:-no response from BlueZ}" >&2
+  return 1
+}
+
+case "$action" in
+  pair)
+    power_on
+    # A dedicated UI/agent connection survives every authentication prompt.
+    # Never run a short-lived, agent-less bluetoothctl pair or approve blindly.
+    : "${XDG_RUNTIME_DIR:?No desktop runtime directory}"
+    result=$(mktemp "$XDG_RUNTIME_DIR/omarchy-bluetooth-pair.XXXXXX")
+    pair_ui=""
+    finish_pair() {
+      if [[ -n $pair_ui ]]; then
+        kill -TERM "$pair_ui" 2>/dev/null || true
+        wait "$pair_ui" 2>/dev/null || true
+      fi
+      rm -f -- "$result"
+    }
+    trap finish_pair EXIT
+    trap 'exit 2' HUP INT TERM
+    export OMARCHY_PAIR_RESULT="$result" OMARCHY_PAIR_ADDRESS="$address"
+    root=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
+    qs -p "$root/shell/bluetooth-pairing/shell.qml" &
+    pair_ui=$!
+    wait "$pair_ui" || true
+    pair_ui=""
+    status=1
+    read -r status < "$result" || status=1
+    case "$status" in 0|2) exit "$status";; *) exit 1;; esac
+    ;;
+  connect)
+    power_on
+    # Trust alone is not a bond. The panel routes unbonded peers to Pair.
+    attempt connect 20s
+    trust_device
+    ;;
+  disconnect)
+    attempt disconnect 10s
+    ;;
+  forget)
+    power_on
+    # A disconnected device is also removable; do not mask a real remove
+    # failure, but do not require disconnect to succeed when already offline.
+    timeout 10s bluetoothctl disconnect "$address" >/dev/null 2>&1 || true
+    attempt remove 10s
+    ;;
+esac

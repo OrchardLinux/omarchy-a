@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Build the keyboard and Omafox package from pinned source archives."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+from orchard_hardware import buildenv
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
+
+HERE = Path(__file__).resolve().parent
+IMAGE = 'localhost/omarchy-a-desktop-builder:arm64'
+
+
+def sha(path):
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def fetch(entry, target):
+    for url in entry['urls']:
+        print('Fetching:', url, flush=True)
+        try:
+            with urlopen(url, timeout=60) as response, target.open('wb') as output:
+                shutil.copyfileobj(response, output)
+        except (HTTPError, URLError, TimeoutError) as exc:
+            target.unlink(missing_ok=True)
+            print('Source unavailable:', exc, flush=True)
+            continue
+        if sha(target) != entry['sha256']:
+            target.unlink()
+            raise ValueError(f'Source archive hash differs: {url}')
+        return url
+    raise ValueError(f'No source archive available for {target.name}')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    output = args.output.resolve()
+    if output.exists():
+        parser.error(f'Output exists: {output}')
+    if not buildenv.native() and not shutil.which('podman'):
+        parser.error('Podman is required')
+    pins = json.loads((HERE / 'sources.json').read_text())
+    pkgbuild = HERE / 'packages/omafox/PKGBUILD'
+    if pins['omafox']['sha256'] not in pkgbuild.read_text():
+        parser.error('Omafox PKGBUILD and source pin differ')
+    (HERE / '.work').mkdir(exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix='sources-', dir=HERE / '.work') as temporary:
+            work = Path(temporary)
+            sources = work / 'sources'
+            sources.mkdir()
+            fetched = {
+                'wvkbd': fetch(pins['wvkbd'], sources / 'wvkbd-v0.20.tar.gz'),
+                'omafox': fetch(pins['omafox'], sources / 'omafox-1.1.0.tar.gz'),
+            }
+            print('Preparing AArch64 desktop builder...', flush=True)
+            buildenv.build(IMAGE, HERE / 'Containerfile', HERE)
+            print('Building keyboard and Omafox package...', flush=True)
+            script = r'''
+set -euo pipefail
+build=$(mktemp -d "$ORCHARD_TMP/desktop.XXXXXX")
+trap 'rm -rf "$build"' EXIT
+mkdir -p "$build/keyboard" "$build/omafox" "$build/result" "$ORCHARD_WORK/result"
+export HOME="$build/home"
+mkdir -p "$HOME"
+if ! grep -q preferred_buffer_scale /usr/include/wayland-client-protocol.h; then
+  echo 'Wayland headers lack the required surface scale events' >&2
+  exit 1
+fi
+tar -xzf "$ORCHARD_WORK/sources/wvkbd-v0.20.tar.gz" --strip-components=1 -C "$build/keyboard"
+patch --batch --fuzz=0 -d "$build/keyboard" -p1 < "$ORCHARD_RECIPE/keyboard/wvkbd-0.20.patch"
+make -C "$build/keyboard" -j2 wvkbd-mobintl
+readelf -h "$build/keyboard/wvkbd-mobintl" | grep -q 'Machine:.*AArch64'
+cp "$build/keyboard/wvkbd-mobintl" "$ORCHARD_WORK/result/wvkbd-mobintl"
+cp "$ORCHARD_RECIPE/packages/omafox/PKGBUILD" "$ORCHARD_RECIPE/packages/omafox/omafox.install" "$build/omafox/"
+cp "$ORCHARD_WORK/sources/omafox-1.1.0.tar.gz" "$build/omafox/omafox-1.1.0.tar.gz"
+cd "$build/omafox"
+PKGDEST="$build/result" makepkg --noconfirm --nodeps
+package="$build/result/omafox-1.1.0-1-aarch64.pkg.tar.xz"
+test -s "$package"
+bsdtar -xOf "$package" .PKGINFO | grep -x 'arch = aarch64' >/dev/null
+cp "$package" "$ORCHARD_WORK/result/omafox.pkg.tar.xz"
+'''
+            buildenv.run(IMAGE, ['bash', '-euc', script],
+                         [(work, '/work', False), (HERE, '/recipe', True)])
+            built = work / 'result'
+            files = {name: sha(built / name) for name in ('wvkbd-mobintl', 'omafox.pkg.tar.xz')}
+            meta = {'architecture': 'aarch64', 'source_urls': fetched,
+                    'source_sha256': {name: pins[name]['sha256'] for name in pins},
+                    'patch_sha256': sha(HERE / 'keyboard/wvkbd-0.20.patch'),
+                    'pkgbuild_sha256': sha(pkgbuild), 'files': files}
+            (built / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')
+            output.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(built, output)
+        print('Source-built desktop components:', output)
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        parser.error(str(exc))
+
+
+if __name__ == '__main__':
+    main()

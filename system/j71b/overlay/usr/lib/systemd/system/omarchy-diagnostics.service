@@ -1,0 +1,17 @@
+[Unit]
+Description=Authenticated Omarchy USB diagnostics
+After=local-fs.target
+ConditionPathExists=/run/recovery/authorized_keys
+ConditionPathExists=!/run/orchard/ssh-revoking.json
+ConditionPathExists=!/run/orchard/ssh-revoked.json
+
+[Service]
+Type=simple
+# Retire the listener first; shared revocation closes every other connection.
+KillMode=process
+ExecStart=/usr/libexec/omarchy-diagnostics
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

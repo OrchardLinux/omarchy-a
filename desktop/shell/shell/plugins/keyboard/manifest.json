@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "ipadlinux.keyboard",
+  "name": "On-screen keyboard",
+  "version": "1.0.0",
+  "author": "iPad Linux",
+  "description": "Show or dismiss the Wayland touch keyboard",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "On-screen keyboard",
+    "description": "Show or dismiss the Wayland touch keyboard",
+    "category": "Compositor",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}

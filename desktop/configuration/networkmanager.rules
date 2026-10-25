@@ -1,0 +1,8 @@
+// Disposable preview account only. A local active PAM/logind tablet session
+// may save a Wi-Fi connection that NetworkManager classifies as system-wide.
+// No root/sudo grant; inactive, remote and other users retain default policy.
+polkit.addRule(function(action, subject) {
+  if (action.id === "org.freedesktop.NetworkManager.settings.modify.system" &&
+      subject.user === "tablet" && subject.local && subject.active)
+    return polkit.Result.YES;
+});

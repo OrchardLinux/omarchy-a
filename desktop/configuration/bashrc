@@ -1,0 +1,2 @@
+# Disposable demo user's interactive prompt; noninteractive shells stay untouched.
+[[ $- == *i* ]] && command -v starship >/dev/null && eval "$(starship init bash)"

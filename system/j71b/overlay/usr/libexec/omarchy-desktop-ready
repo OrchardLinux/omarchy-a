@@ -1,0 +1,28 @@
+#!/usr/bin/python3
+"""Called by the constructed shell; attest a captured compositor frame, not PID 1."""
+import json
+import os
+from pathlib import Path
+import subprocess
+
+if os.getuid() != 1000:
+    raise SystemExit('Desktop readiness must come from the tablet session')
+runtime = Path(os.environ['XDG_RUNTIME_DIR'])
+socket = runtime / os.environ['WAYLAND_DISPLAY']
+if not socket.is_socket() or runtime.stat().st_uid != os.getuid():
+    raise SystemExit('No owned Wayland session')
+# Capture to /dev/null: no user screenshot is retained or transferred.
+try:
+    frame = subprocess.run(['grim', '-t', 'ppm', '/dev/null'], timeout=20,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if frame.returncode:
+        raise RuntimeError('Compositor frame capture failed: ' + frame.stderr.strip()[-2000:])
+except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+    (runtime / 'omarchy-desktop-ready.log').write_text(str(error) + '\n')
+    raise SystemExit(str(error))
+record = {'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+          'shell_pid': os.getppid(), 'wayland_socket': str(socket)}
+temporary = runtime / 'omarchy-desktop-ready.pending'
+temporary.write_text(json.dumps(record))
+os.replace(temporary, runtime / 'omarchy-desktop-ready.json')
+(runtime / 'omarchy-desktop-ready.log').write_text('Compositor frame captured; desktop readiness recorded.\n')

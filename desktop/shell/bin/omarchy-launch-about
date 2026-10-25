@@ -1,0 +1,7 @@
+#!/bin/bash
+# Labwc adapter for Omarchy's stock About menu action. The current portrait
+# Foot grid is 89x34; keep the real fastfetch readout open at that width.
+set -euo pipefail
+export LC_ALL=${LC_ALL:-C.UTF-8}
+exec foot --app-id=org.omarchy.about -W 89x34 -e bash -lc \
+  'fastfetch --config "$HOME/.config/fastfetch/config.jsonc"; exec bash -i'

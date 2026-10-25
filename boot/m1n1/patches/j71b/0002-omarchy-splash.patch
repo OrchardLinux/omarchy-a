@@ -1,0 +1,99 @@
+diff --git a/src/fb.c b/src/fb.c
+index 2b85d9a..ccb342a 100644
+--- a/src/fb.c
++++ b/src/fb.c
+@@ -10,6 +10,9 @@
+ #include "types.h"
+ #include "utils.h"
+ #include "xnuboot.h"
++#ifdef OMARCHY_SPLASH
++#include "omarchy-logo.h"
++#endif
+ 
+ #define FB_DEPTH_MASK 0xff
+ 
+@@ -246,8 +249,26 @@ void fb_display_logo(void)
+     if (!console.initialized)
+         return;
+ 
++#ifdef OMARCHY_SPLASH
++    /* Match Pongo's visible geometry; publish the complete frame only once. */
++    memset32(fb.ptr, 0, fb.size);
++    if (fb.width >= OMARCHY_LOGO_SIZE && fb.height >= OMARCHY_LOGO_SIZE) {
++        const u32 left = (fb.width - OMARCHY_LOGO_SIZE) / 2;
++        const u32 top = (fb.height - OMARCHY_LOGO_SIZE) / 2;
++        const rgb_t green = {0x9e, 0xce, 0x6a};
++        for (u32 y = 0; y < OMARCHY_LOGO_SIZE; ++y) {
++            for (u32 x = 0; x < OMARCHY_LOGO_SIZE; ++x) {
++                const u32 bit = y * OMARCHY_LOGO_SIZE + x;
++                if (omarchy_logo_mask[bit / 8] & (0x80u >> (bit % 8)))
++                    fb_set_pixel(left + x, top + y, green);
++            }
++        }
++    }
++    fb_update();
++#else
+     printf("fb: display logo\n");
+     fb_blit_logo(logo);
++#endif
+ }
+ 
+ void fb_restore_logo(void)
+@@ -255,9 +276,13 @@ void fb_restore_logo(void)
+     if (!console.initialized)
+         return;
+ 
++#ifdef OMARCHY_SPLASH
++    fb_display_logo();
++#else
+     if (!orig_logo.ptr)
+         return;
+     fb_blit_logo(&orig_logo);
++#endif
+ }
+ 
+ void fb_improve_logo(void)
+@@ -385,6 +410,12 @@ struct iodev iodev_fb = {
+ 
+ static void fb_clear_console(void)
+ {
++#ifdef OMARCHY_SPLASH
++    /* Do not erase the inherited splash during init or the Linux handoff. */
++    console.cursor.col = 0;
++    console.cursor.row = 0;
++    return;
++#endif
+     for (u32 row = 0; row < console.cursor.max_row; ++row)
+         fb_clear_font_row(row);
+ 
+@@ -477,6 +508,9 @@ void fb_init(bool clear)
+         }
+     }
+ 
++#ifdef OMARCHY_SPLASH
++    UNUSED(clear);
++#else
+     if (clear) {
+         memset32(fb.ptr, 0, fb.size);
+     } else {
+@@ -484,6 +518,7 @@ void fb_init(bool clear)
+         memset32(fb.ptr, 0, min(256, fb.size));
+     }
+ 
++#endif
+     fb_clear_console();
+ 
+     printf("fb console: max rows %d, max cols %d\n", console.cursor.max_row,
+@@ -492,6 +527,12 @@ void fb_init(bool clear)
+ 
+ void fb_set_active(bool active)
+ {
++#ifdef OMARCHY_SPLASH
++    /* Keep UART/USB/log sinks, but never enable the framebuffer text sink. */
++    UNUSED(active);
++    console.active = false;
++    return;
++#endif
+     console.active = active;
+     if (active)
+         iodev_console_kick();

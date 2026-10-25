@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""Small session controller for the theme-matched Wayland keyboard."""
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+import tomllib
+
+root = Path(os.environ["OMARCHY_PATH"])
+runtime = Path(os.environ["XDG_RUNTIME_DIR"])
+binary = root / "trials/wvkbd-mobintl-v0.20-font18-special15-state"
+pid_file = runtime / "omarchy-keyboard.pid"
+state_file = runtime / "omarchy-keyboard-visible"
+log_file = runtime / "omarchy-keyboard.log"
+
+
+def live_pid():
+    try:
+        pid = int(pid_file.read_text().strip())
+        return pid if Path(f"/proc/{pid}/exe").resolve() == binary.resolve() else None
+    except (OSError, ValueError):
+        return None
+
+
+def launch():
+    with log_file.open("ab") as log:
+        subprocess.Popen([str(Path(__file__).resolve()), "run"], stdin=subprocess.DEVNULL,
+                         stdout=log, stderr=log, start_new_session=True)
+
+
+def wait_for_start():
+    for _ in range(40):
+        if pid := live_pid():
+            return pid
+        time.sleep(0.05)
+    raise SystemExit("Keyboard did not start; see " + str(log_file))
+
+
+mode = sys.argv[1] if len(sys.argv) > 1 else "run"
+if mode == "toggle":
+    if pid := live_pid():
+        os.kill(pid, signal.SIGRTMIN)
+    else:
+        launch()
+        os.kill(wait_for_start(), signal.SIGUSR2)
+elif mode == "restart":
+    if pid := live_pid():
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(40):
+            if not live_pid():
+                break
+            time.sleep(0.05)
+        if live_pid():
+            raise SystemExit("Prior keyboard did not stop")
+    launch()
+elif mode == "run":
+    if (pid := live_pid()) and pid != os.getpid():
+        raise SystemExit("Keyboard already running")
+    colors = tomllib.loads((Path.home() / ".local/state/omarchy/current/theme/colors.toml").read_text())
+    def color(key, fallback=None):
+        value = colors.get(key, colors.get(fallback, ""))
+        if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
+            raise ValueError("Invalid Omarchy colour: " + key)
+        return value[1:]
+    args = [str(binary), "--hidden", "--no-popup", "-H", "270", "-L", "220",
+            "--bg", color("background"), "--fg", color("lighter_background"),
+            "--fg-sp", color("selection"), "--press", color("accent"),
+            "--press-sp", color("accent"), "--text", color("foreground"),
+            "--text-sp", color("bright_foreground", "foreground")]
+    state_file.write_text("0\n")
+    pid_file.write_text(str(os.getpid()) + "\n")
+    os.environ["WVKBD_STATE_FILE"] = str(state_file)
+    os.execv(str(binary), args)
+else:
+    raise SystemExit("Usage: omarchy-keyboard [run|toggle|restart]")

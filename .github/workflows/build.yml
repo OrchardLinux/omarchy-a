@@ -1,0 +1,251 @@
+name: Build Omarchy A
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      hardware_tag:
+        description: Published hardware components and wheel
+        required: true
+        default: v0.1.9
+      cli_tag:
+        description: Published compatible CLI wheel requirements
+        required: true
+        default: v0.1.8
+permissions:
+  contents: read
+env:
+  HARDWARE_TAG: ${{ inputs.hardware_tag || 'v0.1.9' }}
+  CLI_TAG: ${{ inputs.cli_tag || 'v0.1.8' }}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Validate release tag
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: '[[ "$TAG" =~ ^v[A-Za-z0-9][A-Za-z0-9._-]*$ ]]'
+      - run: bash ci/dependencies
+      - run: .venv/bin/python -m unittest discover -s tests -v
+  pongo:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: brew install imagemagick librsvg
+      - name: Build branded Pongo and matching loader artwork
+        run: |
+          python boot/build-pongo.py --output out/boot/pongo.bin
+          python boot/pongo/generate-logo.py --size 480 --output out/boot/omarchy-logo.h
+          python boot/pongo/test-renderer.py
+          tar -C out -czf out/boot-inputs.tar.gz boot
+          tar -C boot/pongo/.work/source --exclude=.git -czf out/pongo-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omarchy-boot-inputs
+          path: |
+            out/boot-inputs.tar.gz
+            out/pongo-source.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+  loader:
+    needs: pongo
+    runs-on: ubuntu-24.04-arm
+    container: debian:bookworm
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      ORCHARD_BUILD_NATIVE: '1'
+      ORCHARD_BUILD_ENV_ID: debian-bookworm-arm64-llvm19-rust1.90.0
+      RUSTUP_TOOLCHAIN: '1.90.0'
+    steps:
+      - run: apt-get update && apt-get install -y git curl ca-certificates python3 python3-venv
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: omarchy-boot-inputs
+          path: out/downloads
+      - run: |
+          bash ci/dependencies
+          HW=$(.venv/bin/python -c 'from pathlib import Path; import orchard_hardware; print(Path(orchard_hardware.__file__).parent)')
+          bash "$HW/boot/m1n1/install-toolchain"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          tar -xzf out/downloads/boot-inputs.tar.gz -C out
+      - name: Build branded loader with the shared recipe
+        run: |
+          python boot/build-loader --logo-header out/boot/omarchy-logo.h --output out/boot/m1n1.bin
+          tar -C out -czf out/distro-boot.tar.gz boot
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omarchy-loader
+          path: out/distro-boot.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+  userspace:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: ubuntu-24.04-arm
+    container: docker.io/arch4edu/archlinuxarm@sha256:1db43d1af9917db5fd34af3dab64e2b229a21240e81bb765e3d2d3c34739d587
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    env:
+      ORCHARD_BUILD_NATIVE: '1'
+      ORCHARD_BUILD_ENV_ID: archlinuxarm-1db43d1-desktop-and-system
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install the same signed-package toolchains as local builds
+        run: |
+          bash desktop/install-toolchain
+          bash desktop/labwc/install-toolchain
+          bash system/install-toolchain
+          bash ci/dependencies
+          .venv/bin/python -m pip install -r requirements-build.txt
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          useradd --create-home --uid 2000 builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+      - name: Build source components as an unprivileged user
+        run: |
+          runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
+            python desktop/build --output out/desktop
+          runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
+            python desktop/build-cursor-helper --output out/cursor
+          runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
+            python desktop/build-bluetooth-tools --output out/bluetooth
+          runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
+            python desktop/build-labwc --output out/labwc
+      - name: Build the signed Arch root filesystem
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          VERSION="preview-$RUN_ID"
+          if [[ "$REF_TYPE" == tag ]]; then VERSION="${REF_NAME#v}"; fi
+          bash system/build-rootfs j71b --desktop out/desktop --release "$VERSION" --output out/base
+          tar -C out -czf out/omarchy-userspace.tar.gz base cursor bluetooth labwc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omarchy-userspace
+          path: out/omarchy-userspace.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+  assets:
+    needs: [test, pongo, loader, userspace]
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: omarchy-*
+          path: out/downloads
+          merge-multiple: true
+      - run: sudo apt-get update && sudo apt-get install -y zstd
+      - run: bash ci/dependencies
+      - name: Assemble, audit and stage hosted assets
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          . .venv/bin/activate
+          tar -xzf out/downloads/omarchy-userspace.tar.gz -C out
+          tar -xzf out/downloads/distro-boot.tar.gz -C out
+          VERSION="preview-$RUN_ID"
+          TAG="v$VERSION"
+          if [[ "$REF_TYPE" == tag ]]; then TAG="$REF_NAME"; VERSION="${TAG#v}"; fi
+          python -m pip install -r requirements-build.txt
+          python -m release.j71b.build --release "$VERSION" \
+            --base out/base/rootfs.tar.gz --base-receipt out/base/rootfs.tar.gz.json \
+            --modules-dir out/components/kernel/lib/modules --loader out/boot/m1n1.bin \
+            --kernel out/components/kernel/Image.gz --dtb out/components/kernel/j71b.dtb \
+            --pongo out/boot/pongo.bin --busybox out/components/boot/busybox \
+            --dropbear out/components/boot/dropbear --dropbearkey out/components/boot/dropbearkey \
+            --cursor-tools out/cursor --bluetooth-tools out/bluetooth --labwc-tools out/labwc \
+            --output out/release
+          python -m release.j71b.audit out/release/j71b-checkm8-pongo.toml
+          orchard resolve out/release/index.toml
+          python -m release.publish --tag "$TAG" --release-dir out/release --output out/publication
+          cp out/release/rootfs.json out/release/build-receipt.json out/publication/
+          cp out/downloads/pongo-source.tar.gz out/publication/
+          git archive --format=tar.gz -o out/publication/omarchy-linux-source.tar.gz HEAD
+          (cd out/publication && sha256sum ./* > ../SHA256SUMS && mv ../SHA256SUMS .)
+      - name: Attest public build
+        if: toJSON(github.event.repository.private) == 'false'
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: out/publication/*
+      - name: Include public attestation bundle
+        if: toJSON(github.event.repository.private) == 'false'
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" "out/publication/omarchy-a-build.sigstore.jsonl"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omarchy-release-assets
+          path: out/publication/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+  draft:
+    if: github.ref_type == 'tag'
+    needs: assets
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: omarchy-release-assets
+          path: assets
+      - name: Create draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" assets/* --draft --verify-tag --title "$TAG" \
+            --notes 'Experimental image: automatic tablet login and unrestricted passwordless sudo; no local access protection. Automated checks do not qualify hardware. Publish compatible shared-launcher assets before announcing launch support.'

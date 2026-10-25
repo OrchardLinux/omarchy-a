@@ -1,0 +1,77 @@
+--- a/include/input/keyboard.h
++++ b/include/input/keyboard.h
+@@ -25,6 +25,7 @@
+ };
+ 
+ void keyboard_reset_current_keybind(void);
++void keyboard_cancel_super_release(void);
+ void keyboard_configure(struct seat *seat, struct wlr_keyboard *kb,
+ 	bool is_virtual);
+ 
+--- a/src/input/keyboard.c
++++ b/src/input/keyboard.c
+@@ -3,6 +3,7 @@
+ #include "input/keyboard.h"
+ #include <assert.h>
+ #include <stdlib.h>
++#include <xkbcommon/xkbcommon-keysyms.h>
+ #include <wlr/config.h>
+ #include <wlr/interfaces/wlr_keyboard.h>
+ #include <wlr/types/wlr_keyboard_group.h>
+@@ -53,6 +54,18 @@
+ keyboard_reset_current_keybind(void)
+ {
+ 	cur_keybind = NULL;
++}
++
++/* A Super+pointer gesture is not a standalone Super tap. Keep unrelated
++ * release bindings (power, home, etc.) intact. */
++void
++keyboard_cancel_super_release(void)
++{
++	if (cur_keybind && cur_keybind->on_release
++			&& (keybind_contains_keysym(cur_keybind, XKB_KEY_Super_L)
++			|| keybind_contains_keysym(cur_keybind, XKB_KEY_Super_R))) {
++		cur_keybind = NULL;
++	}
+ }
+ 
+ static void
+--- a/src/input/cursor.c
++++ b/src/input/cursor.c
+@@ -1139,6 +1139,7 @@
+ bool
+ cursor_process_button_press(struct seat *seat, uint32_t button, uint32_t time_msec)
+ {
++	keyboard_cancel_super_release();
+ 	struct cursor_context ctx = get_cursor_context();
+ 
+ 	/* Used on next button release to check if it can close menu or select menu item */
+@@ -1438,6 +1439,9 @@
+ 	 */
+ 	struct seat *seat = wl_container_of(listener, seat, on_cursor.axis);
+ 	struct wlr_pointer_axis_event *event = data;
++	if (event->delta != 0 || event->delta_discrete != 0) {
++		keyboard_cancel_super_release();
++	}
+ 	idle_manager_notify_activity(seat->wlr_seat);
+ 	cursor_set_visible(seat, /* visible */ true);
+ 
+--- a/src/input/touch.c
++++ b/src/input/touch.c
+@@ -14,6 +14,7 @@
+ #include "config/rcxml.h"
+ #include "config/touch.h"
+ #include "idle.h"
++#include "input/keyboard.h"
+ #include "labwc.h"
+ #include "ssd.h"
+ #include "view.h"
+@@ -131,6 +132,7 @@
+ {
+ 	struct seat *seat = wl_container_of(listener, seat, touch_down);
+ 	struct wlr_touch_down_event *event = data;
++	keyboard_cancel_super_release();
+ 
+ 	idle_manager_notify_activity(seat->wlr_seat);
+ 

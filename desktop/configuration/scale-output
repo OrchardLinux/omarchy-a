@@ -1,0 +1,12 @@
+#!/bin/bash
+# Scale the single native panel, accepting both current/preferred flag lists.
+# Never change its timing or force the VM's Virtual-1 mode.
+set -euo pipefail
+state=$(wlr-randr)
+mapfile -t outputs < <(awk '/^[^[:space:]]/ {print $1}' <<< "$state")
+if (( ${#outputs[@]} != 1 )) || ! grep -q '  Enabled: yes' <<< "$state" ||
+   ! grep -Eq '^[[:space:]]+(1536x2048|2048x1536) px, .*current' <<< "$state"; then
+  echo 'Native single-panel mode not established; left scale unchanged' >&2
+  exit 0
+fi
+wlr-randr --output "${outputs[0]}" --scale 2

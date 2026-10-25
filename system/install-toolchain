@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+sed -i '/^DownloadUser = /d; /^CheckSpace/a DisableSandboxFilesystem\nDisableSandboxSyscalls' /etc/pacman.conf
+# shellcheck disable=SC2016 # pacman expands these repository placeholders.
+printf 'Server = https://fl.us.mirror.archlinuxarm.org/$arch/$repo\n' > /etc/pacman.d/mirrorlist
+pacman-key --init
+pacman-key --populate archlinuxarm
+pacman -Sy --noconfirm --needed arch-install-scripts python
+pacman -Sc --noconfirm

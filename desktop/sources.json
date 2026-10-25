@@ -1,0 +1,17 @@
+{
+  "wvkbd": {
+    "version": "v0.20",
+    "urls": [
+      "https://git.sr.ht/~proycon/wvkbd/archive/v0.20.tar.gz",
+      "https://distcache.FreeBSD.org/ports-distfiles/wvkbd-v0.20.tar.gz"
+    ],
+    "sha256": "330e7d41e2ccf3f984af701c0d055d919cff66710dfe05ce9d77e4ae6e1adc16"
+  },
+  "omafox": {
+    "version": "v1.1.0",
+    "urls": [
+      "https://github.com/cover/omafox/archive/refs/tags/v1.1.0.tar.gz"
+    ],
+    "sha256": "b610174e19edf2940127761f2883a14e5ba8644bc42c75ead8148305c7caa4f9"
+  }
+}

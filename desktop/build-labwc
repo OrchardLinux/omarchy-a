@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Build pinned Labwc with a narrow standalone-Super pointer-cancellation fix."""
+import argparse
+import hashlib
+import io
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import tarfile
+import tempfile
+from orchard_hardware import buildenv
+import urllib.request
+
+HERE = Path(__file__).resolve().parent
+IMAGE = 'localhost/omarchy-a-labwc-builder:arm64'
+
+
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--archive', type=Path)
+    args = parser.parse_args()
+    if args.output.exists():
+        parser.error('Choose a new Labwc output directory')
+    pin = json.loads((HERE / 'labwc/source.json').read_text())
+    patch = HERE / 'labwc/0001-cancel-super-tap-on-pointer.patch'
+    if sha(patch) != pin['patch_sha256']:
+        parser.error('Labwc patch differs from pin')
+    data = args.archive.read_bytes() if args.archive else urllib.request.urlopen(pin['url'], timeout=30).read()
+    if hashlib.sha256(data).hexdigest() != pin['sha256']:
+        parser.error('Labwc source differs from pin')
+    buildenv.build(IMAGE, HERE / 'labwc/Containerfile', HERE / 'labwc')
+    image_id = buildenv.identity(IMAGE)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=args.output.parent, prefix='.labwc-') as directory:
+        work = Path(directory).resolve()
+        source, output = work / 'source', work / 'output'
+        source.mkdir(); output.mkdir()
+        with tarfile.open(fileobj=io.BytesIO(data)) as archive:
+            for entry in archive:
+                relative = Path(*Path(entry.name).parts[1:])
+                if '..' in relative.parts or relative.is_absolute():
+                    raise ValueError('Unsafe Labwc source member')
+                if not entry.isfile():
+                    continue
+                target = source / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.extractfile(entry).read())
+                target.chmod(entry.mode & 0o777)
+        subprocess.run(['patch', '-p1', '-i', str(patch.resolve())], cwd=source, check=True)
+        recipe = '''
+set -eu
+test "$(uname -m)" = aarch64
+meson setup "$ORCHARD_WORK/build" "$ORCHARD_SOURCE" --buildtype=release --wrap-mode=nofallback -Dman-pages=disabled -Dlabnag=disabled -Dxwayland=enabled -Dnls=enabled -Dsystemd-session=disabled
+meson compile -C "$ORCHARD_WORK/build" -j2
+cp "$ORCHARD_WORK/build/labwc" "$ORCHARD_OUTPUT/labwc"
+pacman -Q > "$ORCHARD_OUTPUT/packages.lock"
+cc --version > "$ORCHARD_OUTPUT/compiler.txt"
+"$ORCHARD_OUTPUT/labwc" --version > "$ORCHARD_OUTPUT/version.txt"
+'''
+        buildenv.run(IMAGE, ['sh', '-c', recipe],
+                     [(source, '/source', True), (output, '/output', False)], root=True)
+        shutil.copyfile(source / 'LICENSE', output / 'LICENSE')
+        shutil.copyfile(patch, output / '0001-cancel-super-tap-on-pointer.patch')
+        (output / 'source.tar.gz').write_bytes(data)
+        record = {'schema': 1, 'source': pin, 'compiler_image': image_id,
+                  'build_options': ['release', 'nofallback', 'xwayland=enabled', 'nls=enabled', 'labnag=disabled'],
+                  'files': {p.name: sha(p) for p in sorted(output.iterdir())}}
+        (output / 'manifest.json').write_text(json.dumps(record, indent=2) + '\n')
+        shutil.move(output, args.output)
+    print('Labwc component built:', args.output)
+
+
+if __name__ == '__main__':
+    main()

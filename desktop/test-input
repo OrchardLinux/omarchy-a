@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Validate pairing/keybindings in disposable native userspace, never hardware."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+
+PROJECT = Path(__file__).resolve().parent.parent
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--manifest', required=True, type=Path, help='previously audited public userspace fixture')
+    parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--artifact-only', action='store_true', help='audit/test shipped components without source overlays')
+    parser.add_argument('--pointer-helper', required=True, type=Path)
+    parser.add_argument('--bluetooth-tools', default=PROJECT / 'out/desktop/bluetooth-tools', type=Path)
+    parser.add_argument('--labwc-tools', default=PROJECT / 'out/desktop/labwc-tools', type=Path)
+    args = parser.parse_args()
+    if args.output.exists():
+        parser.error('Choose a new evidence directory')
+    from release.manifests import read_release
+    record = read_release(args.manifest)
+    item = record['assets']['root']
+    relative = Path(item['file'])
+    if relative.is_absolute() or '..' in relative.parts:
+        parser.error('Unsafe fixture asset path')
+    archive = args.manifest.parent / relative
+    digest = hashlib.sha256()
+    with archive.open('rb') as source:
+        for block in iter(lambda: source.read(1048576), b''):
+            digest.update(block)
+    if archive.is_symlink() or archive.stat().st_size != item['bytes'] or digest.hexdigest() != item['sha256']:
+        parser.error('Public userspace fixture differs from manifest')
+    if args.artifact_only:
+        from release.j71b.audit import audit
+        audit(args.manifest)
+    else:
+        from release.j71b.public_root import bluetooth_files, labwc_files
+        bluetooth_files(args.bluetooth_tools)
+        labwc_files(args.labwc_tools)
+    args.output.mkdir(parents=True)
+    output = args.output.resolve()
+    sources = {
+        archive: '/release/rootfs.tar.zst',
+        PROJECT / 'desktop/test-input-in-container': '/run-test.sh',
+        PROJECT / 'tests/native_bluetooth_pairing.py': '/source/wire-test.py',
+        PROJECT / 'tests/native_launcher_keys.py': '/source/key-test.py',
+        args.pointer_helper: '/pointer-helper',
+    }
+    if not args.artifact_only:
+        sources.update({
+            PROJECT / 'system/j71b/overlay/usr/libexec/omarchy-bluetooth-pair': '/source/agent',
+            PROJECT / 'system/j71b/overlay/usr/lib/omarchy-bluetooth/policy.py': '/source/policy.py',
+            args.bluetooth_tools / 'lib/dbus_next': '/source/dbus_next',
+            PROJECT / 'desktop/shell/shell/bluetooth-pairing': '/source/ui',
+            PROJECT / 'desktop/shell/bin/omarchy-bluetooth-device': '/source/pairing-cli.sh',
+            PROJECT / 'desktop/shell/labwc-rc.xml': '/source/rc.xml',
+            args.labwc_tools / 'labwc': '/source/labwc',
+        })
+    command = ['podman', 'run', '--rm', '--network', 'none', '--userns', 'keep-id:uid=0,gid=0',
+               '--cap-add', 'SYS_ADMIN', '--security-opt', 'seccomp=unconfined',
+               '-e', 'OMA_INPUT_ARTIFACT_ONLY=' + ('1' if args.artifact_only else '0')]
+    for path, destination in sources.items():
+        command.extend(['-v', str(path.resolve()) + ':' + destination + ':ro'])
+    command.extend(['-v', str(output) + ':/evidence:rw', 'localhost/orchard-hardware-kernel-toolchain:bookworm', 'sh', '/run-test.sh'])
+    with (output / 'native.log').open('wb') as log:
+        result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+    verdict = {'passed': result.returncode == 0, 'hardware_validated': False,
+               'scope': ('finished public artifact' if args.artifact_only else 'source overlay on public userspace fixture')
+                        + '; private fake BlueZ bus and virtual input',
+               'fixture_release': record['release'], 'fixture_sha256': item['sha256']}
+    (output / 'verdict.json').write_text(json.dumps(verdict, indent=2) + '\n')
+    print(json.dumps(verdict, indent=2))
+    raise SystemExit(result.returncode)
+
+
+if __name__ == '__main__':
+    import sys
+    sys.path.insert(0, str(PROJECT))
+    main()

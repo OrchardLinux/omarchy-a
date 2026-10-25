@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "idle": { "screensaver": 0, "lock": 0 },
+  "bar": {
+    "position": "top",
+    "background": "opaque",
+    "layout": {
+      "left": [{ "id": "omarchy.menu" }],
+      "centerBegin": [],
+      "center": [{ "id": "omarchy.clock", "format": "HH:mm" }],
+      "centerEnd": [],
+      "right": [
+        { "id": "ipadlinux.keyboard" },
+        { "id": "omarchy.bluetooth" },
+        { "id": "omarchy.network" },
+        { "id": "omarchy.monitor" },
+        { "id": "omarchy.power" }
+      ]
+    }
+  },
+  "disabledPlugins": [
+    "omarchy.dock", "omarchy.lock", "omarchy.idle", "omarchy.polkit",
+    "omarchy.notifications", "omarchy.osd", "omarchy.media",
+    "omarchy.battery", "omarchy.nightlight", "omarchy.remote-session",
+    "omarchy.reminders", "omarchy.emojis",
+    "omarchy.clipboard"
+  ],
+  "plugins": []
+}

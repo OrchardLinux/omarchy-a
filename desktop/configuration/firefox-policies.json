@@ -1,0 +1,10 @@
+{
+  "policies": {
+    "ExtensionSettings": {
+      "@omafox": {
+        "installation_mode": "normal_installed",
+        "install_url": "file:///usr/lib/firefox/distribution/extensions/@omafox.xpi"
+      }
+    }
+  }
+}

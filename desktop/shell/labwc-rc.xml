@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <theme>
+    <name>Omarchy-Current</name>
+    <cornerRadius>0</cornerRadius>
+    <dropShadows>no</dropShadows>
+    <!-- Unlike Hyprland, labwc retains titlebar controls for desktop mouse use. -->
+    <titlebar>
+      <layout>:iconify,max,close</layout>
+      <showTitle>yes</showTitle>
+    </titlebar>
+    <font place="ActiveWindow" name="monospace" size="9" />
+    <font place="InactiveWindow" name="monospace" size="9" />
+  </theme>
+  <keyboard>
+    <default />
+    <!-- Startup-only reserved chord; leave ordinary Alt+H to applications. -->
+    <keybind key="A-W-h">
+      <action name="HideCursor" />
+    </keybind>
+    <!-- Physical gpio-keys: VOLUMEUP/VOLUMEDOWN adjust the panel, not audio. -->
+    <keybind key="XF86AudioRaiseVolume">
+      <action name="Execute" command="omarchy-brightness-display --no-osd +5%" />
+    </keybind>
+    <keybind key="XF86AudioLowerVolume">
+      <action name="Execute" command="omarchy-brightness-display --no-osd -5%" />
+    </keybind>
+    <!-- Short power-button release blanks/restores the backlight, not suspend.
+         Release-only avoids auto-repeat toggling while the key is held. -->
+    <keybind key="XF86PowerOff" onRelease="yes" allowWhenLocked="yes">
+      <action name="Execute" command="/usr/libexec/omarchy-screen-toggle" />
+    </keybind>
+    <!-- Modifier-only release bindings preserve ordinary Cmd/Super chords. -->
+    <keybind key="Super_L" onRelease="yes">
+      <action name="Execute" command="omarchy-shell omarchy.dock apps" />
+    </keybind>
+    <keybind key="Super_R" onRelease="yes">
+      <action name="Execute" command="omarchy-shell omarchy.dock apps" />
+    </keybind>
+    <!-- J71b Home emits KEY_HOMEPAGE (172), not navigation KEY_HOME. -->
+    <keybind key="XF86HomePage" onRelease="yes">
+      <action name="Execute" command="omarchy-shell omarchy.dock apps" />
+    </keybind>
+  </keyboard>
+  <touch mouseEmulation="no" />
+  <snapping>
+    <!-- Keep titlebar double-click maximize; top-edge dragging tiles upward. -->
+    <topMaximize>no</topMaximize>
+  </snapping>
+</labwc_config>
