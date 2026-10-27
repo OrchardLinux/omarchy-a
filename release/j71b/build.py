@@ -14,15 +14,48 @@ from importlib.metadata import version as package_version
 PROJECT = Path(__file__).resolve().parents[2]
 
 
+def resolve_kernel(args):
+    """Use an explicit coherent bundle, or Orchard's shared kernel builder."""
+    supplied = [getattr(args, name) is not None for name in ('kernel', 'dtb', 'modules_dir')]
+    if any(supplied):
+        if not all(supplied):
+            raise ValueError('Provide --kernel, --dtb and --modules-dir together, or omit all three')
+        return
+    from orchard_cli.build import prepare_kernel
+    kernel = prepare_kernel(device='j71b')
+    args.kernel = kernel / 'Image.gz'
+    args.dtb = kernel / 'j71b.dtb'
+    args.modules_dir = kernel / 'lib/modules'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('base', 'base-receipt', 'modules-dir', 'loader', 'kernel', 'dtb',
-                 'pongo', 'busybox', 'dropbear', 'dropbearkey', 'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
+    for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear', 'dropbearkey',
+                 'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
+    for name in ('kernel', 'dtb', 'modules-dir'):
+        parser.add_argument('--' + name, type=Path,
+                            help='explicit kernel bundle; omit all three kernel inputs to use the Orchard cache')
     parser.add_argument('--release', required=True)
     parser.add_argument('--cleanup-receipt', type=Path, action='append', default=[],
                         help='compatible previous public root receipt for legacy staging cleanup')
     args = parser.parse_args()
+    if args.output.exists() or args.output.is_symlink():
+        parser.error('Choose a new release output directory')
+    # Reject missing distro inputs before a cache miss can start a kernel build.
+    for name in ('base', 'base_receipt', 'loader', 'pongo', 'busybox', 'dropbear', 'dropbearkey'):
+        if not getattr(args, name).is_file():
+            parser.error(f'Missing input file: {getattr(args, name)}')
+    for name in ('cursor_tools', 'bluetooth_tools', 'labwc_tools'):
+        if not getattr(args, name).is_dir():
+            parser.error(f'Missing tools directory: {getattr(args, name)}')
+    for receipt in args.cleanup_receipt:
+        if not receipt.is_file():
+            parser.error(f'Missing cleanup receipt: {receipt}')
+    try:
+        resolve_kernel(args)
+    except ValueError as error:
+        parser.error(str(error))
     root = build_root(args.base, args.base_receipt, args.modules_dir, args.dropbear,
                       args.output, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools)
     command = [sys.executable, '-m', 'orchard_hardware.image.recovery']
