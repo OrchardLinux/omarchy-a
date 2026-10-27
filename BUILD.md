@@ -23,7 +23,7 @@ python -m pip install --only-binary=:all: -r \
 python -m pip install -r requirements-build.txt
 ```
 
-Use `orchard-hardware>=0.1.9,<0.2`. To test unpublished packages, install compatible CLI/hardware wheels by their explicit filesystem paths instead of using the hosted requirements. No sibling checkout is required.
+Use `orchard-hardware>=0.1.10,<0.2`. To test unpublished packages, install compatible CLI/hardware wheels by their explicit filesystem paths instead of using the hosted requirements. No sibling checkout is required.
 
 ## Produce components
 
