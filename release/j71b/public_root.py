@@ -9,8 +9,9 @@ from pathlib import Path, PurePosixPath
 import tarfile
 import tempfile
 
-from .common import group_membership, SYSTEM, NETWORK_RULE
+from .common import group_membership, SYSTEM, NETWORK_RULE, overlay, network_rule
 from .runtime import PROJECT, files as runtime_files
+from release.devices import SHARED_SYSTEM, asset, device as device_spec
 from release.package_permissions import privileged_entries, apply as apply_package_permissions
 
 
@@ -115,11 +116,13 @@ def desktop_additions():
     return {name: ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644)}
 
 
-def system_files(kernel_release):
+def overlay_files(directory, kernel_release, names=None):
     additions = {}
-    for path in sorted(SYSTEM.rglob('*')):
+    for path in sorted(directory.rglob('*')):
         if path.is_file() and not path.is_symlink():
-            name = path.relative_to(SYSTEM).as_posix()
+            name = path.relative_to(directory).as_posix()
+            if names is not None and name not in names:
+                continue
             data = path.read_bytes().replace(b'@KERNEL_RELEASE@', kernel_release.encode())
             mode = 0o440 if name.startswith('etc/sudoers.d/') else (
                 0o755 if name.startswith('usr/libexec/') else 0o644)
@@ -127,7 +130,23 @@ def system_files(kernel_release):
     return additions
 
 
-def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_tools, bluetooth_tools=None, labwc_tools=None):
+def system_files(kernel_release, profile='j71b'):
+    if profile == 'j71b':
+        return overlay_files(SYSTEM, kernel_release)
+    # Other devices reuse J71b's device-independent desktop/session files.
+    additions = overlay_files(SYSTEM, kernel_release, SHARED_SYSTEM)
+    if set(additions) != set(SHARED_SYSTEM):
+        raise ValueError('Missing shared system file')
+    for name, value in overlay_files(overlay(profile), kernel_release).items():
+        if name in additions:
+            raise ValueError('Device system layer overrides a shared file: ' + name)
+        additions[name] = value
+    return additions
+
+
+def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_tools, bluetooth_tools=None, labwc_tools=None,
+          profile='j71b'):
+    device = device_spec(profile)
     if outdir.exists():
         raise ValueError('Choose a new release output directory')
     record = json.loads(base_receipt.read_text())
@@ -135,18 +154,19 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
         raise ValueError('Base root differs from receipt')
     privileges = privileged_entries(base)
     privileged_digests = {}
-    kernel_release, additions = runtime_files(modules_dir)
+    kernel_release, additions = runtime_files(modules_dir, profile)
     additions.update(cursor_files(cursor_tools))
     additions.update(bluetooth_files(bluetooth_tools or PROJECT / 'out/desktop/bluetooth-tools'))
     additions.update(labwc_files(labwc_tools or PROJECT / 'out/desktop/labwc-tools'))
     desktop_extra = desktop_additions()
     additions.update(desktop_extra)
     additions['etc/omarchy/package-privileges.json'] = (json.dumps(privileges, sort_keys=True).encode(), 0o644)
-    additions.update(system_files(kernel_release))
+    additions.update(system_files(kernel_release, profile))
     additions['usr/libexec/omarchy-dropbear'] = (dropbear.read_bytes(), 0o755)
-    additions['etc/polkit-1/rules.d/60-j71b-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
+    rule = NETWORK_RULE if profile == 'j71b' else overlay(profile) / network_rule(profile)
+    additions[network_rule(profile)] = (rule.read_bytes(), 0o644)
     additions['etc/orchard/release.json'] = (json.dumps({
-        'protocol': 1, 'release': release, 'profile': 'j71b', 'kernel_release': kernel_release}).encode(), 0o644)
+        'protocol': 1, 'release': release, 'profile': profile, 'kernel_release': kernel_release}).encode(), 0o644)
     if privileges.keys() & additions.keys():
         raise ValueError('Runtime must not override privileged package files')
     qml_path = 'home/tablet/.local/share/omarchy-ipad/shell/shell.qml'
@@ -155,7 +175,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
     seen, directories, expanded, count = set(), set(), 0, 0
     with tempfile.TemporaryDirectory(dir=outdir.parent, prefix='.root-') as temp:
         temporary = Path(temp)
-        archive = temporary / 'rootfs.tar.zst'
+        archive = temporary / asset(profile, 'rootfs.tar.zst')
         with archive.open('wb') as raw, subprocess.Popen(
                 ['zstd', '-T0', '-1', '--check', '-q', '-c'], stdin=subprocess.PIPE, stdout=raw) as compressor:
             with tarfile.open(fileobj=compressor.stdin, mode='w|') as target:
@@ -221,7 +241,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
                     member = tarfile.TarInfo(name)
                     member.mode, member.size = mode, len(data)
                     add(member, data)
-                for unit in ('j71b-charge.service', 'omarchy-diagnostics.service'):
+                for unit in device['units']:
                     member = tarfile.TarInfo('etc/systemd/system/multi-user.target.wants/' + unit)
                     member.type, member.linkname, member.mode = tarfile.SYMTYPE, '/usr/lib/systemd/system/' + unit, 0o777
                     if member.name not in seen:
@@ -231,14 +251,15 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
             if compressor.wait():
                 raise ValueError('Public root compression failed')
         required = {'lib', 'usr/lib/systemd/systemd', 'etc/group', 'etc/gshadow', qml_path,
-                    'arch-ipad-ui-manifest.json', 'usr/libexec/j71b-check-platform', 'usr/libexec/omarchy-diagnostics'}
+                    'arch-ipad-ui-manifest.json', 'usr/libexec/' + profile + '-check-platform',
+                    'usr/libexec/omarchy-diagnostics'}
         if not required <= seen or not privileges.keys() <= seen or not replacements.keys() <= seen:
             raise ValueError('Incomplete public root or privileged package metadata')
-        receipt = {'schema': 1, 'kind': 'rootfs', 'profile': 'j71b', 'release': release,
+        receipt = {'schema': 1, 'kind': 'rootfs', 'profile': profile, 'release': release,
                    'bytes': archive.stat().st_size, 'sha256': sha(archive), 'compression': 'zstd',
                    'expanded_bytes': expanded, 'members': count, 'kernel_release': kernel_release,
                    'base_sha256': record['sha256']}
-        (temporary / 'rootfs.json').write_text(json.dumps(receipt, indent=2) + '\n')
+        (temporary / asset(profile, 'rootfs.json')).write_text(json.dumps(receipt, indent=2) + '\n')
         os.replace(temporary, outdir)
     return receipt
 
@@ -248,8 +269,9 @@ def main():
     for name in ('base', 'base-receipt', 'modules-dir', 'dropbear', 'outdir', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--release', required=True)
+    parser.add_argument('--device', default='j71b')
     args = parser.parse_args()
-    print(json.dumps(build(args.base, args.base_receipt, args.modules_dir, args.dropbear, args.outdir, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools), indent=2))
+    print(json.dumps(build(args.base, args.base_receipt, args.modules_dir, args.dropbear, args.outdir, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools, args.device), indent=2))
 
 
 if __name__ == '__main__':

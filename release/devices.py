@@ -3,11 +3,11 @@
 # J71b artifact names predate multi-device releases and stay unchanged. Other
 # devices prefix their device-specific files so one release can carry several.
 DEVICES = {
-    'j71b': {'prefix': '',
+    'j71b': {'prefix': '', 'backlight': '20e200080.backlight',
              'helpers': ('j71b-check-platform', 'j71b-charge-lease'),
              'units': ('j71b-charge.service', 'omarchy-diagnostics.service')},
     # J71t charging policy is in the kernel; there is no userspace lease.
-    'j71t': {'prefix': 'j71t-',
+    'j71t': {'prefix': 'j71t-', 'backlight': '20e200000.backlight',
              'helpers': ('j71t-check-platform',),
              'units': ('omarchy-diagnostics.service',)},
 }

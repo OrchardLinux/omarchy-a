@@ -5,10 +5,11 @@ from pathlib import Path
 import subprocess
 
 from .audit import audit
+from release.devices import device as device_spec
 from release.manifests import read_release
 
 
-def main():
+def main(device='j71b'):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--manifest', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path, help='new evidence directory')
@@ -21,7 +22,7 @@ def main():
     if args.output.exists():
         parser.error('Choose a new evidence directory')
     # Verify namespace safety and all published digests before using GNU tar.
-    checked = audit(manifest)
+    checked = audit(manifest, device)
     record = read_release(manifest)
     args.output.mkdir(parents=True)
     output = args.output.resolve()
@@ -29,6 +30,7 @@ def main():
     argv = ['podman', 'run', '--rm', '--network', 'none', '--userns', 'keep-id:uid=0,gid=0',
             '--cap-add', 'SYS_ADMIN', '--cap-add', 'SYS_PTRACE', '--security-opt', 'seccomp=unconfined',
             '-e', 'OMA_ROOT_FILENAME=' + record['assets']['root']['file'],
+            '-e', 'OMA_PROFILE=' + device, '-e', 'OMA_BACKLIGHT=' + device_spec(device)['backlight'],
             '-v', str(manifest.parent) + ':/release:ro', '-v', str(recipe) + ':/validate.sh:ro',
             '-v', str(output) + ':/evidence:rw', args.image, 'sh', '/validate.sh']
     if args.pointer_helper:

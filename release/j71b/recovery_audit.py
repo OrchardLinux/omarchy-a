@@ -44,11 +44,11 @@ def read_newc(stream):
         yield name, mode, data
 
 
-def audit_runtime(image, root_spec, release):
+def audit_runtime(image, root_spec, release, profile='j71b'):
     receipt = json.loads(Path(str(image) + '.json').read_text())
     part = next(row for row in receipt['components'] if row['name'] == 'initramfs')
     hashes, modes, records = {}, {}, {}
-    firmware = json.loads(firmware_path('j71b').read_text())
+    firmware = json.loads(firmware_path(profile).read_text())
     private = {row['destination'] for row in firmware['files'] + firmware['generated']}
     names = set()
     with image.open('rb') as raw:
@@ -65,7 +65,7 @@ def audit_runtime(image, root_spec, release):
                     hashes[name] = hashlib.sha256(data).hexdigest()
                     if name in ('etc/orchard/release.json', 'etc/orchard/public.SHA256SUMS'):
                         records[name] = data
-    prefix = 'usr/libexec/orchard-j71b/'
+    prefix = 'usr/libexec/orchard-' + profile + '/'
     required = {prefix + name for name in ('device.py', 'archive.py', 'staging.py', 'handoff.py',
                                           'image_policy.py', 'permissions.py', 'storage.py', 'identity.py', 'adt.py')}
     required |= {'init', 'usr/bin/orchard-device', 'sbin/capture-adt', 'sbin/authorize-key',
@@ -77,11 +77,11 @@ def audit_runtime(image, root_spec, release):
                  'usr/sbin/blkid', 'usr/sbin/sfdisk', 'usr/sbin/mke2fs'):
         if not stat.S_ISREG(modes[name]) or modes[name] & 0o111 != 0o111:
             raise ValueError('Recovery helper is not executable: ' + name)
-    if any('omarchy-j71b' in name or name == 'usr/bin/omarchy-device' for name in names):
+    if any('omarchy-' + profile in name or name == 'usr/bin/omarchy-device' for name in names):
         raise ValueError('Old agent namespace remains in recovery')
     config = json.loads(records['etc/orchard/release.json'])
     expected = {key: root_spec[key] for key in ('sha256', 'bytes', 'expanded_bytes', 'members', 'compression')}
-    if config['root'] != expected or config['release'] != release or config['protocol'] != 1 or config['profile'] != 'j71b':
+    if config['root'] != expected or config['release'] != release or config['protocol'] != 1 or config['profile'] != profile:
         raise ValueError('Recovery is not locked to the published root')
     public = records['etc/orchard/public.SHA256SUMS'].decode()
     for line in public.splitlines():

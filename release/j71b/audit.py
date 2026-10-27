@@ -9,6 +9,7 @@ import tarfile
 
 from orchard_hardware.boot.assemble import INITRAMFS_MAGIC
 from orchard_hardware import firmware_path
+from release.devices import device as device_spec
 from release.manifests import read_release
 
 from .public_root import sha
@@ -42,9 +43,10 @@ def audit_recovery(image):
             'compressed_bytes': size, 'initramfs_sha256': parts['initramfs'][0]['sha256']}
 
 
-def audit(manifest):
+def audit(manifest, profile='j71b'):
+    helpers = device_spec(profile)['helpers']
     record = read_release(manifest)
-    if record.get('schema') != 1 or record.get('protocol') != 1 or record.get('profile') != 'j71b':
+    if record.get('schema') != 1 or record.get('protocol') != 1 or record.get('profile') != profile:
         raise ValueError('Incompatible release manifest')
     paths = {}
     for role, item in record['assets'].items():
@@ -56,12 +58,12 @@ def audit(manifest):
             raise ValueError('Asset integrity mismatch: ' + role)
         paths[role] = path
     recovery = audit_recovery(paths['recovery'])
-    runtime = audit_runtime(paths['recovery'], record['assets']['root'], record['release'])
+    runtime = audit_runtime(paths['recovery'], record['assets']['root'], record['release'], profile)
     recovery['runtime_members_verified'] = runtime['members']
     hashes, links, modes, owners, groups, sizes = {}, {}, {}, {}, {}, {}
     names, ancestors, directories = set(), set(), set()
     desktop = public = privileges = cursor = bluetooth = labwc = None
-    recipe = json.loads(firmware_path('j71b').read_text())
+    recipe = json.loads(firmware_path(profile).read_text())
     private = {item['destination'] for item in recipe['files'] + recipe['generated']}
     with subprocess.Popen(['zstd', '-d', '-q', '-c', str(paths['root'])], stdout=subprocess.PIPE) as decoder:
         with tarfile.open(fileobj=decoder.stdout, mode='r|') as archive:
@@ -141,7 +143,7 @@ def audit(manifest):
     verify_labwc(labwc, hashes, modes, owners, groups)
     if 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml' not in desktop:
         raise ValueError('Pairing UI is absent from desktop integrity manifest')
-    for name in ('j71b-check-platform', 'j71b-charge-lease', 'omarchy-diagnostics', 'omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-screen-toggle', 'omarchy-bluetooth-pair'):
+    for name in (*helpers, 'omarchy-diagnostics', 'omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-screen-toggle', 'omarchy-bluetooth-pair'):
         if modes.get('usr/libexec/' + name) != 0o755:
             raise ValueError('Required helper is not executable: ' + name)
     if links.get('lib') != (True, 'usr/lib') or owners.get('home/tablet') != 1000 or sizes.get('etc/machine-id') != 0:
@@ -189,11 +191,11 @@ def verify_tablet_sudo(hashes, modes, owners, groups):
         raise ValueError('Missing or unsafe tablet passwordless sudo policy')
 
 
-def main():
+def main(device='j71b'):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('manifest', type=Path)
     args = parser.parse_args()
-    print(json.dumps(audit(args.manifest), indent=2))
+    print(json.dumps(audit(args.manifest, device), indent=2))
 
 
 if __name__ == '__main__':
