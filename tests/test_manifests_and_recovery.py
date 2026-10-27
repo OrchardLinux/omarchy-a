@@ -10,7 +10,8 @@ import unittest
 
 from orchard_hardware import firmware_path
 from orchard_hardware.boot.initramfs.pack import record
-from release import manifests
+from orchard_cli import manifests as manifests_schema
+from release import devices, manifests, merge
 from release.j71b.recovery_audit import read_newc, audit_runtime
 
 
@@ -42,6 +43,62 @@ class Publication(unittest.TestCase):
             path.write_text('schema=1\nkind="orchard.install"\ndistro="another"\n')
             with self.assertRaises(ValueError):
                 manifests.read_release(path)
+
+    @staticmethod
+    def device_release(output, device, pongo=b'pongo.bin'):
+        output.mkdir()
+        for name in ('rootfs.tar.zst', 'recovery.bin'):
+            (output / devices.asset(device, name)).write_bytes((device + name).encode())
+        (output / 'pongo.bin').write_bytes(pongo)
+        return manifests.write(output, 'test-1', {'compression': 'zstd', 'expanded_bytes': 100, 'members': 3},
+                               device=device)
+
+    def test_j71b_index_text_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.device_release(Path(directory) / 'j71b', 'j71b')
+            pin = manifests.receipt(path)
+            self.assertEqual((path.parent / 'index.toml').read_text(),
+                             'schema = 1\nkind = "orchard.index"\ndistro = "omarchy-a"\n\n'
+                             '[devices.j71b.checkm8-pongo]\nfile = "j71b-checkm8-pongo.toml"\n'
+                             'bytes = ' + str(pin['bytes']) + '\nsha256 = "' + pin['sha256'] + '"\n')
+
+    def test_device_parameter_selects_manifest_and_distinct_asset_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.device_release(Path(directory) / 'j71t', 'j71t')
+            doc = manifests.tomllib.loads(path.read_text())
+            self.assertEqual(path.name, 'j71t-checkm8-pongo.toml')
+            self.assertEqual(doc['device'], 'j71t')
+            self.assertEqual((doc['root']['file'], doc['boot']['file'], doc['pongo']['file']),
+                             ('j71t-rootfs.tar.zst', 'j71t-recovery.bin', 'pongo.bin'))
+            self.assertEqual(manifests.read_release(path)['profile'], 'j71t')
+            index = manifests.tomllib.loads((path.parent / 'index.toml').read_text())
+            self.assertEqual(list(index['devices']), ['j71t'])
+            with self.assertRaises(ValueError):
+                self.device_release(Path(directory) / 'other', 'j72t')
+
+    def test_merged_index_pins_every_device_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            j71b = self.device_release(root / 'j71b', 'j71b')
+            j71t = self.device_release(root / 'j71t', 'j71t')
+            index = merge.merge(root / 'j71b', [root / 'j71t'])
+            document = manifests.tomllib.loads(index.read_text())
+            manifests_schema.validate(document)
+            self.assertEqual(list(document['devices']), ['j71b', 'j71t'])
+            self.assertEqual(document['devices']['j71b']['checkm8-pongo'], manifests.receipt(j71b))
+            self.assertEqual(document['devices']['j71t']['checkm8-pongo'],
+                             manifests.receipt(root / 'j71b' / j71t.name))
+            self.assertEqual(merge.merge(root / 'j71b', [root / 'j71t']).read_text(), index.read_text())
+            with self.assertRaises(ValueError):
+                manifests.write_index(root / 'j71b', [j71b, j71b], replace=True)
+            with self.assertRaises(ValueError):
+                manifests.write_index(root / 'j71b', [j71t], replace=True)
+            self.device_release(root / 'conflict', 'j71t', pongo=b'different')
+            (root / 'conflict/extra.json').write_text('{}')
+            with self.assertRaises(ValueError):
+                merge.merge(root / 'j71b', [root / 'conflict'])
+            self.assertEqual((root / 'j71b/pongo.bin').read_bytes(), b'pongo.bin')
+            self.assertFalse((root / 'j71b/extra.json').exists())
 
 
 class RecoverySealing(unittest.TestCase):
