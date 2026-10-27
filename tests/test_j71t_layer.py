@@ -147,6 +147,29 @@ class PublicRoot(unittest.TestCase):
         self.assertFalse([name for name in names if 'j71b' in name])
 
 
+class Loader(unittest.TestCase):
+    def test_loader_builds_the_selected_device_with_the_shared_splash(self):
+        for device, expected in ((None, 'j71b'), ('j71t', 'j71t')):
+            with self.subTest(device=device), tempfile.TemporaryDirectory() as directory:
+                fake = Path(directory) / 'orchard_hardware'
+                (fake / 'boot/m1n1').mkdir(parents=True)
+                (fake / '__init__.py').write_text('')
+                build = fake / 'boot/m1n1/build'
+                build.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$(dirname "$0")/args"\n')
+                build.chmod(0o755)
+                header = Path(directory) / 'logo.h'
+                header.write_text('')
+                subprocess.run([sys.executable, str(PROJECT / 'boot/build-loader'),
+                                *(['--device', device] if device else []), '--logo-header', str(header),
+                                '--output', str(Path(directory) / 'm1n1.bin')],
+                               check=True, env={**os.environ, 'PYTHONPATH': directory})
+                args = (fake / 'boot/m1n1/args').read_text().splitlines()
+                self.assertEqual(args[0], expected)
+                patch = Path(args[args.index('--extra-patch') + 1])
+                self.assertEqual(patch, PROJECT / 'boot/m1n1/patches/j71b/0002-omarchy-splash.patch')
+                self.assertTrue(patch.is_file())
+
+
 class Recovery(unittest.TestCase):
     @staticmethod
     def image(directory, profile, config_profile=None):
