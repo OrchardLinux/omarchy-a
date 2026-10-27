@@ -71,6 +71,8 @@ class ScreenToggleTests(unittest.TestCase):
                          {'name': 'Execute', 'command': '/usr/libexec/omarchy-screen-toggle'})
         self.assertEqual(system_files('test')['usr/libexec/omarchy-screen-toggle'],
                          (HELPER.read_bytes(), 0o755))
+        self.assertEqual(system_files('test', 'j71t')['usr/libexec/omarchy-screen-toggle'],
+                         (HELPER.read_bytes(), 0o755))
 
     def test_only_the_single_built_in_panel_is_selected(self):
         base = self.root / 'class'

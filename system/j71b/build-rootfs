@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-root= output= desktop= release=
+root= output= desktop= release= packages=
 while (($#)); do
   case "$1" in
     --root) root=$2; shift 2;;
     --output) output=$2; shift 2;;
     --desktop) desktop=$2; shift 2;;
     --release) release=$2; shift 2;;
+    --packages) packages=$2; shift 2;;
     *) echo "Unknown argument: $1" >&2; exit 2;;
   esac
 done
@@ -16,10 +17,12 @@ done
 [[ $(uname -m) == aarch64 && $EUID == 0 ]] || { echo 'Requires an aarch64 Arch Linux ARM build environment as root' >&2; exit 1; }
 for cmd in pacman useradd usermod systemctl tar python3; do command -v "$cmd" >/dev/null || { echo "Missing $cmd" >&2; exit 1; }; done
 project=$(cd "$(dirname "$0")/../.." && pwd)
+# Devices sharing this userspace recipe supply their own package list.
+packages=${packages:-$project/system/j71b/packages.txt}
 root=$(realpath -m -- "$root")
 output=$(realpath -m -- "$output")
 [[ "$root" != / && ! -e "$root" && ! -e "$output" ]] || { echo 'Root and archive must be new paths' >&2; exit 1; }
-mapfile -t requested < <(grep -vE '^\s*(#|$)' "$project/system/j71b/packages.txt")
+mapfile -t requested < <(grep -vE '^\s*(#|$)' "$packages")
 [[ ${#requested[@]} -gt 0 ]] || exit 1
 printf '%s\n' "${requested[@]}" | grep -qx 'linux-aarch64' && { echo 'Generic kernel is not an input' >&2; exit 1; }
 

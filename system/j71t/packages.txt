@@ -1,0 +1,36 @@
+# Arch Linux ARM userspace only. NEVER install linux-aarch64 in the iPad root.
+# Baseline; exact dependency snapshot comes from an empty pacman DB preview.
+# Same desktop userspace as J71b: no list entry is J71b-specific. J71t audio
+# (CS42L81 speakers, microphones) uses PipeWire's default ALSA profile.
+base
+archlinuxarm-keyring
+pacman
+sudo
+python
+labwc
+quickshell
+qt6-imageformats
+foot
+ttf-dejavu
+ttf-jetbrains-mono-nerd
+ttf-nerd-fonts-symbols
+firefox
+fastfetch
+starship
+seatd
+networkmanager
+bluez
+bluez-utils
+upower
+grim
+wlr-randr
+xdg-desktop-portal
+xdg-desktop-portal-wlr
+pipewire
+pipewire-pulse
+wireplumber
+socat
+jq
+pango
+cairo
+wayland

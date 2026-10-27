@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# J71t shares the J71b userspace recipe; only the package list is its own.
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+exec "$here/../j71b/build-rootfs" --packages "$here/packages.txt" "$@"

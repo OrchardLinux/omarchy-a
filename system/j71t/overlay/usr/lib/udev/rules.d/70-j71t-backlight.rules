@@ -1,0 +1,4 @@
+# Device-specific write permission, no root helper or blanket sudo.
+# The Arch session contract currently includes tablet in video. The J71t
+# kernel maps the whole DWI block, so the panel is 20e200000, not J71b's 20e200080.
+ACTION=="add", SUBSYSTEM=="backlight", KERNEL=="20e200000.backlight", RUN+="/usr/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/usr/bin/chmod g+w /sys/class/backlight/%k/brightness"

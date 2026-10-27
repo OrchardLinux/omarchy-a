@@ -1,0 +1,7 @@
+// The local active tablet session may save Wi-Fi connections through NetworkManager.
+// Do not grant remote/inactive sessions, other users, sudo or blanket device control.
+polkit.addRule(function(action, subject) {
+  if (action.id === "org.freedesktop.NetworkManager.settings.modify.system" &&
+      subject.user === "tablet" && subject.local && subject.active)
+    return polkit.Result.YES;
+});

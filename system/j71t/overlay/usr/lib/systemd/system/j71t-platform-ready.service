@@ -1,0 +1,11 @@
+[Unit]
+Description=Verify J71t hardware payload and boot activation
+After=systemd-udev-trigger.service
+Before=getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/rm -f /run/ipadlinux/platform-verified
+ExecStart=/usr/libexec/j71t-check-platform
+ExecStartPost=/usr/bin/touch /run/ipadlinux/platform-verified
+RemainAfterExit=yes
