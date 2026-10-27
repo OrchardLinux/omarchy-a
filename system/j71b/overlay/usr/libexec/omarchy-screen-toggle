@@ -1,10 +1,20 @@
 #!/usr/bin/python3
-"""J71b backlight toggle only: no suspend, session lock, or input changes."""
+"""Built-in iPad panel backlight toggle only: no suspend, session lock, or input changes."""
 import fcntl
 import os
 from pathlib import Path
 import stat
 import sys
+
+# DWI panel backlights: J71b, J71t. Exactly one exists on a supported device.
+PANELS = ('20e200080.backlight', '20e200000.backlight')
+
+
+def panel(base=Path('/sys/class/backlight')):
+    found = [base / name for name in PANELS if (base / name).is_dir()]
+    if len(found) != 1:
+        raise ValueError('Expected one built-in panel backlight')
+    return found[0]
 
 
 def toggle(device, runtime):
@@ -40,9 +50,8 @@ def toggle(device, runtime):
 
 def main():
     # Keep physical output selection device-owned; never toggle unrelated displays.
-    device = Path('/sys/class/backlight/20e200080.backlight')
     runtime = Path(os.environ['XDG_RUNTIME_DIR'])
-    toggle(device, runtime)
+    toggle(panel(), runtime)
 
 
 if __name__ == '__main__':

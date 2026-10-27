@@ -9,7 +9,8 @@ from release.j71b.public_root import desktop_replacements, system_files
 
 PROJECT = Path(__file__).resolve().parents[1]
 HELPER = PROJECT / 'system/j71b/overlay/usr/libexec/omarchy-screen-toggle'
-toggle = runpy.run_path(str(HELPER))['toggle']
+helper = runpy.run_path(str(HELPER))
+toggle, panel = helper['toggle'], helper['panel']
 
 
 class ScreenToggleTests(unittest.TestCase):
@@ -70,3 +71,19 @@ class ScreenToggleTests(unittest.TestCase):
                          {'name': 'Execute', 'command': '/usr/libexec/omarchy-screen-toggle'})
         self.assertEqual(system_files('test')['usr/libexec/omarchy-screen-toggle'],
                          (HELPER.read_bytes(), 0o755))
+
+    def test_only_the_single_built_in_panel_is_selected(self):
+        base = self.root / 'class'
+        base.mkdir()
+        with self.assertRaises(ValueError):
+            panel(base)
+        (base / 'unrelated.backlight').mkdir()
+        for name in ('20e200080.backlight', '20e200000.backlight'):
+            with self.subTest(name=name):
+                (base / name).mkdir()
+                self.assertEqual(panel(base), base / name)
+                (base / name).rmdir()
+        (base / '20e200080.backlight').mkdir()
+        (base / '20e200000.backlight').mkdir()
+        with self.assertRaises(ValueError):
+            panel(base)
