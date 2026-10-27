@@ -9,11 +9,11 @@ on:
       hardware_tag:
         description: Published hardware components and wheel
         required: true
-        default: v0.1.9
+        default: v0.1.10
       cli_tag:
         description: Published compatible CLI wheel requirements
         required: true
-        default: v0.1.8
+        default: v0.1.10
       cli_run_id:
         description: Optional exact CLI run for first-release wheel reuse
         required: false
@@ -27,8 +27,8 @@ permissions:
   contents: read
   actions: read
 env:
-  HARDWARE_TAG: ${{ inputs.hardware_tag || 'v0.1.9' }}
-  CLI_TAG: ${{ inputs.cli_tag || 'v0.1.8' }}
+  HARDWARE_TAG: ${{ inputs.hardware_tag || 'v0.1.10' }}
+  CLI_TAG: ${{ inputs.cli_tag || 'v0.1.10' }}
   CLI_ARTIFACT_DIR: ${{ inputs.cli_run_id != '' && 'out/dependency-wheels' || '' }}
   HARDWARE_ARTIFACT_DIR: ${{ inputs.hardware_run_id != '' && 'out/downloads/hardware' || '' }}
 jobs:

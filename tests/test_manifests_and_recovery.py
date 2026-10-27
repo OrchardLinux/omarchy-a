@@ -29,7 +29,7 @@ class Publication(unittest.TestCase):
             self.assertEqual(doc['device'], 'j71b')
             self.assertEqual(doc['install']['default_root'], '/omarchy')
             self.assertEqual(doc['root']['sha256'], hashlib.sha256(b'rootfs.tar.zst').hexdigest())
-            self.assertEqual(doc['min_orchard'], '0.1.5')
+            self.assertEqual(doc['min_orchard'], '0.1.10')
             self.assertEqual(manifests.read_release(path)['assets']['recovery'], doc['boot'])
             with self.assertRaises(FileExistsError):
                 manifests.write(output, 'test-1', root)

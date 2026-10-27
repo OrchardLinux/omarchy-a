@@ -52,18 +52,20 @@ chmod +x "$3/bin/python" "$3/bin/orchard"
         result = self.run_setup()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls(), [
-            '-m pip install --upgrade --only-binary=:all: -r https://github.com/OrchardLinux/cli/releases/latest/download/requirements.txt',
+            '-m pip install --quiet --disable-pip-version-check --upgrade --only-binary=:all: -r https://github.com/OrchardLinux/cli/releases/latest/download/requirements.txt',
             'setup-host',
             'distros omarchy-a https://github.com/OrchardLinux/omarchy-a/releases/latest/download/index.toml',
+            'distros minimal-linux https://github.com/OrchardLinux/minimal-linux/releases/latest/download/index.toml',
         ])
-        self.assertIn('Resize APFS', result.stdout)
+        self.assertIn('Enter DFU', result.stdout)
 
     def test_rerun_uses_upgrade_and_same_environment(self):
         self.assertEqual(self.run_setup().returncode, 0)
         target = (self.home / '.local/bin/orchard').resolve()
         self.assertEqual(self.run_setup().returncode, 0)
         self.assertEqual((self.home / '.local/bin/orchard').resolve(), target)
-        self.assertEqual(sum('pip install --upgrade' in row for row in self.calls()), 2)
+        self.assertEqual(sum(row.startswith('-m pip install ') and '--upgrade' in row.split()
+                             for row in self.calls()), 2)
 
     def test_failed_pip_stops_before_host_setup(self):
         self.env['FAIL_PIP'] = '1'
@@ -83,7 +85,8 @@ chmod +x "$3/bin/python" "$3/bin/orchard"
         result = subprocess.run(['bash'], input=SCRIPT.read_text(), env=self.env,
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(self.calls()[-1].startswith('distros omarchy-a '))
+        self.assertTrue(self.calls()[-2].startswith('distros omarchy-a '))
+        self.assertTrue(self.calls()[-1].startswith('distros minimal-linux '))
 
 
 if __name__ == '__main__':
