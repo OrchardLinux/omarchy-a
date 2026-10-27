@@ -9,7 +9,7 @@ Includes a device-aware CLI and release format for installation, diagnostics, an
 | Device | Identifier | Status |
 | --- | --- | --- |
 | iPad 6 Wi-Fi | `iPad7,5` / J71b | Experimental; no GPU acceleration |
-| iPad 5 Wi-Fi | `iPad6,11` / J71t | Experimental; no GPU acceleration; tested on one unit |
+| iPad 5 Wi-Fi | `iPad6,11` / J71t | Experimental; no GPU acceleration; drivers tested on one unit; Orchard install not yet tested |
 
 See [supported devices and features](docs/devices.md) for per-feature status.
 

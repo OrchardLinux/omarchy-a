@@ -11,4 +11,4 @@ The hardware is prepared in recovery. `j71t-platform-ready.service` runs the har
 
 Unlike J71b there is no charging service: the J71t charger policy runs in the kernel. Suspend stays disabled, as on J71b. The panel backlight is `20e200000.backlight` (the J71t kernel maps the whole DWI block); the power-key screen toggle selects it automatically.
 
-The tablet layer of the separate linux-a9 Hyprland image is deliberately not included: its gestures and on-screen keyboard are Hyprland-specific (Omarchy A has its own labwc keyboard), and auto-rotation needs the AOP accelerometer driver, which this port does not ship.
+The tablet layer of the separate omarchy-ipad5 Hyprland image is deliberately not included: its gestures and on-screen keyboard are Hyprland-specific (Omarchy A has its own labwc keyboard), and auto-rotation needs the AOP accelerometer driver, which this port does not ship.
