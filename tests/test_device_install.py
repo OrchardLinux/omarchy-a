@@ -81,8 +81,10 @@ class DevicePromotion(unittest.TestCase):
                      'exists': existing, 'identity': identity, 'free_bytes': 10 * 1024**3,
                      'reclaimable_bytes': 0, 'inodes_sufficient': True}), \
                  patch.object(device, 'mount_target'), patch.object(device, 'unmount_target'), \
-                 patch.object(device.os, 'statvfs', return_value=type('Space', (), {
-                     'f_bavail': post_free_bytes, 'f_frsize': 1, 'f_favail': post_free_inodes})()), \
+                 patch.object(device.os, 'statvfs', side_effect=lambda _: type('Space', (), {
+                     'f_bavail': 10 * 1024**3 if (target / 'chosen').exists() else post_free_bytes,
+                     'f_frsize': 1,
+                     'f_favail': 100000 if (target / 'chosen').exists() else post_free_inodes})()), \
                  patch.object(device, 'command'), patch.object(device, 'no_faults'), \
                  patch.object(device.sys, 'stdin', Input()), patch.object(device, 'emit'):
                 if post_free_bytes < device.capacity_needed(spec['root']) or post_free_inodes < 66560:
