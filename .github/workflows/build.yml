@@ -23,6 +23,9 @@ on:
       reuse_run_id:
         description: Exact prior run supplying unchanged boot and userspace artifacts
         required: false
+      extra_devices:
+        description: Devices built and published beside J71b, such as j71t; the hardware tag must ship their components
+        required: false
 permissions:
   contents: read
   actions: read
@@ -31,6 +34,8 @@ env:
   CLI_TAG: ${{ inputs.cli_tag || 'v0.1.8' }}
   CLI_ARTIFACT_DIR: ${{ inputs.cli_run_id != '' && 'out/dependency-wheels' || '' }}
   HARDWARE_ARTIFACT_DIR: ${{ inputs.hardware_run_id != '' && 'out/downloads/hardware' || '' }}
+  # Add j71t to the default with the first hardware release carrying its components.
+  EXTRA_DEVICES: ${{ inputs.extra_devices || '' }}
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -154,6 +159,10 @@ jobs:
         if: inputs.reuse_run_id == ''
         run: |
           python boot/build-loader --logo-header out/boot/omarchy-logo.h --output out/boot/m1n1.bin
+          for device in $EXTRA_DEVICES; do
+            python boot/build-loader --device "$device" --logo-header out/boot/omarchy-logo.h \
+              --output "out/boot/$device-m1n1.bin"
+          done
           tar -C out -czf out/distro-boot.tar.gz boot
       - uses: actions/upload-artifact@v4
         with:
@@ -228,7 +237,12 @@ jobs:
           VERSION="preview-$RUN_ID"
           if [[ "$REF_TYPE" == tag ]]; then VERSION="${REF_NAME#v}"; fi
           bash system/build-rootfs j71b --desktop out/desktop --release "$VERSION" --output out/base
-          tar -C out -czf out/omarchy-userspace.tar.gz base cursor bluetooth labwc
+          bases=()
+          for device in $EXTRA_DEVICES; do
+            bash system/build-rootfs "$device" --desktop out/desktop --release "$VERSION" --output "out/base-$device"
+            bases+=("base-$device")
+          done
+          tar -C out -czf out/omarchy-userspace.tar.gz base "${bases[@]}" cursor bluetooth labwc
       - uses: actions/upload-artifact@v4
         with:
           name: omarchy-userspace
@@ -308,9 +322,30 @@ jobs:
             --cursor-tools out/cursor --bluetooth-tools out/bluetooth --labwc-tools out/labwc \
             --output out/release
           python -m release.j71b.audit out/release/j71b-checkm8-pongo.toml
+          for device in $EXTRA_DEVICES; do
+            [[ "$device" =~ ^[a-z0-9][a-z0-9_-]*$ && "$device" != j71b ]]
+            DEVICE="$device" bash ci/dependencies --components-only
+            python ci/normalize-recovery-tools.py --archive "out/base-$device/rootfs.tar.gz" \
+              --receipt "out/base-$device/rootfs.tar.gz.json"
+            parts="out/$device/components"
+            python -m "release.$device.build" --release "$VERSION" \
+              --base "out/base-$device/rootfs.tar.gz" --base-receipt "out/base-$device/rootfs.tar.gz.json" \
+              --modules-dir "$parts/kernel/lib/modules" --loader "out/boot/$device-m1n1.bin" \
+              --kernel "$parts/kernel/Image.gz" --dtb "$parts/kernel/$device.dtb" \
+              --pongo out/boot/pongo.bin --busybox "$parts/boot/busybox" \
+              --dropbear "$parts/boot/dropbear" --dropbearkey "$parts/boot/dropbearkey" \
+              --cursor-tools out/cursor --bluetooth-tools out/bluetooth --labwc-tools out/labwc \
+              --output "out/release-$device"
+            python -m "release.$device.audit" "out/release-$device/$device-checkm8-pongo.toml"
+            python -m release.merge --release-dir out/release --add "out/release-$device"
+          done
           orchard resolve out/release/index.toml
+          for device in $EXTRA_DEVICES; do orchard resolve out/release/index.toml --profile "$device"; done
           python -m release.publish --tag "$TAG" --release-dir out/release --output out/publication
           cp out/release/rootfs.json out/release/build-receipt.json out/publication/
+          for device in $EXTRA_DEVICES; do
+            cp "out/release/$device-rootfs.json" "out/release/$device-build-receipt.json" out/publication/
+          done
           cp out/downloads/pongo-source.tar.gz out/publication/
           git archive --format=tar.gz -o out/publication/omarchy-linux-source.tar.gz HEAD
           (cd out/publication && sha256sum ./* > ../SHA256SUMS && mv ../SHA256SUMS .)

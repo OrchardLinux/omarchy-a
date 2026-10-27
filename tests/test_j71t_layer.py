@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import shutil
 import stat
 import subprocess
 import sys
@@ -168,6 +169,44 @@ class Loader(unittest.TestCase):
                 patch = Path(args[args.index('--extra-patch') + 1])
                 self.assertEqual(patch, PROJECT / 'boot/m1n1/patches/j71b/0002-omarchy-splash.patch')
                 self.assertTrue(patch.is_file())
+
+
+def gnu_sha256sum():
+    if not shutil.which('sha256sum'):
+        return False
+    # Same invocation as ci/dependencies: the checklist arrives on stdin.
+    with tempfile.TemporaryDirectory() as directory:
+        (Path(directory) / 'empty').write_bytes(b'')
+        line = hashlib.sha256(b'').hexdigest() + '  ./empty\n'
+        return subprocess.run(['sha256sum', '--check', '--strict'], cwd=directory, input=line.encode(),
+                              capture_output=True).returncode == 0
+
+
+class Components(unittest.TestCase):
+    @unittest.skipUnless(gnu_sha256sum(), 'GNU sha256sum (--strict) is required, as on CI')
+    def test_device_bundle_is_verified_and_extracted_beside_j71b(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = root / 'artifacts'
+            (artifacts / 'components/kernel').mkdir(parents=True)
+            (artifacts / 'components/kernel/j71t.dtb').write_bytes(b'dtb')
+            bundle = artifacts / 'j71t-components.tar.gz'
+            with tarfile.open(bundle, 'w:gz') as archive:
+                archive.add(artifacts / 'components', arcname='components')
+            digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+            (artifacts / 'SHA256SUMS').write_text(digest + '  ./j71t-components.tar.gz\n')
+            work = root / 'work'
+            work.mkdir()
+            env = {**os.environ, 'HARDWARE_TAG': 'v0.2.0', 'CLI_TAG': 'v0.2.0', 'DEVICE': 'j71t',
+                   'HARDWARE_ARTIFACT_DIR': str(artifacts)}
+            subprocess.run(['bash', str(PROJECT / 'ci/dependencies'), '--components-only'],
+                           cwd=work, env=env, check=True, capture_output=True)
+            self.assertEqual((work / 'out/j71t/components/kernel/j71t.dtb').read_bytes(), b'dtb')
+            self.assertFalse((work / '.venv').exists())
+            (artifacts / 'SHA256SUMS').write_text('0' * 64 + '  ./j71t-components.tar.gz\n')
+            result = subprocess.run(['bash', str(PROJECT / 'ci/dependencies'), '--components-only'],
+                                    cwd=work, env=env, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
 
 
 class Recovery(unittest.TestCase):
