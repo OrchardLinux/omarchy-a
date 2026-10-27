@@ -1,0 +1,42 @@
+#!/bin/busybox sh
+# This experiment's PID 1. USB shell only; charger-test stays manually invoked.
+set -eu
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+/bin/busybox --install -s /bin
+mount -t proc -o nosuid,nodev,noexec proc /proc
+mount -t sysfs -o nosuid,nodev,noexec sysfs /sys
+mount -t devtmpfs -o nosuid devtmpfs /dev
+mount -t tmpfs -o nosuid,nodev tmpfs /run
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+exec </dev/console >/dev/console 2>&1
+if ! tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'apple,j71b'; then
+    echo 'Wrong device. Stopping before USB setup.'
+    while :; do sleep 3600; done
+fi
+# No hotplug module loader; optional staged modules are for manual use only.
+echo /bin/false > /proc/sys/kernel/modprobe
+mount -t configfs -o nosuid,nodev,noexec configfs /sys/kernel/config
+name=$(cat /etc/hostname)
+g=/sys/kernel/config/usb_gadget/$name
+mkdir "$g"
+echo 0x05ac > "$g/idVendor"
+# Prototype PID, not an allocation. Distinct from recovery and discovery.
+echo 0x4144 > "$g/idProduct"
+mkdir -p "$g/strings/0x409" "$g/configs/c.1/strings/0x409"
+echo "Orchard $name" > "$g/strings/0x409/product"
+cat /proc/sys/kernel/random/boot_id > "$g/strings/0x409/serialnumber"
+echo 'Physical USB diagnostic shell' > "$g/configs/c.1/strings/0x409/configuration"
+# Descriptor only: not charging capability or PMIC policy.
+echo 100 > "$g/configs/c.1/MaxPower"
+mkdir "$g/functions/acm.usb0"
+ln -s "$g/functions/acm.usb0" "$g/configs/c.1/acm.usb0"
+set -- /sys/class/udc/*
+[ "$#" -eq 1 ] && [ -e "$1" ]
+printf '%s\n' "${1##*/}" > "$g/UDC"
+echo "$name: RAM-only. USB root shell is unauthenticated; trusted host only."
+[ ! -f /etc/motd ] || cat /etc/motd
+while :; do
+    setsid sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1 || true
+    sleep 1
+done

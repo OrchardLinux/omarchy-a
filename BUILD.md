@@ -10,20 +10,20 @@ Assembly runs the same producers, artifact auditor, CLI resolution and publicati
 
 ## Local setup
 
-Run commands from this repository. Requires Python 3.9+ with venv/pip, `zstd`, and a native ARM64 Podman environment for image/component builds.
+Run commands from this repository. Requires uv, `zstd`, and a native ARM64 Podman
+environment for image/component builds. Pongo builds additionally need macOS/Xcode.
 
 ## Set up build tools
 
 ```sh
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install --only-binary=:all: -r \
-  https://github.com/OrchardLinux/cli/releases/latest/download/requirements.txt
-python -m pip install -r requirements-build.txt
+./orchard --version
 ```
 
-Use `orchard-hardware>=0.1.10,<0.2`. To test unpublished packages, install compatible CLI/hardware wheels by their explicit filesystem paths instead of using the hosted requirements. No sibling checkout is required.
+The launcher initializes missing CLI/hardware submodules and uv installs them
+editable into the workspace environment. No activation, published wheel pair or
+Orchard release is required for local development. Use `uv run python ...` for the
+existing Python producers below, or the workspace interpreter selected by your
+editor. CI's explicit published-input path remains unchanged.
 
 ## Produce components
 
