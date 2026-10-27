@@ -13,4 +13,6 @@ The current J71b port is the reference implementation:
 - [Device protocol](https://github.com/OrchardLinux/cli/blob/main/docs/device-protocol.md): operations exposed by the runtime to the host.
 - Omarchy A's `image/j71b/` and `release/j71b/`: installed-system policy and release assembly.
 
+J71t (iPad 5 Wi-Fi) shows what a further device adds here: `image/j71t/` (its platform helpers), `system/j71t/` (package list and device overlay), thin `release/j71t/` entry points, and an entry in `release/devices.py`. Record feature status in [docs/devices.md](docs/devices.md).
+
 Keep device-specific hardware procedures in the hardware implementation and desktop policy in Omarchy A. The host coordinates operations and presents confirmations; the device runtime owns storage validation, hardware activation, extraction, and handoff.

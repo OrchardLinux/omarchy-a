@@ -28,9 +28,9 @@ Use `orchard-hardware>=0.1.9,<0.2`. To test unpublished packages, install compat
 ## Produce components
 
 - `desktop/build-sources` and `desktop/build`: desktop applications and payload.
-- `system/build-rootfs`: signed Arch Linux ARM base and package receipt; see [system/j71b/README.md](system/j71b/README.md).
+- `system/build-rootfs DEVICE`: signed Arch Linux ARM base and package receipt; see [system/j71b/README.md](system/j71b/README.md) and [system/j71t/README.md](system/j71t/README.md).
 - Installed hardware producers: kernel, DTB, modules and static BusyBox/Dropbear tools; see [hardware build instructions](https://github.com/OrchardLinux/hardware/blob/main/BUILD.md).
-- `python boot/build-loader`: distro-branded loader. Pongo sources and build instructions are under `boot/pongo/`.
+- `python boot/build-loader [--device DEVICE]`: distro-branded loader (default J71b). Pongo sources and build instructions are under `boot/pongo/`.
 
 Retain each component's receipt. Kernel, modules and DTB must be compatible. Do not change hardware activation or timing as part of presentation changes.
 
@@ -58,6 +58,22 @@ python -m release.j71b.build \
 ```
 
 Choose a new version and output directory for each build. Root builds first; recovery embeds its exact stream receipt, and the index is written last. Installed wheel resources supply hardware code and scripts. `image/j71b/image_policy.py` and `permissions.py` supply desktop readiness, systemd and privilege policy.
+
+### More devices
+
+Each device is assembled separately from its own components, then merged into one release. J71t (iPad 5 Wi-Fi) uses `system/build-rootfs j71t`, `python boot/build-loader --device j71t`, the hardware's `j71t-components.tar.gz` and `image/j71t/`:
+
+```sh
+python -m release.j71t.build --release 0.1.0-orchard.3 \
+  --dtb out/j71t/components/kernel/j71t.dtb --loader out/j71t/m1n1.bin ... \
+  --output out/releases/0.1.0-orchard.3-j71t
+python -m release.j71t.audit out/releases/0.1.0-orchard.3-j71t/j71t-checkm8-pongo.toml
+python -m release.merge --release-dir out/releases/0.1.0-orchard.3 \
+  --add out/releases/0.1.0-orchard.3-j71t
+orchard resolve out/releases/0.1.0-orchard.3/index.toml --profile j71t
+```
+
+The remaining arguments match J71b's. Device-specific files are named `j71t-rootfs.tar.zst`, `j71t-recovery.bin`, `j71t-rootfs.json` and `j71t-build-receipt.json`; J71b keeps its original names and both share the branded `pongo.bin`. `release.merge` refuses any differing file and rewrites one `index.toml` pinning each device.
 
 ## Validate without a device
 
