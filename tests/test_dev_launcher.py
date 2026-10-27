@@ -60,5 +60,17 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(self.launch('--version').returncode, 7)
 
 
+class ExampleInitTests(unittest.TestCase):
+    def test_ram_examples_do_not_require_j71b(self):
+        project = Path(__file__).resolve().parents[1]
+        for name in ('minimal-boot', 'charger-001'):
+            with self.subTest(example=name):
+                script = project / 'examples' / name / 'init'
+                source = script.read_text()
+                self.assertNotIn('apple,j71b', source)
+                self.assertNotIn('Wrong device', source)
+                subprocess.run(['sh', '-n', str(script)], check=True)
+
+
 if __name__ == '__main__':
     unittest.main()

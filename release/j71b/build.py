@@ -21,10 +21,11 @@ def resolve_kernel(args):
         if not all(supplied):
             raise ValueError('Provide --kernel, --dtb and --modules-dir together, or omit all three')
         return
-    from orchard_cli.build import prepare_kernel
-    kernel = prepare_kernel(device='j71b')
+    from orchard_cli.build import configured_device, prepare_kernel
+    device = configured_device(PROJECT)
+    kernel = prepare_kernel(device=device)
     args.kernel = kernel / 'Image.gz'
-    args.dtb = kernel / 'j71b.dtb'
+    args.dtb = kernel / (device + '.dtb')
     args.modules_dir = kernel / 'lib/modules'
 
 

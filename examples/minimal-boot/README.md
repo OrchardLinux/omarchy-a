@@ -32,8 +32,9 @@ initializes missing submodules without resetting existing edits. Local Pongo bui
 can reuse a local binary with `--pongo FILE`. Booting needs palera1n and libusb.
 uv handles editable Python packages without environment activation or releases.
 
-Run only when the intended device is available. This example supports **J71b /
-iPad 6 Wi-Fi**. The original charger payload booted on hardware; this extracted
+The reference kernel/DTB targets **J71b / iPad 6 Wi-Fi**. Other devices can be
+tried after a mismatch warning; this is not a claim that the reference payload
+will boot them. The original charger payload booted on J71b; this extracted
 runtime is only offline-tested so far.
 
 ## Serial access

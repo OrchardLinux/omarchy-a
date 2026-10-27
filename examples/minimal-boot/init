@@ -10,10 +10,6 @@ mount -t tmpfs -o nosuid,nodev tmpfs /run
 mkdir -p /dev/pts
 mount -t devpts devpts /dev/pts
 exec </dev/console >/dev/console 2>&1
-if ! tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'apple,j71b'; then
-    echo 'Wrong device. Stopping before USB setup.'
-    while :; do sleep 3600; done
-fi
 # No hotplug module loader; optional staged modules are for manual use only.
 echo /bin/false > /proc/sys/kernel/modprobe
 mount -t configfs -o nosuid,nodev,noexec configfs /sys/kernel/config

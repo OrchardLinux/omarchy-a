@@ -25,6 +25,9 @@ Orchard release is required for local development. Use `uv run python ...` for t
 existing Python producers below, or the workspace interpreter selected by your
 editor. CI's explicit published-input path remains unchanged.
 
+The root `orchard.toml` selects the default hardware recipe with `device = "j71b"`.
+RAM builds and automatic kernel resolution below use that setting.
+
 ## Produce components
 
 - `desktop/build-sources` and `desktop/build`: desktop applications and payload.

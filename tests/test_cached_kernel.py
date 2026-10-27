@@ -23,12 +23,14 @@ class CachedKernelTests(unittest.TestCase):
     def test_omitted_bundle_uses_generic_builder_and_preserves_branding(self):
         api = ModuleType('orchard_cli.build')
         api.prepare_kernel = Mock(return_value=Path('/shared/kernel'))
+        api.configured_device = Mock(return_value='new-board')
         args = self.args()
         with patch.dict(sys.modules, {'orchard_cli.build': api}):
             build.resolve_kernel(args)
-        api.prepare_kernel.assert_called_once_with(device='j71b')
+        api.configured_device.assert_called_once_with(build.PROJECT)
+        api.prepare_kernel.assert_called_once_with(device='new-board')
         self.assertEqual(args.kernel, Path('/shared/kernel/Image.gz'))
-        self.assertEqual(args.dtb, Path('/shared/kernel/j71b.dtb'))
+        self.assertEqual(args.dtb, Path('/shared/kernel/new-board.dtb'))
         self.assertEqual(args.modules_dir, Path('/shared/kernel/lib/modules'))
         self.assertEqual(args.loader, Path('/branded/loader'))
         self.assertEqual(args.pongo, Path('/branded/pongo'))
