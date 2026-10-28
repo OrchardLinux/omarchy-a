@@ -235,7 +235,7 @@ PYBOOT
                  patch.object(public_root, 'bluetooth_files', return_value={}), \
                  patch.object(public_root, 'labwc_files', return_value={}), \
                  patch.object(public_root, 'runtime_files', return_value=('test', {
-                     'usr/libexec/j71b-check-platform': (b'platform', 0o755)})):
+                     'usr/bin/orchard-device': (b'device', 0o755)})):
                 result = public_root.build(base, receipt, root, dropbear, root / 'release', 'test', root / 'cursor-tools')
             raw = subprocess.check_output(['zstd', '-dq', '-c', str(root / 'release/rootfs.tar.zst')])
             with tarfile.open(fileobj=io.BytesIO(raw)) as bundle:

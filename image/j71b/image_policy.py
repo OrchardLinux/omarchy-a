@@ -36,8 +36,7 @@ def ready(*, ssh_revoked=False):
 
 
 def validate_root(root, release):
-    for helper in ('usr/lib/systemd/systemd', 'usr/libexec/j71b-check-platform',
-                   'usr/libexec/j71b-charge-lease', 'usr/libexec/omarchy-diagnostics'):
+    for helper in ('usr/lib/systemd/systemd', 'usr/libexec/omarchy-diagnostics'):
         if not os.access(root / helper, os.X_OK):
             raise ValueError('Missing executable: ' + helper)
     root_release = json.loads((root / 'etc/orchard/release.json').read_text())
@@ -46,8 +45,7 @@ def validate_root(root, release):
 
 
 def validate_handoff(root):
-    for helper in ('usr/lib/systemd/systemd', 'usr/libexec/j71b-check-platform',
-                   'usr/libexec/j71b-charge-lease', 'usr/libexec/omarchy-diagnostics'):
+    for helper in ('usr/lib/systemd/systemd', 'usr/libexec/omarchy-diagnostics'):
         if not os.access(root / helper, os.X_OK):
             raise ValueError('Handoff executable missing: ' + helper)
 

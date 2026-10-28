@@ -221,7 +221,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
                     member = tarfile.TarInfo(name)
                     member.mode, member.size = mode, len(data)
                     add(member, data)
-                for unit in ('j71b-charge.service', 'omarchy-diagnostics.service'):
+                for unit in ('omarchy-diagnostics.service',):
                     member = tarfile.TarInfo('etc/systemd/system/multi-user.target.wants/' + unit)
                     member.type, member.linkname, member.mode = tarfile.SYMTYPE, '/usr/lib/systemd/system/' + unit, 0o777
                     if member.name not in seen:
@@ -231,7 +231,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
             if compressor.wait():
                 raise ValueError('Public root compression failed')
         required = {'lib', 'usr/lib/systemd/systemd', 'etc/group', 'etc/gshadow', qml_path,
-                    'arch-ipad-ui-manifest.json', 'usr/libexec/j71b-check-platform', 'usr/libexec/omarchy-diagnostics'}
+                    'arch-ipad-ui-manifest.json', 'usr/libexec/omarchy-diagnostics'}
         if not required <= seen or not privileges.keys() <= seen or not replacements.keys() <= seen:
             raise ValueError('Incomplete public root or privileged package metadata')
         receipt = {'schema': 1, 'kind': 'rootfs', 'profile': 'j71b', 'release': release,
