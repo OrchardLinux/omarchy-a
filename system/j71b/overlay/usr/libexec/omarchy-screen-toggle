@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""J71b backlight toggle only: no suspend, session lock, or input changes."""
+"""Built-in panel backlight toggle only: no suspend, session lock, or input changes."""
 import fcntl
 import os
 from pathlib import Path
@@ -38,11 +38,18 @@ def toggle(device, runtime):
         return target
 
 
+def panel(root=Path('/sys/class/backlight')):
+    """The one built-in panel backlight; refuse none or several."""
+    devices = sorted(root.iterdir())
+    if len(devices) != 1:
+        raise ValueError(f'Expected one panel backlight, found {len(devices)}')
+    return devices[0]
+
+
 def main():
     # Keep physical output selection device-owned; never toggle unrelated displays.
-    device = Path('/sys/class/backlight/20e200080.backlight')
     runtime = Path(os.environ['XDG_RUNTIME_DIR'])
-    toggle(device, runtime)
+    toggle(panel(), runtime)
 
 
 if __name__ == '__main__':

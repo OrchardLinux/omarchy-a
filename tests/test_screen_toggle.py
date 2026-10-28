@@ -9,7 +9,9 @@ from release.j71b.public_root import desktop_replacements, system_files
 
 PROJECT = Path(__file__).resolve().parents[1]
 HELPER = PROJECT / 'system/j71b/overlay/usr/libexec/omarchy-screen-toggle'
-toggle = runpy.run_path(str(HELPER))['toggle']
+HELPER_NAMESPACE = runpy.run_path(str(HELPER))
+toggle = HELPER_NAMESPACE['toggle']
+panel = HELPER_NAMESPACE['panel']
 
 
 class ScreenToggleTests(unittest.TestCase):
@@ -23,6 +25,17 @@ class ScreenToggleTests(unittest.TestCase):
         self.device.mkdir()
         (self.device / 'max_brightness').write_text('2047\n')
         (self.device / 'brightness').write_text('731\n')
+
+    def test_panel_is_the_only_backlight(self):
+        backlights = self.root / 'class'
+        backlights.mkdir()
+        with self.assertRaisesRegex(ValueError, 'found 0'):
+            panel(backlights)
+        (backlights / '20e200000.backlight').mkdir()
+        self.assertEqual(panel(backlights).name, '20e200000.backlight')
+        (backlights / 'other').mkdir()
+        with self.assertRaisesRegex(ValueError, 'found 2'):
+            panel(backlights)
 
     def test_round_trip_restores_exact_raw_brightness(self):
         self.assertEqual(toggle(self.device, self.runtime), 0)
