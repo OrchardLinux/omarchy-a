@@ -151,7 +151,7 @@ requires-dist = [
 
 [[package]]
 name = "orchard-cli"
-version = "0.1.10"
+version = "0.1.11"
 source = { editable = "cli" }
 dependencies = [
     { name = "jsonschema", version = "4.25.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -177,7 +177,7 @@ dev = [{ name = "mypy", specifier = "==1.18.2" }]
 
 [[package]]
 name = "orchard-hardware"
-version = "0.1.10"
+version = "0.1.11"
 source = { editable = "hardware" }
 dependencies = [
     { name = "tomli", marker = "python_full_version < '3.11'" },
