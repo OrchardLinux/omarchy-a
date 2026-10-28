@@ -261,3 +261,9 @@ The result records the audited root hash and whether the app grid and theme
 carousel responded. Screenshots accompany the result. The P105 workflow runs
 this check for manually requested root builds. Physical input and radio
 behavior require their own device checks.
+
+Candidate `0.1.1-p105.1` passed two native Orchard CLI boots on the original
+iPad mini Wi-Fi. Physical Home and Omacalc worked, and the owner entered a
+Wi-Fi password with the on-screen keyboard. The saved connection returned
+after reboot. See [the P105 validation record](../../docs/p105-validation.md)
+for the tested root hash and remaining issues.

@@ -51,16 +51,42 @@ workflow checks the profiles and can build the NFS artifact on manual dispatch.
 
 ## Physical qualification
 
-The fresh root awaits a device boot after the Mac prepares its private NFS
-export. A separate case-sensitive APFS image is mounted for that root. Owner
-Wi-Fi and SSH inputs stay private, with the prior working export retained.
-The macOS administrator prompt is required to apply numeric guest ownership
-and add the export.
+The candidate booted twice on the original iPad mini Wi-Fi through the installed
+Orchard CLI and its NFS handoff. Each test started from iOS after a clean Linux
+shutdown and had a distinct Linux boot identity. All five source checkouts and
+the old workspace were denied to the host Python process during both boots.
+The new root lives on a separate case-sensitive host image. The prior working
+export is retained.
+Owner Wi-Fi and SSH inputs were applied privately after the public archive
+passed its audit.
 
-Repeated native CLI boots and physical keyboard/password-entry checks remain
-pending. Touch latency and the intermittent calibration startup failure from
-the earlier hardware qualification remain open. Bluetooth pairing and audio
-playback await their own device tests.
+| Device check | Measured result |
+| --- | --- |
+| Running system | Arch Linux ARM, `armv7l`, kernel `6.12.0`, release `0.1.1-p105.1` |
+| Root and packages | New native NFS root; package inventory exactly matches the release |
+| System and user managers | Zero failed units on both boots |
+| Hardware runtime | Platform, touch, keys and zram active on both boots; all eight payload checks passed each time |
+| Recovery | One USB serial reader in the current root on each boot; rescue executable verified in RAM |
+| Storage fence | Flash controller disabled and MTD inventory empty on both boots |
+| Desktop | Physical 768 × 1024 frames captured with the complete shell after both boots |
+| Owner input | Home opened the app grid; Omacalc displayed 4 for 2 + 2 during the first session |
+| Network password | Owner entered the password with the on-screen keyboard and connected during the first session |
+| Network access | Saved Wi-Fi reconnected after reboot; certificate-verified HTTPS passed in each session |
+| LAN SSH | Existing host identity and authorized owner key worked for `tablet` after both boots; sudo passed |
+
+The shell took time to finish drawing after system services reported ready,
+with partial bars visible in the first captures.
+
+Touch latency and the intermittent calibration startup failure from the earlier
+hardware qualification remain open. Both native desktop boots started their
+touch service without intervention. Automatic time synchronization remains
+open; `systemd-timesyncd` was inactive in the first session. Bluetooth pairing and audio playback
+await their own device tests.
+
+The tested public root has SHA-256
+`66de9098b3b12caccc3ca21d2e8b5b3723afecfeded75a8cce5acc95e53f4e0c`.
+Its local qualification receipt records the device results against that hash.
+The producer marks each newly built candidate as awaiting physical testing.
 
 Build receipts and test evidence remain in the owner's local phase 4 directory.
 See [the P105 build instructions](../desktop/p105/README.md).
