@@ -62,7 +62,7 @@ def audit(manifest):
     names, ancestors, directories = set(), set(), set()
     desktop = public = privileges = cursor = bluetooth = labwc = None
     recipe = json.loads(firmware_path('j71b').read_text())
-    private = {item['destination'] for item in recipe['files'] + recipe['generated']}
+    private = {item['destination'] for item in recipe['outputs']}
     with subprocess.Popen(['zstd', '-d', '-q', '-c', str(paths['root'])], stdout=subprocess.PIPE) as decoder:
         with tarfile.open(fileobj=decoder.stdout, mode='r|') as archive:
             for member in archive:

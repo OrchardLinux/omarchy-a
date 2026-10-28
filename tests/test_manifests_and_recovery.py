@@ -101,7 +101,7 @@ class RecoverySealing(unittest.TestCase):
 
     def test_public_recovery_cannot_contain_firmware_or_session_credentials(self):
         recipe = json.loads(firmware_path('j71b').read_text())
-        for name in (recipe['files'][0]['destination'], 'run/recovery/ssh_host_ed25519_key'):
+        for name in (recipe['outputs'][0]['destination'], 'run/recovery/ssh_host_ed25519_key'):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 self.exercise(private_file=name)
 
