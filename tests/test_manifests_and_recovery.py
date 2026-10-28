@@ -29,7 +29,7 @@ class Publication(unittest.TestCase):
             self.assertEqual(doc['device'], 'j71b')
             self.assertEqual(doc['install']['default_root'], '/omarchy')
             self.assertEqual(doc['root']['sha256'], hashlib.sha256(b'rootfs.tar.zst').hexdigest())
-            self.assertEqual(doc['min_orchard'], '0.1.10')
+            self.assertEqual(doc['min_orchard'], '0.1.11')
             self.assertEqual(manifests.read_release(path)['assets']['recovery'], doc['boot'])
             with self.assertRaises(FileExistsError):
                 manifests.write(output, 'test-1', root)
@@ -101,7 +101,7 @@ class RecoverySealing(unittest.TestCase):
 
     def test_public_recovery_cannot_contain_firmware_or_session_credentials(self):
         recipe = json.loads(firmware_path('j71b').read_text())
-        for name in (recipe['files'][0]['destination'], 'run/recovery/ssh_host_ed25519_key'):
+        for name in (recipe['outputs'][0]['destination'], 'run/recovery/ssh_host_ed25519_key'):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 self.exercise(private_file=name)
 

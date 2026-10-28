@@ -28,8 +28,6 @@ class DevicePromotion(unittest.TestCase):
             ('etc/omarchy/package-privileges.json', 'file', json.dumps(privileges).encode()),
             ('lib', 'symlink', 'usr/lib'),
             ('usr/lib/systemd/systemd', 'file', b'executable'),
-            ('usr/libexec/j71b-check-platform', 'file', b'executable'),
-            ('usr/libexec/j71b-charge-lease', 'file', b'executable'),
             ('usr/libexec/omarchy-diagnostics', 'file', b'executable'),
             ('etc/orchard/release.json', 'file', b'{"release":"1.0"}'),
         ])

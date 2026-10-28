@@ -200,7 +200,7 @@ PYBOOT
             result = subprocess.run(['podman', 'run', '--rm', '--network', 'none', '--cap-add', 'NET_ADMIN',
                                  '--userns', 'keep-id:uid=0,gid=0', '-v', str(tools) + ':/probe:ro',
                                  '-v', str(staged) + ':/runtime:ro',
-                                 '-v', str(HARDWARE / 'boot/initramfs/j71b/recovery') + ':/recipe:ro',
+                                 '-v', str(HARDWARE / 'boot/initramfs/recovery') + ':/recipe:ro',
                                  image, 'sh', '-c', script], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -235,7 +235,7 @@ PYBOOT
                  patch.object(public_root, 'bluetooth_files', return_value={}), \
                  patch.object(public_root, 'labwc_files', return_value={}), \
                  patch.object(public_root, 'runtime_files', return_value=('test', {
-                     'usr/libexec/j71b-check-platform': (b'platform', 0o755)})):
+                     'usr/bin/orchard-device': (b'device', 0o755)})):
                 result = public_root.build(base, receipt, root, dropbear, root / 'release', 'test', root / 'cursor-tools')
             raw = subprocess.check_output(['zstd', '-dq', '-c', str(root / 'release/rootfs.tar.zst')])
             with tarfile.open(fileobj=io.BytesIO(raw)) as bundle:
@@ -340,7 +340,7 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
             table.write_text('dev: size erasesize name\nmtd3: 00000004 00000001 "adt"\n')
             (root / 'mtd3').write_bytes(b'\x00\xff\r\n')
             env = {**os.environ, 'ADT_MTD_TABLE': str(table), 'ADT_MTD_DEV': str(root)}
-            endpoint = HARDWARE / 'boot/initramfs/j71b/recovery/capture-adt'
+            endpoint = HARDWARE / 'boot/initramfs/recovery/capture-adt'
             size = subprocess.check_output(['sh', str(endpoint), '--size'], env=env)
             self.assertEqual(int(size.strip(), 16), 4)
             self.assertEqual(subprocess.check_output(['sh', str(endpoint)], env=env), b'\x00\xff\r\n')

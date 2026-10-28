@@ -49,7 +49,7 @@ def audit_runtime(image, root_spec, release):
     part = next(row for row in receipt['components'] if row['name'] == 'initramfs')
     hashes, modes, records = {}, {}, {}
     firmware = json.loads(firmware_path('j71b').read_text())
-    private = {row['destination'] for row in firmware['files'] + firmware['generated']}
+    private = {row['destination'] for row in firmware['outputs']}
     names = set()
     with image.open('rb') as raw:
         raw.seek(part['offset'])
