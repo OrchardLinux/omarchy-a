@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+[ -d /sys/block/zram0 ]
+grep -q '^/dev/zram0 ' /proc/swaps && exit 0
+if [ "$(cat /sys/block/zram0/disksize)" = 0 ]; then
+    printf 'lz4\n' > /sys/block/zram0/comp_algorithm
+    printf '268435456\n' > /sys/block/zram0/disksize
+fi
+/usr/bin/mkswap /dev/zram0
+/usr/bin/swapon --priority 100 /dev/zram0

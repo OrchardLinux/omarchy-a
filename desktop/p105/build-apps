@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Build P105's pinned Omacalc and Omafox packages without package installation."""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import shutil
+import subprocess
+import tempfile
+
+import stage
+
+HERE = Path(__file__).resolve().parent
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    output = args.output.resolve()
+    if output.exists():
+        parser.error("Choose a new output directory")
+    if os.geteuid() == 0 or platform.machine() not in {"armv7l", "armv8l"}:
+        parser.error("Run as an unprivileged user inside the ARMv7h build environment")
+    for tool in ("makepkg", "cc", "readelf", "qmake6", "bsdtar", "pacman"):
+        if not shutil.which(tool):
+            parser.error("Missing build tool: " + tool)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix="p105-apps-") as temporary:
+            work = Path(temporary)
+            result = work / "result"
+            result.mkdir()
+            components = {}
+            for name, executable in (("omacalc", "usr/bin/omacalc"), ("omafox", "usr/lib/omafox/omafox-native-host")):
+                recipe = HERE / "packages" / name / "PKGBUILD"
+                source = work / name
+                source.mkdir()
+                shutil.copy2(recipe, source / "PKGBUILD")
+                component = result / name
+                component.mkdir()
+                (component / "sources").mkdir()
+                environment = {**os.environ, "PKGDEST": str(component),
+                               "SRCDEST": str(component / "sources"), "MAKEFLAGS": "-j2"}
+                subprocess.run(["makepkg", "--cleanbuild", "--noconfirm"], cwd=source, env=environment, check=True)
+                archives = [path for path in component.iterdir() if path.is_file() and ".pkg.tar." in path.name]
+                if len(archives) != 1:
+                    raise ValueError("Unexpected package output for " + name)
+                package = archives[0]
+                binary = work / (name + "-elf")
+                with binary.open("wb") as stream:
+                    subprocess.run(["bsdtar", "-xOf", str(package), executable], stdout=stream, check=True)
+                stage.check_armhf(binary, name)
+                shutil.copy2(recipe, component / "PKGBUILD")
+                for metadata in (".PKGINFO", ".BUILDINFO"):
+                    (component / metadata[1:]).write_bytes(subprocess.check_output(["bsdtar", "-xOf", str(package), metadata]))
+                (component / "SRCINFO").write_text(subprocess.check_output(["makepkg", "--printsrcinfo"], cwd=source, env=environment, text=True))
+                components[name] = {"package": package.relative_to(result).as_posix(), "package_sha256": sha(package),
+                                    "recipe_sha256": sha(recipe), "elf_sha256": sha(binary)}
+            (result / "packages.lock").write_text(subprocess.check_output(["pacman", "-Q"], text=True))
+            record = {
+                "schema": 1, "architecture": "armv7h", "components": components,
+                "compiler": subprocess.check_output(["cc", "--version"], text=True).splitlines()[0],
+                "compiler_target": subprocess.check_output(["cc", "-dumpmachine"], text=True).strip(),
+                "files": {path.relative_to(result).as_posix(): sha(path)
+                          for path in sorted(result.rglob("*")) if path.is_file()},
+            }
+            (result / "manifest.json").write_text(json.dumps(record, indent=2) + "\n")
+            with tempfile.TemporaryDirectory(prefix=".p105-export-", dir=output.parent) as export_work:
+                staged = Path(export_work) / "result"
+                shutil.copytree(result, staged)
+                os.replace(staged, output)
+        print("Built ARMv7h application packages:", output)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,60 @@
+name: P105 ARMv7 desktop
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_root:
+        description: Build and audit the signed P105 NFS desktop artifact
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  p105-and-j71b-tests:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install uv
+      - run: uv sync --locked --python '${{ matrix.python }}'
+      - run: uv run --locked python -m unittest discover -s tests -v
+  p105-root:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_root
+    needs: p105-and-j71b-tests
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install uv
+      - run: sudo apt-get update && sudo apt-get install -y podman
+      - run: uv sync --locked
+      - name: Build a signed Arch ARMv7 package snapshot and desktop
+        run: uv run --locked python system/p105/build --release 'preview-${{ github.run_id }}' --output out/p105-build
+      - name: Assemble and audit the public NFS root
+        run: |
+          uv run --locked python -m release.p105.build --base out/p105-build/result --output out/p105-release
+          uv run --locked python -m release.p105.audit out/p105-release
+          uv run --locked python -m release.p105.smoke_desktop --release out/p105-release --builder-image "$(cat out/p105-build/work/builder-image.id)" --output out/p105-desktop-check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p105-nfs-root
+          path: out/p105-release/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7

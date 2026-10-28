@@ -1,0 +1,1 @@
+ACTION=="add", SUBSYSTEM=="backlight", KERNEL=="apple-pmu-wled", RUN+="/usr/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/usr/bin/chmod g+w /sys/class/backlight/%k/brightness"

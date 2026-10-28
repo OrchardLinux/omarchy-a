@@ -1,0 +1,12 @@
+{
+  "validated_firefox_version": "157.0",
+  "policy_documentation": "https://firefox-admin-docs.mozilla.org/reference/policies/preferences/",
+  "versioned_sources": {
+    "process_pool_defaults": "https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/modules/libpref/init/all.js",
+    "prelaunch_and_onboarding_defaults": "https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/browser/app/profile/firefox.js",
+    "prelaunch_memory_policy": "https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/dom/ipc/PreallocatedProcessManager.cpp",
+    "prelaunch_pool_size": "https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/modules/libpref/init/StaticPrefList.yaml",
+    "preferences_policy_implementation": "https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/browser/components/enterprisepolicies/Policies.sys.mjs",
+    "onboarding_behavior": "https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/browser/components/asrouter/docs/first-run.md"
+  }
+}

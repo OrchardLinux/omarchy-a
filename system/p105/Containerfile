@@ -1,0 +1,17 @@
+FROM docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 AS emulator
+FROM docker.io/library/alpine@sha256:e311ae748be7f56ae5cba304bc488f0786df68ee507513f654a5cc8597cffb42 AS bootstrap
+RUN apk add --no-cache build-base gnupg tar gzip
+COPY bootstrap.tar.gz bootstrap.tar.gz.sig archlinuxarm-build.asc with-arm.c /inputs/
+RUN mkdir -m 700 /inputs/gnupg && \
+    gpg --homedir /inputs/gnupg --batch --import /inputs/archlinuxarm-build.asc && \
+    gpg --homedir /inputs/gnupg --batch --status-fd 1 --verify /inputs/bootstrap.tar.gz.sig /inputs/bootstrap.tar.gz > /inputs/signature.status && \
+    grep -q '^\[GNUPG:\] VALIDSIG 68B3537F39A313B3E574D06777193F152BDBE6A6 ' /inputs/signature.status && \
+    echo 'ebe0fa119dea45e3af0aa61785676bdbf417bc5f754d529b87255dbf0ca4e3f0  /inputs/bootstrap.tar.gz' | sha256sum -c - && \
+    mkdir /armroot && tar -xpf /inputs/bootstrap.tar.gz -C /armroot --exclude='./dev/*' && \
+    cc -static -O2 /inputs/with-arm.c -o /inputs/with-arm
+FROM scratch
+COPY --from=bootstrap /armroot/ /
+COPY --from=bootstrap /inputs/with-arm /usr/libexec/omarchy-build/with-arm
+COPY --from=emulator /usr/bin/qemu-arm /usr/libexec/omarchy-build/qemu-arm
+LABEL org.orchard.target.architecture="armv7h"
+ENTRYPOINT ["/usr/libexec/omarchy-build/with-arm"]

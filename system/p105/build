@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Build the P105 ARMv7 desktop and clean NFS root from signed Arch packages."""
+import argparse
+import hashlib
+from importlib.metadata import version
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+from urllib.request import urlopen
+
+HERE = Path(__file__).resolve().parent
+PROJECT = HERE.parents[1]
+
+
+def sha(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def bootstrap(context, archive=None, signature=None):
+    pin = json.loads((HERE/'bootstrap.json').read_text())
+    if bool(archive) != bool(signature):
+        raise ValueError('Provide the bootstrap and its detached signature together')
+    if archive:
+        if sha(archive) != pin['sha256']:
+            raise ValueError('ARMv7 bootstrap differs from its pin')
+        shutil.copyfile(archive, context/'bootstrap.tar.gz')
+        shutil.copyfile(signature, context/'bootstrap.tar.gz.sig')
+    else:
+        failures = []
+        for url in pin['urls']:
+            try:
+                for suffix in ('', '.sig'):
+                    with urlopen(url+suffix, timeout=60) as source, (context/('bootstrap.tar.gz'+suffix)).open('wb') as target:
+                        shutil.copyfileobj(source, target)
+                if sha(context/'bootstrap.tar.gz') != pin['sha256']:
+                    raise ValueError('ARMv7 bootstrap differs from its pin')
+                break
+            except (OSError, ValueError) as error:
+                failures.append(str(error))
+        else:
+            raise ValueError('Pinned ARMv7 bootstrap is unavailable: '+'; '.join(failures))
+    for name in ('archlinuxarm-build.asc', 'with-arm.c', 'Containerfile'):
+        shutil.copy2(HERE/name, context/name)
+
+
+def hardware_overlay(target):
+    import orchard_hardware
+    if tuple(int(part) for part in version('orchard-hardware').split('.')[:3]) < (0, 1, 11):
+        raise ValueError('P105 needs hardware 0.1.11 or later')
+    resources = Path(orchard_hardware.__file__).parent/'runtime/p105/overlay'
+    shutil.copytree(resources, target)
+    for directory in [target,*[p for p in target.rglob('*') if p.is_dir()]]:
+        directory.chmod(0o755)
+    for path in target.rglob('*'):
+        if path.is_file():
+            path.chmod(0o755 if path.read_bytes().startswith(b'#!') else 0o644)
+    return {'package': version('orchard-hardware'), 'runtime': 'p105-systemd-v1',
+            'files': {str(p.relative_to(target)): sha(p) for p in sorted(target.rglob('*')) if p.is_file()}}
+
+
+def build(args):
+    output = args.output.expanduser().absolute()
+    if output.exists() or output.is_symlink():
+        raise ValueError('Choose a fresh P105 build output')
+    if args.jobs < 1 or not args.release or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-' for c in args.release):
+        raise ValueError('Supply a release identifier and a positive job count')
+    output.mkdir(parents=True)
+    work = output/'work'
+    work.mkdir()
+    context = work/'bootstrap-context'
+    context.mkdir()
+    bootstrap(context, args.bootstrap, args.bootstrap_signature)
+    overlay = work/'hardware-overlay'
+    hardware = hardware_overlay(overlay)
+    (overlay/'p105-hardware-input.json').write_text(json.dumps(hardware, indent=2)+'\n')
+    image_id = work/'builder-image.id'
+    subprocess.run(['podman', 'build', '--iidfile', str(image_id), '-f', str(context/'Containerfile'), str(context)], check=True)
+    image = image_id.read_text().strip()
+    volume = 'omarchy-p105-'+os.urandom(12).hex()
+    subprocess.run(['podman','volume','create',volume],check=True,stdout=subprocess.DEVNULL)
+    state = {'schema':1,'image':image,'volume':volume,'release':args.release,'hardware':hardware,
+             'bootstrap':json.loads((HERE/'bootstrap.json').read_text()),'status':'building'}
+    (output/'build-state.json').write_text(json.dumps(state,indent=2)+'\n')
+    command = ['podman','run','--rm','--privileged','-e','QEMU_CPU=cortex-a9',
+               '-v',volume+':/work:rw','-v',str(PROJECT)+':/repo:ro',
+               '-v',str(overlay)+':/hardware:ro']
+    if args.package_cache:
+        command += ['-v',str(args.package_cache.resolve())+':/package-cache:ro']
+    command += [image,'/bin/bash','--noprofile','--norc','/repo/system/p105/build-rootfs',
+                '--release',args.release,'--jobs',str(args.jobs)]
+    subprocess.run(command,check=True)
+    result = output/'result'
+    result.mkdir()
+    with tempfile.TemporaryDirectory(prefix='p105-export-', dir=work) as temporary:
+        archive=Path(temporary)/'result.tar'
+        # The native wrapper mounts binfmt; a fresh container needs that setup
+        # even when it only exports the target architecture's completed files.
+        with archive.open('wb') as stream:
+            subprocess.run(['podman','run','--rm','--privileged','--network','none','-e','QEMU_CPU=cortex-a9',
+                            '-v',volume+':/work:ro',image,'/usr/bin/tar','-C','/work/result','-cf','-','.'],
+                           stdout=stream,check=True)
+        subprocess.run(['tar','-xf',str(archive),'-C',str(result)],check=True)
+    state['status']='complete'
+    (output/'build-state.json').write_text(json.dumps(state,indent=2)+'\n')
+    print('P105 userspace and desktop:',result)
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--release',required=True)
+    parser.add_argument('--bootstrap',type=Path)
+    parser.add_argument('--bootstrap-signature',type=Path)
+    parser.add_argument('--package-cache',type=Path)
+    parser.add_argument('--jobs',type=int,default=2)
+    args=parser.parse_args()
+    try:
+        build(args)
+    except (OSError,ValueError,subprocess.CalledProcessError) as error:
+        parser.exit(1,'P105 build: '+str(error)+'\n')
+
+
+if __name__=='__main__':
+    main()

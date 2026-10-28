@@ -1,0 +1,37 @@
+# P105 build of Omacalc's pinned upstream source.
+pkgname=omacalc
+pkgver=0.3.1
+pkgrel=1
+pkgdesc="Omarchy calculator"
+arch=('armv7h')
+url='https://github.com/omacom/omacalc'
+license=('MIT' 'OFL-1.1')
+depends=('qt6-base' 'qt6-declarative' 'xdg-desktop-portal')
+makedepends=('base-devel')
+_commit=573d7106f5c6c0225864eb8634ae37ddcb657f63
+source=("$pkgname-$pkgver.tar.gz::https://codeload.github.com/omacom/omacalc/tar.gz/$_commit")
+sha256sums=('6a4ad731acb4f68226b975e1b817b2907fea1534d52d1e769564a76a48f3eafc')
+
+build() {
+    cd "$srcdir/$pkgname-$_commit"
+    mkdir -p build
+    cd build
+    qmake6 ../omacalc.pro
+    make
+    LC_ALL=C readelf -h omacalc | grep -q 'Machine:.*ARM'
+    LC_ALL=C readelf -h omacalc | grep -q 'hard-float ABI'
+}
+
+check() {
+    cd "$srcdir/$pkgname-$_commit"
+    QT_QPA_PLATFORM=offscreen bin/test
+}
+
+package() {
+    cd "$srcdir/$pkgname-$_commit"
+    install -Dm755 build/omacalc "$pkgdir/usr/bin/omacalc"
+    install -Dm644 pkgbuild/omacalc.desktop "$pkgdir/usr/share/applications/omacalc.desktop"
+    install -Dm644 pkgbuild/omacalc.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/omacalc.svg"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/omacalc/LICENSE"
+    install -Dm644 fonts/OFL.txt "$pkgdir/usr/share/licenses/omacalc/OFL.txt"
+}

@@ -1,0 +1,4 @@
+#!/bin/bash
+# Open Omarchy's learning links with the installed browser.
+set -euo pipefail
+exec /usr/local/bin/omarchy-launch-browser "$@"

@@ -101,3 +101,38 @@ Choose new evidence directories. `wlrctl` is a test-only native AArch64 helper, 
 ## Publish
 
 Follow [Publishing Omarchy A](docs/releasing.md). Build/audit success is not physical-device qualification: test a fresh installation and a cold-restart `orchard launch` on supported hardware before announcing the release. The experimental desktop auto-logs in and grants passwordless sudo; this is disclosed in the README and must not be described as a secure daily-use system.
+
+
+## P105 ARMv7 desktop and NFS root
+
+The P105 producer uses the companion CLI/hardware commits recorded by the
+editable workspace. Initialize them with `./orchard --version`. The hardware
+package must be 0.1.11 or later. An ARM64 Linux container host with Podman is
+required for the Cortex-A9 build environment; Apple Silicon Macs can use
+Podman's VM. The P105 container registers its ARM emulator in its own build
+namespace.
+
+```sh
+uv run python system/p105/build --release YOUR_NEW_VERSION --output out/p105-build
+uv run python -m release.p105.build --base out/p105-build/result --output out/p105-release
+uv run python -m release.p105.audit out/p105-release
+```
+
+`system/build-rootfs p105` dispatches to the same producer when its Python
+environment contains the active hardware package. `--bootstrap` and
+`--bootstrap-signature` select cached copies of the pinned official archive.
+`--package-cache` accepts a directory of previously downloaded Arch packages;
+each selected package is checked against the synchronized database and its
+signature. Source-built components retain their source archives and licenses.
+
+The release contains a public ARMv7 root, a complete catalog and source
+receipts. Its `rootfs.json` describes an NFS root and the P105 kernel/runtime
+contract. The owner's private boot manifest remains separate. The installed
+root stays on the NFS host throughout the session.
+
+Prepare the host directory with numeric guest ownership and explicit private
+owner inputs as described in [the P105 desktop instructions](desktop/p105/README.md).
+Qualification requires boots from this finished artifact through the native
+Orchard CLI and physical input checks. The desktop enables automatic console
+login and passwordless sudo for `tablet`, following the project's experimental
+image policy.

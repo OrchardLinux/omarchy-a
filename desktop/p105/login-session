@@ -1,0 +1,22 @@
+#!/bin/bash
+# Enter from the tablet user's PAM/logind console session.
+set -euo pipefail
+[[ $(tty) == /dev/tty1 && ${USER:-} == tablet && -z ${SSH_CONNECTION:-} ]] || exit 1
+[[ -n ${XDG_SESSION_ID:-} && -d ${XDG_RUNTIME_DIR:-/nonexistent} && -O $XDG_RUNTIME_DIR ]] || {
+    echo 'No active logind session/runtime directory' >&2
+    exit 1
+}
+[[ -S $XDG_RUNTIME_DIR/bus && -O $XDG_RUNTIME_DIR/bus ]] || {
+    echo 'No PAM/systemd user D-Bus socket' >&2
+    exit 1
+}
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+export OMARCHY_PATH="$HOME/.local/share/omarchy-ipad"
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=labwc
+export OMARCHY_TOUCH_MODE=1
+export WLR_RENDERER=pixman QT_QUICK_BACKEND=software QT_QPA_PLATFORM=wayland
+export LIBGL_ALWAYS_SOFTWARE=1 LIBSEAT_BACKEND=seatd MOZ_ENABLE_WAYLAND=1
+export PATH=/usr/local/bin:/usr/bin
+systemctl --user import-environment DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE XDG_CURRENT_DESKTOP
+/usr/local/libexec/arch-ipad-first-theme
+exec /usr/bin/labwc

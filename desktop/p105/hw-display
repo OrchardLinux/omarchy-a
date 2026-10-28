@@ -1,0 +1,12 @@
+#!/bin/bash
+# Name the sole kernel backlight for the shell's physical-key observer.
+set -euo pipefail
+base=${IPADLINUX_BACKLIGHT_DIR:-/sys/class/backlight}
+selected=''
+for device in "$base"/*; do
+    [[ -d $device && -r $device/brightness && -r $device/max_brightness ]] || continue
+    [[ -z $selected ]] || exit 1
+    selected=${device##*/}
+done
+[[ -n $selected ]] || exit 1
+printf '%s\n' "$selected"

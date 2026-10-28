@@ -1,0 +1,6 @@
+polkit.addRule(function(action, subject) {
+    if (subject.user == "tablet" && subject.local && subject.active &&
+        action.id.indexOf("org.freedesktop.NetworkManager.") == 0) {
+        return polkit.Result.YES;
+    }
+});

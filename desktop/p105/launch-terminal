@@ -1,0 +1,4 @@
+#!/bin/bash
+# Enter the native Wayland terminal without a compositor-specific launcher.
+set -euo pipefail
+exec /usr/bin/foot "$@"

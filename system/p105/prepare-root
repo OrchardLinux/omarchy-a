@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Run inside the verified Arch Linux ARM armv7h container. This changes its /.
+set -euo pipefail
+
+snapshot=
+package_cache=
+packages_file=$(cd "$(dirname "$0")" && pwd)/packages.txt
+while (($#)); do
+  case "$1" in
+    --snapshot) [[ $# -ge 2 ]] || exit 2; snapshot=$2; shift 2;;
+    --packages) [[ $# -ge 2 ]] || exit 2; packages_file=$2; shift 2;;
+    --package-cache) [[ $# -ge 2 ]] || exit 2; package_cache=$2; shift 2;;
+    *) printf 'Unknown argument: %s\n' "$1" >&2; exit 2;;
+  esac
+done
+[[ -n "$snapshot" ]] || { echo 'Usage: prepare-root --snapshot NEW_DIRECTORY [--packages FILE]' >&2; exit 2; }
+[[ $EUID == 0 && $(uname -m) == armv7l ]] || { echo 'Requires root inside an ARMv7 Arch Linux ARM container' >&2; exit 1; }
+[[ -e /run/.containerenv || -e /.dockerenv ]] || { echo 'Run this script inside the build container' >&2; exit 1; }
+for command in pacman pacman-key pacman-conf sha256sum base64 install; do
+  command -v "$command" >/dev/null || { printf 'Missing command: %s\n' "$command" >&2; exit 1; }
+done
+[[ -f "$packages_file" && ! -e "$snapshot" ]] || { echo 'Package list must exist and snapshot directory must be new' >&2; exit 1; }
+snapshot=$(realpath -m -- "$snapshot")
+[[ "$snapshot" != / ]] || exit 1
+mapfile -t requested < <(sed -E 's/[[:space:]]*#.*$//; /^[[:space:]]*$/d' "$packages_file")
+[[ ${#requested[@]} -gt 0 ]] || { echo 'Package list is empty' >&2; exit 1; }
+for package in "${requested[@]}"; do
+  [[ "$package" =~ ^[a-z0-9][a-z0-9@._+-]*$ ]] || { printf 'Invalid package name: %s\n' "$package" >&2; exit 1; }
+  case "$package" in
+    linux|linux-headers|linux-lts|linux-lts-headers|linux-armv7*|linux-aarch64*|linux-rpi*|linux-raspberrypi*)
+      printf 'Cascadia supplies the kernel; remove %s from the package list\n' "$package" >&2; exit 1;;
+  esac
+done
+
+install -d "$snapshot/cache" "$snapshot/sync"
+if [[ -n "$package_cache" ]]; then
+  [[ -d "$package_cache" ]] || { echo 'Package cache must be an existing directory' >&2; exit 1; }
+  find "$package_cache" -maxdepth 1 -type f -name '*.pkg.tar.*' -exec cp -n --reflink=auto -t "$snapshot/cache" -- {} +
+fi
+cp -- "$packages_file" "$snapshot/packages.requested.txt"
+cp -- /etc/pacman.conf "$snapshot/pacman.conf.before"
+pacman -Q > "$snapshot/packages.before.lock"
+
+# Use official ARM repositories and retain mandatory signature verification.
+# Pacman's guest downloader cannot install its syscall/filesystem sandbox under
+# QEMU user emulation. The enclosing Podman container keeps its own seccomp policy.
+cat > /etc/pacman.conf <<'PACMAN'
+[options]
+Architecture = armv7h
+CheckSpace
+SigLevel = Required DatabaseOptional
+LocalFileSigLevel = Required
+RemoteFileSigLevel = Required
+DisableSandboxFilesystem
+DisableSandboxSyscalls
+IgnorePkg = linux linux-headers linux-lts linux-lts-headers linux-armv7 linux-armv7-headers linux-armv7-rc linux-armv7-rc-headers linux-aarch64 linux-aarch64-headers linux-rpi linux-rpi-headers linux-raspberrypi linux-raspberrypi-headers
+
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist
+
+[alarm]
+Include = /etc/pacman.d/mirrorlist
+PACMAN
+# shellcheck disable=SC2016 # Pacman expands these repository placeholders.
+printf 'Server = https://ca.us.mirror.archlinuxarm.org/$arch/$repo\n' > /etc/pacman.d/mirrorlist
+[[ $(pacman-conf Architecture) == armv7h ]] || exit 1
+cp -- /etc/pacman.conf "$snapshot/pacman.conf"
+cp -- /etc/pacman.d/mirrorlist "$snapshot/mirrorlist"
+
+# Remove the generic bootstrap kernel before any package hooks can rebuild it.
+mapfile -t kernels < <(pacman -Qq | sed -nE '/^(linux|linux-headers|linux-lts|linux-lts-headers|linux-armv7(-.*)?|linux-aarch64(-.*)?|linux-rpi(-.*)?|linux-raspberrypi(-.*)?)$/p')
+printf '%s\n' "${kernels[@]}" > "$snapshot/kernels.removed.txt"
+if ((${#kernels[@]})); then
+  pacman -R --noconfirm "${kernels[@]}"
+fi
+
+pacman-key --init
+pacman-key --populate archlinuxarm
+pacman -Sy --noconfirm
+cp -a /var/lib/pacman/sync/*.db "$snapshot/sync/"
+(cd /var/lib/pacman/sync && sha256sum ./*.db) > "$snapshot/sync.sha256"
+
+# Resolve, download and install against the same database files. Include every
+# upgrade from the bootstrap so Qt and Quickshell stay in one package snapshot.
+printf 'name\tversion\tarchitecture\tfilename\tbytes\tsha256\tpgp_signature_base64\turl\n' > "$snapshot/resolved.tsv"
+pacman -Sup --noconfirm --print-format $'%n\t%v\t%a\t%f\t%s\t%h\t%g\t%l' "${requested[@]}" >> "$snapshot/resolved.tsv"
+pacman -Suw --noconfirm --cachedir "$snapshot/cache" "${requested[@]}"
+(cd /var/lib/pacman/sync && sha256sum --check "$snapshot/sync.sha256")
+
+# Keep detached signatures beside packages for independent offline verification.
+while IFS=$'\t' read -r name version architecture filename bytes digest signature url; do
+  [[ "$name" == name ]] && continue
+  [[ "$architecture" == armv7h || "$architecture" == any ]] || { printf 'Unexpected package architecture: %s\n' "$architecture" >&2; exit 1; }
+  [[ "$filename" != */* && "$digest" =~ ^[[:xdigit:]]{64}$ && -n "$signature" ]] || { printf 'Incomplete receipt for %s\n' "$name" >&2; exit 1; }
+  printf '%s  %s\n' "$digest" "$snapshot/cache/$filename" | sha256sum --check --status
+  printf '%s' "$signature" | base64 --decode > "$snapshot/cache/$filename.sig"
+  pacman-key --verify "$snapshot/cache/$filename.sig" "$snapshot/cache/$filename"
+done < "$snapshot/resolved.tsv"
+
+pacman -Su --noconfirm --cachedir "$snapshot/cache" "${requested[@]}"
+(cd /var/lib/pacman/sync && sha256sum --check "$snapshot/sync.sha256")
+pacman -Q > "$snapshot/packages.lock"
+pacman -Dk
+if pacman -Qq | sed -nE '/^(linux|linux-lts|linux-armv7(-.*)?|linux-aarch64(-.*)?|linux-rpi(-.*)?|linux-raspberrypi(-.*)?)$/p' | grep -q .; then
+  echo 'A generic kernel remains in the prepared root' >&2
+  exit 1
+fi
+date -u +'%Y-%m-%dT%H:%M:%SZ' > "$snapshot/complete"
+printf 'Prepared ARMv7h container; signed package receipt: %s\n' "$snapshot"

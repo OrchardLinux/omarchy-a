@@ -1,0 +1,8 @@
+#!/bin/bash
+# Use the active PAM/logind session for P105's supported power operations.
+set -euo pipefail
+[[ $# == 1 ]] || { echo 'Usage: omarchy-system shutdown' >&2; exit 2; }
+case "$1" in
+    shutdown) exec /usr/bin/systemctl poweroff --no-wall --no-ask-password ;;
+    *) echo 'Usage: omarchy-system shutdown' >&2; exit 2 ;;
+esac

@@ -1,0 +1,11 @@
+#!/bin/bash
+# Preserve the P105 panel's native timing and use one logical pixel per pixel.
+set -euo pipefail
+state=$(wlr-randr)
+mapfile -t outputs < <(awk '/^[^[:space:]]/ {print $1}' <<< "$state")
+if (( ${#outputs[@]} != 1 )) || ! grep -q '  Enabled: yes' <<< "$state" ||
+   ! grep -Eq '^[[:space:]]+(768x1024|1024x768) px, .*current' <<< "$state"; then
+    echo 'P105 native single-panel mode unavailable; scale left unchanged' >&2
+    exit 0
+fi
+wlr-randr --output "${outputs[0]}" --scale 1

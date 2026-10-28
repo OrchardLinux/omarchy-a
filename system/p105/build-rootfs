@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Run in the disposable ARMv7 build environment, with a new /work volume.
+set -euo pipefail
+release= jobs=2
+while (($#)); do
+  case "$1" in
+    --release) release=$2; shift 2;;
+    --jobs) jobs=$2; shift 2;;
+    *) echo "Unknown P105 build argument: $1" >&2; exit 2;;
+  esac
+done
+[[ $EUID == 0 && $(uname -m) == armv7l && -n "$release" && ! -e /work/root ]] || exit 1
+repo=$(cd "$(dirname "$0")/../.." && pwd)
+cache=()
+[[ ! -d /package-cache ]] || cache=(--package-cache /package-cache)
+bash "$repo/system/p105/prepare-root" --snapshot /work/snapshot "${cache[@]}"
+useradd --create-home --uid 1001 --user-group --shell /bin/bash builder
+install -d -o builder -g builder /work/components /work/desktop /work/upstream
+runuser -u builder -- python "$repo/desktop/p105/build-keyboard" --output /work/components/keyboard --jobs "$jobs"
+runuser -u builder -- python "$repo/desktop/p105/build-support" --output /work/components/support --jobs "$jobs"
+runuser -u builder -- python "$repo/desktop/p105/build-apps" --output /work/components/apps
+runuser -u builder -- python "$repo/desktop/p105/sign-apps" --apps /work/components/apps --output /work/components/signed-apps
+commit=$(sed -n 's/^omarchy_commit=//p' "$repo/desktop/upstream.lock")
+url=$(sed -n 's/^omarchy_url=//p' "$repo/desktop/upstream.lock")
+runuser -u builder -- git -C /work/upstream init -q
+runuser -u builder -- git -C /work/upstream fetch --depth 1 "$url" "$commit"
+runuser -u builder -- git -C /work/upstream checkout -q --detach FETCH_HEAD
+keyboard_hash=$(sha256sum /work/components/keyboard/wvkbd-mobintl | cut -d' ' -f1)
+runuser -u builder -- python "$repo/desktop/p105/stage.py" --output /work/desktop/payload \
+  --upstream /work/upstream --keyboard /work/components/keyboard/wvkbd-mobintl \
+  --keyboard-sha256 "$keyboard_hash" --support /work/components/support
+
+# Resolve the clean runtime from the exact database used by source builds.
+root=/work/root
+install -d "$root/var/lib/pacman/sync" "$root/var/cache/pacman/pkg" "$root/etc"
+cp /work/snapshot/sync/*.db "$root/var/lib/pacman/sync/"
+mapfile -t requested < <(sed '/^# Build the patched/,$d; s/[[:space:]]*#.*$//; /^[[:space:]]*$/d' "$repo/system/p105/packages.txt")
+pacman --root "$root" --gpgdir /etc/pacman.d/gnupg --cachedir /work/snapshot/cache \
+  -S --noconfirm "${requested[@]}"
+fingerprint=$(python -c 'import json; print(json.load(open("/work/components/signed-apps/manifest.json"))["key_fingerprint"])')
+pacman-key --add /work/components/signed-apps/local-build-public.asc
+pacman-key --lsign-key "$fingerprint"
+mapfile -t apps < <(python -c 'import json; print("\n".join("/work/components/signed-apps/"+p for p in json.load(open("/work/components/signed-apps/manifest.json"))["packages"].values()))')
+pacman --root "$root" --gpgdir /etc/pacman.d/gnupg --noconfirm -U "${apps[@]}"
+useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
+usermod --root "$root" --append --groups seat,video,input,audio,wheel tablet
+usermod --root "$root" --password '*' root
+usermod --root "$root" --password '*' tablet
+cp -a --no-preserve=ownership /work/desktop/payload/. "$root/"
+cp -a --no-preserve=ownership /hardware/. "$root/"
+cp -a --no-preserve=ownership "$repo/system/p105/overlay/." "$root/"
+chmod 755 "$root/usr/local/libexec/p105-zram"
+chmod 440 "$root/etc/sudoers.d/90-tablet-passwordless"
+install -d "$root/etc/cascadia" "$root/etc/ipadlinux"
+mv "$root/p105-hardware-input.json" "$root/etc/cascadia/p105-hardware-input.json"
+printf 'p105-systemd-v1\n' > "$root/etc/cascadia/systemd-root"
+printf '%s\n' "$release" > "$root/etc/ipadlinux/release"
+chown -R 1000:1000 "$root/home/tablet"
+for unit in sleep suspend hibernate hybrid-sleep suspend-then-hibernate; do
+  ln -sf /dev/null "$root/etc/systemd/system/$unit.target"
+done
+for unit in serial-getty@ttyGS0.service systemd-oomd.service systemd-networkd.service systemd-networkd.socket systemd-networkd-wait-online.service systemd-resolved.service; do
+  ln -sf /dev/null "$root/etc/systemd/system/$unit"
+done
+systemctl --root="$root" enable getty@tty1.service NetworkManager.service bluetooth.service seatd.service p105-zram.service p105-hardware.target p105-acm-console.service
+systemctl --root="$root" --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
+systemctl --root="$root" set-default graphical.target
+: > "$root/etc/machine-id"
+rm -f "$root/var/lib/dbus/machine-id" "$root/etc/ssh"/ssh_host_*
+rm -rf "$root/etc/pacman.d/gnupg"
+install -d /work/result
+pacman --root "$root" -Q > /work/result/packages.lock
+tar --hard-dereference --numeric-owner --one-file-system -C "$root" \
+  --exclude='./dev/*' --exclude='./proc/*' --exclude='./sys/*' \
+  --exclude='./run/*' --exclude='./tmp/*' --exclude='./var/tmp/*' \
+  --exclude='./var/cache/pacman/pkg/*' --exclude='./var/log/*' \
+  -cf - . | gzip -1 > /work/result/rootfs.tar.gz
+python "$repo/system/p105/receipt.py" --root "$root" --result /work/result --release "$release" \
+  --snapshot /work/snapshot --components /work/components --desktop /work/desktop/payload
+tar -czf /work/result/desktop-sources.tar.gz -C /work components snapshot/sync snapshot/resolved.tsv snapshot/sync.sha256 snapshot/packages.lock
+echo 'P105 ARMv7 root and desktop complete'

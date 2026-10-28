@@ -1,0 +1,10 @@
+#!/bin/bash
+set -u
+/usr/libexec/omarchy-wtype -M alt -M logo h -m logo -m alt > "$XDG_RUNTIME_DIR/omarchy-startup-cursor.log" 2>&1 || true
+/usr/local/libexec/arch-ipad-scale-output > "$XDG_RUNTIME_DIR/arch-ipad-display.log" 2>&1 || true
+systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE \
+    > "$XDG_RUNTIME_DIR/arch-ipad-user-env.log" 2>&1
+export OMARCHY_PATH="$HOME/.local/share/omarchy-ipad"
+printf '0\n' > "$XDG_RUNTIME_DIR/omarchy-keyboard-visible"
+"$OMARCHY_PATH/bin/omarchy-keyboard" run > "$XDG_RUNTIME_DIR/omarchy-keyboard.log" 2>&1 &
+qs -p "$OMARCHY_PATH/shell/shell.qml" > "$XDG_RUNTIME_DIR/omarchy-shell.log" 2>&1 &

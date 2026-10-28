@@ -1,0 +1,10 @@
+[Unit]
+Description=Compressed RAM swap for the 512 MB P105
+After=systemd-udev-trigger.service
+Before=getty@tty1.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/p105-zram
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

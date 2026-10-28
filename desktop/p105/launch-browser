@@ -1,0 +1,12 @@
+#!/bin/bash
+# Labwc adapter for the browser installed by the P105 package profile.
+set -euo pipefail
+arguments=()
+for argument in "$@"; do
+    if [[ $argument == --private ]]; then
+        arguments+=(--private-window)
+    else
+        arguments+=("$argument")
+    fi
+done
+exec /usr/bin/firefox "${arguments[@]}"

@@ -4,6 +4,10 @@ umask 077
 
 here=$(cd "$(dirname "$0")" && pwd)
 project=$(cd "$here/.." && pwd)
+if [[ ${1:-} == p105 ]]; then
+  shift
+  exec python3 "$here/p105/build" "$@"
+fi
 device=${1:-}
 [[ $# -gt 0 ]] && shift
 output='' desktop='' release=''

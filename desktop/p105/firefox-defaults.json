@@ -1,0 +1,37 @@
+{
+  "dom.ipc.processPrelaunch.enabled": {
+    "Value": false,
+    "Status": "default",
+    "Type": "boolean"
+  },
+  "dom.ipc.processCount": {
+    "Value": 2,
+    "Status": "default",
+    "Type": "number"
+  },
+  "dom.ipc.processCount.webIsolated": {
+    "Value": 1,
+    "Status": "default",
+    "Type": "number"
+  },
+  "browser.newtab.preload": {
+    "Value": false,
+    "Status": "default",
+    "Type": "boolean"
+  },
+  "browser.aboutwelcome.enabled": {
+    "Value": false,
+    "Status": "default",
+    "Type": "boolean"
+  },
+  "browser.startup.page": {
+    "Value": 0,
+    "Status": "default",
+    "Type": "number"
+  },
+  "browser.newtabpage.enabled": {
+    "Value": false,
+    "Status": "default",
+    "Type": "boolean"
+  }
+}

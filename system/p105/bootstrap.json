@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "architecture": "armv7h",
+  "sha256": "ebe0fa119dea45e3af0aa61785676bdbf417bc5f754d529b87255dbf0ca4e3f0",
+  "signer": "68B3537F39A313B3E574D06777193F152BDBE6A6",
+  "urls": [
+    "https://ca.us.mirror.archlinuxarm.org/os/multi/ArchLinuxARM-2026.08-armv7-rootfs.tar.gz",
+    "https://ca.us.mirror.archlinuxarm.org/os/ArchLinuxARM-armv7-latest.tar.gz"
+  ],
+  "signer_reference": "https://archlinuxarm.org/about/downloads"
+}

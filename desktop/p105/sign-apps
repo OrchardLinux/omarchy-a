@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Sign verified local ARMv7 packages with a temporary key; do not install them."""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apps", type=Path, required=True, help="output from p105/build-apps")
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    apps, output = args.apps.resolve(), args.output.resolve()
+    if output.exists():
+        parser.error("Choose a new signed-package output directory")
+    if not shutil.which("gpg") or not shutil.which("gpgconf"):
+        parser.error("GnuPG is required")
+    try:
+        record = json.loads((apps / "manifest.json").read_text())
+        if (record.get("schema"), record.get("architecture")) != (1, "armv7h"):
+            raise ValueError("Applications need an ARMv7h build receipt")
+        files = {path.relative_to(apps).as_posix(): sha(path)
+                 for path in sorted(apps.rglob("*"))
+                 if path.is_file() and not path.is_symlink() and path != apps / "manifest.json"}
+        if files != record["files"]:
+            raise ValueError("Application files differ from their build receipt")
+        if set(record["components"]) != {"omacalc", "omafox"}:
+            raise ValueError("Expected the P105 Omacalc and Omafox package set")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="p105-signing-") as key_directory:
+            key_home = Path(key_directory)
+            command = ["gpg", "--homedir", str(key_home), "--batch", "--pinentry-mode", "loopback", "--passphrase", ""]
+            try:
+                subprocess.run([*command, "--quick-generate-key", "Omarchy P105 local build", "ed25519", "sign", "0"], check=True)
+                listing = subprocess.check_output([*command, "--with-colons", "--list-secret-keys"], text=True)
+                fingerprint = next(line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:"))
+                with tempfile.TemporaryDirectory(prefix=".p105-signed-", dir=output.parent) as export_work:
+                    result = Path(export_work) / "result"
+                    result.mkdir()
+                    public_key = result / "local-build-public.asc"
+                    public_key.write_bytes(subprocess.check_output([*command, "--armor", "--export", fingerprint]))
+                    packages = {}
+                    for name, component in record["components"].items():
+                        source = (apps / component["package"]).resolve()
+                        if not source.is_relative_to(apps) or sha(source) != component["package_sha256"]:
+                            raise ValueError("Package differs from its build receipt")
+                        package = result / source.name
+                        shutil.copy2(source, package)
+                        signature = result / (package.name + ".sig")
+                        subprocess.run([*command, "--local-user", fingerprint, "--detach-sign", "--output", str(signature), str(package)], check=True)
+                        subprocess.run([*command, "--verify", str(signature), str(package)], check=True)
+                        packages[name] = package.name
+                    receipt = {
+                        "schema": 1, "architecture": "armv7h", "key_fingerprint": fingerprint,
+                        "key_scope": "Local P105 source builds; private signing key deleted after this invocation",
+                        "apps_manifest_sha256": sha(apps / "manifest.json"), "packages": packages,
+                        "files": {path.name: sha(path) for path in sorted(result.iterdir())},
+                    }
+                    (result / "manifest.json").write_text(json.dumps(receipt, indent=2) + "\n")
+                    os.replace(result, output)
+            finally:
+                subprocess.run(["gpgconf", "--homedir", str(key_home), "--kill", "gpg-agent"], check=False)
+        print("Signed local ARMv7h packages:", output)
+        print("Public build-key fingerprint:", fingerprint)
+    except (OSError, ValueError, KeyError, StopIteration, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
+
+
+if __name__ == "__main__":
+    main()

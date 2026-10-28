@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Exercise an installed P105 desktop on a temporary headless Wayland display."""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--stage", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--in-session", action="store_true", help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if os.geteuid() == 0:
+        parser.error("Run as an unprivileged user in the prepared ARMv7h container")
+    for command in ("labwc", "qs", "grim", "wlr-randr", "omarchy-shell", "dbus-run-session"):
+        if not shutil.which(command):
+            parser.error("Install the staged desktop and its packages first: " + command)
+    if not args.in_session:
+        return subprocess.call(["dbus-run-session", "--", sys.executable, str(Path(__file__).resolve()),
+                                "--stage", str(args.stage.resolve()), "--output", str(args.output.resolve()), "--in-session"])
+    output = args.output.resolve()
+    if output.exists():
+        parser.error("Choose a new output directory")
+    output.mkdir(parents=True)
+    result = {"schema": 1, "test": "headless P105 desktop", "physical_hardware": False, "passed": False}
+    try:
+        with tempfile.TemporaryDirectory(prefix="p105-ui-smoke-") as temporary:
+            work = Path(temporary)
+            home, runtime = work / "home", work / "runtime"
+            shutil.copytree(args.stage.resolve() / "home/tablet", home, symlinks=True)
+            runtime.mkdir(mode=0o700)
+            environment = {
+                **os.environ, "HOME": str(home), "XDG_RUNTIME_DIR": str(runtime),
+                "XDG_CONFIG_HOME": str(home / ".config"), "XDG_CACHE_HOME": str(home / ".cache"),
+                "XDG_DATA_HOME": str(home / ".local/share"), "XDG_STATE_HOME": str(home / ".local/state"),
+                "OMARCHY_PATH": str(home / ".local/share/omarchy-ipad"), "OMARCHY_TOUCH_MODE": "1",
+                "XDG_SESSION_TYPE": "wayland", "XDG_CURRENT_DESKTOP": "labwc", "PATH": "/usr/local/bin:/usr/bin",
+                "WLR_BACKENDS": "headless", "WLR_HEADLESS_OUTPUTS": "1", "WLR_RENDERER": "pixman",
+                "QT_QUICK_BACKEND": "software", "QT_QPA_PLATFORM": "wayland", "LIBGL_ALWAYS_SOFTWARE": "1",
+                "OMARCHY_SHELL_IPC_TIMEOUT": "15s",
+            }
+            subprocess.run(["dbus-update-activation-environment", "HOME", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME",
+                            "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CURRENT_DESKTOP"],
+                           env=environment, check=True)
+            with (output / "first-theme.log").open("w") as log:
+                subprocess.run(["/usr/local/libexec/arch-ipad-first-theme"], env=environment, cwd=home,
+                               stdout=log, stderr=subprocess.STDOUT, timeout=45, check=True)
+            with (output / "labwc.log").open("w") as log:
+                compositor = subprocess.Popen(["labwc", "-C", str(home / ".config/labwc"), "-d"],
+                                              env=environment, cwd=home, stdout=log, stderr=subprocess.STDOUT,
+                                              start_new_session=True)
+                try:
+                    deadline = time.monotonic() + 90
+                    while time.monotonic() < deadline:
+                        if compositor.poll() is not None:
+                            raise RuntimeError("Labwc exited before its Wayland socket was ready")
+                        sockets = [path for path in runtime.glob("wayland-*") if stat.S_ISSOCK(path.stat().st_mode)]
+                        if sockets:
+                            environment["WAYLAND_DISPLAY"] = sockets[0].name
+                            break
+                        time.sleep(0.25)
+                    else:
+                        raise RuntimeError("Headless Wayland socket did not appear")
+                    subprocess.run(["dbus-update-activation-environment", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM"],
+                                   env=environment, check=True)
+                    state = subprocess.check_output(["wlr-randr"], env=environment, text=True, timeout=10)
+                    name = next(line.split()[0] for line in state.splitlines() if line and not line[0].isspace())
+                    subprocess.run(["wlr-randr", "--output", name, "--custom-mode", "768x1024@60Hz"],
+                                   env=environment, timeout=10, check=True)
+                    result["output"] = subprocess.check_output(["wlr-randr"], env=environment, text=True, timeout=10)
+                    while time.monotonic() < deadline:
+                        ping = subprocess.run(["omarchy-shell", "shell", "ping"], env=environment,
+                                              text=True, capture_output=True, timeout=20)
+                        if ping.returncode == 0 and ping.stdout.strip() == "ok":
+                            break
+                        if compositor.poll() is not None:
+                            raise RuntimeError("Labwc exited while loading the shell")
+                        time.sleep(0.5)
+                    else:
+                        raise RuntimeError("Omarchy shell did not answer IPC: " + ping.stderr.strip())
+                    time.sleep(8)
+                    subprocess.run(["grim", str(output / "desktop.png")], env=environment, timeout=10, check=True)
+                    subprocess.run(["grim", "-g", "0,96 768x832", str(output / "desktop-center.png")],
+                                   env=environment, timeout=10, check=True)
+                    subprocess.run(["omarchy-shell", "omarchy.dock", "apps"], env=environment, timeout=20, check=True)
+                    time.sleep(3)
+                    subprocess.run(["grim", str(output / "apps.png")], env=environment, timeout=10, check=True)
+                    subprocess.run(["omarchy-shell", "omarchy.dock", "apps"], env=environment, timeout=20, check=True)
+                    subprocess.run(["omarchy-shell", "shell", "summon", "omarchy.image-picker", '{"source":"themes"}'],
+                                   env=environment, timeout=20, check=True)
+                    theme_deadline = time.monotonic() + 40
+                    while time.monotonic() < theme_deadline:
+                        time.sleep(2)
+                        subprocess.run(["grim", "-g", "0,96 768x832", str(output / "themes-center.png")],
+                                       env=environment, timeout=10, check=True)
+                        if (output / "themes-center.png").read_bytes() != (output / "desktop-center.png").read_bytes():
+                            break
+                    else:
+                        raise RuntimeError("Theme picker did not change the viewport")
+                    subprocess.run(["grim", str(output / "themes.png")], env=environment, timeout=10, check=True)
+                    result["plugins"] = json.loads(subprocess.check_output(["omarchy-shell", "shell", "listPlugins"],
+                                                                          env=environment, text=True, timeout=10))
+                    result["shell_ping"] = "ok"
+                    result["passed"] = True
+                finally:
+                    if compositor.poll() is None:
+                        os.killpg(compositor.pid, signal.SIGTERM)
+                        try:
+                            compositor.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(compositor.pid, signal.SIGKILL)
+                            compositor.wait()
+                    for log_path in runtime.glob("*.log"):
+                        shutil.copy2(log_path, output / log_path.name)
+    except (OSError, ValueError, RuntimeError, StopIteration, subprocess.SubprocessError) as error:
+        result["error"] = str(error)
+    (output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+    print("Headless desktop", "passed:" if result["passed"] else "failed:", output)
+    if not result["passed"]:
+        print(result.get("error", "Unknown failure"), file=sys.stderr)
+    return 0 if result["passed"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

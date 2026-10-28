@@ -116,3 +116,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for bring-up guidance and [BUILD.md](BUIL
 ## Troubleshooting
 
 See [Troubleshooting](docs/troubleshooting.md) for USB connectivity, diagnostics, and failed installations.
+
+
+## Original iPad mini Wi-Fi (P105)
+
+The P105 contribution adds an ARMv7 Arch Linux ARM desktop builder with
+Labwc/Pixman and Qt software rendering. Its companion Orchard adapter boots
+private RAM recovery and hands off to the desktop over USB/NFS. The host
+serves the root filesystem throughout the Linux session.
+
+See [the P105 desktop instructions](desktop/p105/README.md) for the native
+builder and owner preparation. This profile covers `iPad2,5` / P105AP. The
+measured touch latency and calibration issue remain open; internal storage
+and startup without a host belong to later device work.
