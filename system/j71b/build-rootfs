@@ -24,6 +24,10 @@ mapfile -t requested < <(grep -vE '^\s*(#|$)' "$project/system/j71b/packages.txt
 printf '%s\n' "${requested[@]}" | grep -qx 'linux-aarch64' && { echo 'Generic kernel is not an input' >&2; exit 1; }
 
 # Install signed packages into a clean target; no mounts or VM root are needed.
+# The caller's umask 077 would make pacman's own state (/var/lib/pacman,
+# /var/cache/pacman) root-only, breaking downloads as DownloadUser and queries
+# as tablet. Image contents need distribution modes.
+umask 022
 mkdir -p "$root/var/lib/pacman" "$root/var/cache/pacman/pkg" "$root/etc"
 pacman --root "$root" --gpgdir /etc/pacman.d/gnupg -Sy --noconfirm "${requested[@]}"
 for package in "$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.pkg.tar.zst"; do
