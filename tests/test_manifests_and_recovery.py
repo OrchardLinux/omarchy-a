@@ -67,18 +67,18 @@ class RecoverySealing(unittest.TestCase):
             with self.subTest(length=len(bad)), self.assertRaises(ValueError):
                 list(read_newc(io.BytesIO(bad)))
 
-    def exercise(self, *, different_root=False, private_file=None, corrupt_public=False):
-        root = {'sha256': 'a' * 64, 'bytes': 1, 'expanded_bytes': 2, 'members': 1, 'compression': 'zstd'}
+    def exercise(self, *, different_kernel=False, private_file=None, corrupt_public=False):
+        root = {'sha256': 'a' * 64, 'bytes': 1, 'expanded_bytes': 2, 'members': 1, 'compression': 'zstd',
+                'kernel_release': '7.3.0-test'}
         files = {name: b'executable' for name in (
             'init', 'usr/bin/orchard-device', 'usr/bin/python3', 'sbin/capture-adt',
             'sbin/authorize-key', 'sbin/recovery-start-ssh', 'usr/sbin/blkid', 'usr/sbin/sfdisk',
             'usr/sbin/mke2fs', 'etc/mke2fs.conf')}
-        for name in ('device.py', 'archive.py', 'staging.py', 'handoff.py', 'storage.py', 'identity.py', 'adt.py'):
-            files['usr/libexec/orchard-j71b/' + name] = b'# runtime\n'
-        config = {'root': {**root, 'sha256': 'b' * 64} if different_root else root,
-                  'release': 'test-1', 'protocol': 1, 'profile': 'j71b'}
+        for name in ('device.py', 'identity.py', 'storage-fence', 'adt.py'):
+            files['usr/libexec/orchard/' + name] = b'# runtime\n'
+        config = {'release': 'test-1', 'protocol': 1,
+                  'kernel_release': '7.3.0-other' if different_kernel else root['kernel_release']}
         files['etc/orchard/release.json'] = json.dumps(config).encode()
-        files['etc/orchard/firmware.json'] = firmware_path('j71b').read_bytes()
         public = ''.join(hashlib.sha256(data).hexdigest() + '  /' + name + '\n' for name, data in sorted(files.items()))
         if corrupt_public:
             public = '0' * 64 + public[64:]
@@ -95,7 +95,7 @@ class RecoverySealing(unittest.TestCase):
 
     def test_actual_recovery_root_lock_and_public_hashes_are_checked(self):
         self.assertGreater(self.exercise()['members'], 0)
-        for arguments in ({'different_root': True}, {'corrupt_public': True}):
+        for arguments in ({'different_kernel': True}, {'corrupt_public': True}):
             with self.subTest(arguments=arguments), self.assertRaises(ValueError):
                 self.exercise(**arguments)
 
