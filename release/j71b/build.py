@@ -58,7 +58,8 @@ def main():
     except ValueError as error:
         parser.error(str(error))
     root = build_root(args.base, args.base_receipt, args.modules_dir, args.dropbear,
-                      args.output, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools)
+                      args.output, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools,
+                      kernel=args.kernel, dtb=args.dtb)
     command = [sys.executable, '-m', 'orchard_hardware.image.recovery']
     for name in ('base', 'base_receipt', 'modules_dir', 'loader', 'kernel', 'dtb', 'busybox', 'dropbear', 'dropbearkey'):
         command.extend(['--' + name.replace('_', '-'), str(getattr(args, name))])

@@ -127,7 +127,22 @@ def system_files(kernel_release):
     return additions
 
 
-def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_tools, bluetooth_tools=None, labwc_tools=None):
+def boot_files(kernel, dtb, kernel_release):
+    """The kernel and DTB where kernel-install finds them (hardware docs/boot-contract.md).
+
+    kernel-install copies both to the boot partition and writes the BLS entry;
+    /etc/kernel/devicetree names the board's DTB. mkinitcpio builds the initrd.
+    """
+    import orchard_hardware
+    name = orchard_hardware.device('j71b')['kernel']['dtb'] + '.dtb'
+    base = f'usr/lib/modules/{kernel_release}/'
+    return {base + 'vmlinuz': (kernel.read_bytes(), 0o644),
+            base + 'dtb/' + name: (dtb.read_bytes(), 0o644),
+            'etc/kernel/devicetree': (name.encode() + b'\n', 0o644)}
+
+
+def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_tools, bluetooth_tools=None,
+          labwc_tools=None, *, kernel, dtb):
     if outdir.exists():
         raise ValueError('Choose a new release output directory')
     record = json.loads(base_receipt.read_text())
@@ -143,6 +158,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
     additions.update(desktop_extra)
     additions['etc/omarchy/package-privileges.json'] = (json.dumps(privileges, sort_keys=True).encode(), 0o644)
     additions.update(system_files(kernel_release))
+    additions.update(boot_files(kernel, dtb, kernel_release))
     additions['usr/libexec/omarchy-dropbear'] = (dropbear.read_bytes(), 0o755)
     additions['etc/polkit-1/rules.d/60-j71b-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
     additions['etc/orchard/release.json'] = (json.dumps({
