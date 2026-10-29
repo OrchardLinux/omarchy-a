@@ -66,19 +66,24 @@ class ImageProduction(unittest.TestCase):
                  patch.object(public_root, 'labwc_files', return_value={}), \
                  patch.object(public_root, 'runtime_files', return_value=('test', {
                      'usr/lib/modules/test/modules.dep': (b'', 0o644)})):
-                kernel, dtb = root / 'Image.gz', root / 'j71b.dtb'
+                kernel, dtbs = root / 'Image.gz', root / 'dtbs'
                 kernel.write_bytes(b'kernel image')
-                dtb.write_bytes(b'\xd0\x0d\xfe\xed')
+                dtbs.mkdir()
+                for board in ('t8010-j71b', 't8010-j171'):
+                    (dtbs / (board + '.dtb')).write_bytes(b'\xd0\x0d\xfe\xed' + board.encode())
                 public_root.build(base, receipt, root, root / 'release', 'test', root / 'cursor-tools',
-                                  kernel=kernel, dtb=dtb)
+                                  kernel=kernel, dtbs=dtbs)
             raw = subprocess.check_output(['zstd', '-dq', '-c', str(root / 'release/rootfs.tar.zst')])
             with tarfile.open(fileobj=io.BytesIO(raw)) as bundle:
                 parent = bundle.getmember('usr/libexec')
                 self.assertTrue(parent.isdir())
                 self.assertEqual((parent.uid, parent.gid, parent.mode), (0, 0, 0o755))
                 self.assertEqual(bundle.extractfile('usr/lib/modules/test/vmlinuz').read(), b'kernel image')
-                self.assertEqual(bundle.extractfile('usr/lib/modules/test/dtb/t8010-j71b.dtb').read(), b'\xd0\x0d\xfe\xed')
-                self.assertEqual(bundle.extractfile('etc/kernel/devicetree').read(), b't8010-j71b.dtb\n')
+                # Every board's DTB; the installer names the board in /etc/kernel/devicetree.
+                for board in ('t8010-j71b', 't8010-j171'):
+                    self.assertEqual(bundle.extractfile(f'usr/lib/modules/test/dtb/{board}.dtb').read(),
+                                     b'\xd0\x0d\xfe\xed' + board.encode())
+                self.assertNotIn('etc/kernel/devicetree', bundle.getnames())
                 manifest = json.load(bundle.extractfile('arch-ipad-ui-manifest.json'))
                 for name, expected in replacements.items():
                     self.assertEqual(bundle.extractfile(name).read(), expected)

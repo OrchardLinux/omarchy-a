@@ -34,6 +34,8 @@ def main():
     for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear', 'dropbearkey',
                  'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
+    parser.add_argument('--dtbs', type=Path, help="every DTB of the kernel's platform, for the installed root "
+                        '(default: dtbs/ next to --dtb)')
     for name in ('kernel', 'dtb', 'modules-dir'):
         parser.add_argument('--' + name, type=Path,
                             help='explicit kernel bundle; omit all three kernel inputs to use the Orchard cache')
@@ -54,7 +56,7 @@ def main():
         parser.error(str(error))
     root = build_root(args.base, args.base_receipt, args.modules_dir,
                       args.output, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools,
-                      kernel=args.kernel, dtb=args.dtb)
+                      kernel=args.kernel, dtbs=args.dtbs or (args.dtb and args.dtb.parent / 'dtbs'))
     command = [sys.executable, '-m', 'orchard_hardware.image.recovery']
     for name in ('base', 'base_receipt', 'modules_dir', 'loader', 'kernel', 'dtb', 'busybox', 'dropbear', 'dropbearkey'):
         command.extend(['--' + name.replace('_', '-'), str(getattr(args, name))])

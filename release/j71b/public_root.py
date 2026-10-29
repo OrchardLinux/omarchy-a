@@ -127,22 +127,27 @@ def system_files(kernel_release):
     return additions
 
 
-def boot_files(kernel, dtb, kernel_release):
-    """The kernel and DTB where kernel-install finds them (hardware docs/boot-contract.md).
+def boot_files(kernel, dtbs, kernel_release):
+    """The kernel and every DTB of its platform, where kernel-install finds them.
 
-    kernel-install copies both to the boot partition and writes the BLS entry;
-    /etc/kernel/devicetree names the board's DTB. mkinitcpio builds the initrd.
+    One root serves every board of the kernel's platform: the installer writes
+    the board's DTB name to /etc/kernel/devicetree, and kernel-install copies
+    that DTB with the kernel to the boot partition and writes the BLS entry
+    (hardware docs/boot-contract.md). mkinitcpio builds the initrd.
     """
-    import orchard_hardware
-    name = orchard_hardware.device('j71b')['kernel']['dtb'] + '.dtb'
     base = f'usr/lib/modules/{kernel_release}/'
-    return {base + 'vmlinuz': (kernel.read_bytes(), 0o644),
-            base + 'dtb/' + name: (dtb.read_bytes(), 0o644),
-            'etc/kernel/devicetree': (name.encode() + b'\n', 0o644)}
+    result = {base + 'vmlinuz': (kernel.read_bytes(), 0o644)}
+    for path in sorted(dtbs.glob('*.dtb')):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('Unsafe DTB input: ' + path.name)
+        result[base + 'dtb/' + path.name] = (path.read_bytes(), 0o644)
+    if len(result) == 1:
+        raise ValueError('No DTBs in ' + str(dtbs))
+    return result
 
 
 def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, bluetooth_tools=None,
-          labwc_tools=None, *, kernel, dtb):
+          labwc_tools=None, *, kernel, dtbs):
     if outdir.exists():
         raise ValueError('Choose a new release output directory')
     record = json.loads(base_receipt.read_text())
@@ -158,7 +163,7 @@ def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, blueto
     additions.update(desktop_extra)
     additions['etc/omarchy/package-privileges.json'] = (json.dumps(privileges, sort_keys=True).encode(), 0o644)
     additions.update(system_files(kernel_release))
-    additions.update(boot_files(kernel, dtb, kernel_release))
+    additions.update(boot_files(kernel, dtbs, kernel_release))
     additions['etc/polkit-1/rules.d/60-j71b-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
     additions['etc/orchard/release.json'] = (json.dumps({
         'protocol': 1, 'release': release, 'profile': 'j71b', 'kernel_release': kernel_release}).encode(), 0o644)
