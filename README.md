@@ -74,12 +74,12 @@ On Linux, reconnect the device after setup so USB permissions take effect. Rerun
 
 ### 3. Make room for Linux
 
-Skip this step if you already have a suitable Linux-data partition on your device.
+The installer needs at least 9 GiB that iPadOS doesn't use: free space, or an earlier Linux install to replace. It never resizes iPadOS itself. Skip this step if you already have that.
 
 1. Download and extract [Resize APFS](https://github.com/OrchardLinux/resize-apfs/releases/latest).
 2. Run `./resize-apfs boot` from its extracted folder and follow the prompts.
 3. Once iPadOS starts, unlock the iPad and open **Resize APFS** when its icon appears.
-4. Choose **Adjust size**, reserve space for Linux, and select the option to create an **unformatted Linux partition**.
+4. Choose **Adjust size** and reserve space for Linux.
 5. Wait for **Completed and verified** before restarting. Do not interrupt the operation; see the [resize safety instructions](https://github.com/OrchardLinux/resize-apfs#while-resizing) if status becomes unavailable.
 
 ### 4. Install Omarchy A
@@ -90,7 +90,11 @@ Connect only the target iPad. Enter DFU: hold Home + Power for about 8 seconds, 
 orchard install omarchy-a
 ```
 
-Follow the prompts to select the partition and confirm installation. The CLI downloads and verifies the release, boots recovery, prepares device-specific firmware, installs the desktop, and hands off to the installed system—all in one DFU boot. Keep USB connected until **System ready**.
+Choose where Omarchy A goes, then set a password (for `sudo` and system changes) and a 6-digit PIN (for the lock screen). The CLI downloads and verifies the release, boots recovery, writes a boot partition and the system next to iPadOS, adds the device's firmware, and starts Omarchy A, all in one DFU boot. Keep USB connected until it says Omarchy A is starting.
+
+### Coming from the previous installer
+
+Installs from the previous installer (one Linux partition, no boot partition) can't be started or converted by this one. The installer offers that partition as a target and says so before erasing it. To keep files, copy them off first: start the old system with the previous CLI release, then copy them over the network (for example with `scp`).
 
 ## Start Linux after a restart
 
@@ -100,7 +104,7 @@ Connect the iPad in DFU mode and run:
 orchard launch
 ```
 
-Select a compatible installation and confirm launch. This downloads shared boot assets, not a root image, and does not format or reinstall anything. It requires the hardware release's published launcher assets. If the verified host firmware cache is missing, use `orchard launch --allow-firmware-download` to permit downloading the required inputs. See the [CLI launch instructions](https://github.com/OrchardLinux/cli#launch-an-installed-system).
+The bootloader reads the boot entries from the iPad's boot partition and starts the one you choose (or the only one). Nothing is downloaded beyond the bootloader, and nothing is formatted or reinstalled. See the [CLI launch instructions](https://github.com/OrchardLinux/cli#launch-an-installed-system).
 
 ## More than an installer
 
