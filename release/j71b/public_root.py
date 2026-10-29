@@ -221,7 +221,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
                     member = tarfile.TarInfo(name)
                     member.mode, member.size = mode, len(data)
                     add(member, data)
-                for unit in ('omarchy-diagnostics.service',):
+                for unit in ('omarchy-diagnostics.service', 'omarchy-pacman-init.service'):
                     member = tarfile.TarInfo('etc/systemd/system/multi-user.target.wants/' + unit)
                     member.type, member.linkname, member.mode = tarfile.SYMTYPE, '/usr/lib/systemd/system/' + unit, 0o777
                     if member.name not in seen:
