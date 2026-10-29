@@ -18,14 +18,19 @@ from .recovery_audit import audit_runtime
 
 def audit_recovery(image):
     receipt = json.loads(Path(str(image) + '.json').read_text())
-    parts, end = {}, 0
+    parts, dtbs, end = {}, 0, 0
     with image.open('rb') as stream:
         for row in receipt['components']:
-            if row['name'] in parts or row['offset'] != end or row['bytes'] <= 0:
+            # One DTB per device the recovery boots; every other part once.
+            if (row['name'] in parts and row['name'] != 'dtb') or row['offset'] != end or row['bytes'] <= 0:
                 raise ValueError('Invalid recovery component boundaries')
             data = stream.read(row['bytes'])
             if len(data) != row['bytes'] or hashlib.sha256(data).hexdigest() != row['sha256']:
                 raise ValueError('Recovery component integrity mismatch: ' + row['name'])
+            if row['name'] == 'dtb':
+                if not data.startswith(b'\xd0\x0d\xfe\xed'):
+                    raise ValueError('Recovery DTB component is not a devicetree')
+                dtbs += 1
             parts[row['name']] = (row, data[:32])
             end += row['bytes']
     if end != image.stat().st_size or receipt['image_sha256'] != sha(image):
@@ -38,7 +43,7 @@ def audit_recovery(image):
             header != INITRAMFS_MAGIC + struct.pack('<I', size) or
             not parts['initramfs'][1].startswith(b'\x1f\x8b')):
         raise ValueError('Initramfs is not framed for Linux decompression')
-    return {'passed': True, 'initramfs_encoding': receipt['initramfs_encoding'],
+    return {'passed': True, 'dtbs': dtbs, 'initramfs_encoding': receipt['initramfs_encoding'],
             'compressed_bytes': size, 'initramfs_sha256': parts['initramfs'][0]['sha256']}
 
 

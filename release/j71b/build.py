@@ -16,17 +16,29 @@ PROJECT = Path(__file__).resolve().parents[2]
 
 def resolve_kernel(args):
     """Use an explicit coherent bundle, or Orchard's shared kernel builder."""
-    supplied = [getattr(args, name) is not None for name in ('kernel', 'dtb', 'modules_dir')]
+    supplied = [getattr(args, name) is not None for name in ('kernel', 'dtbs', 'modules_dir')]
     if any(supplied):
         if not all(supplied):
-            raise ValueError('Provide --kernel, --dtb and --modules-dir together, or omit all three')
+            raise ValueError('Provide --kernel, --dtbs and --modules-dir together, or omit all three')
         return
     from orchard_cli.build import configured_device, prepare_kernel
     device = configured_device(PROJECT)
     kernel = prepare_kernel(device=device)
     args.kernel = kernel / 'Image.gz'
-    args.dtb = kernel / (device + '.dtb')
+    args.dtbs = kernel / 'dtbs'
     args.modules_dir = kernel / 'lib/modules'
+
+
+def recovery_dtbs(dtbs):
+    """One recovery boots every device that shares this kernel: m1n1 picks its DTB."""
+    import orchard_hardware
+    platform = orchard_hardware.device('j71b')['kernel']['platform']
+    names = [orchard_hardware.device(profile)['kernel'] for profile in orchard_hardware.profiles()]
+    paths = [dtbs / (kernel['dtb'] + '.dtb') for kernel in names if kernel['platform'] == platform]
+    missing = [path.name for path in paths if not path.is_file()]
+    if missing:
+        raise ValueError('Kernel bundle lacks device DTBs: ' + ', '.join(missing))
+    return paths
 
 
 def main():
@@ -34,9 +46,7 @@ def main():
     for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear', 'dropbearkey',
                  'wpa-supplicant', 'wpa-cli', 'iw', 'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
-    parser.add_argument('--dtbs', type=Path, help="every DTB of the kernel's platform, for the installed root "
-                        '(default: dtbs/ next to --dtb)')
-    for name in ('kernel', 'dtb', 'modules-dir'):
+    for name in ('kernel', 'dtbs', 'modules-dir'):
         parser.add_argument('--' + name, type=Path,
                             help='explicit kernel bundle; omit all three kernel inputs to use the Orchard cache')
     parser.add_argument('--release', required=True)
@@ -57,9 +67,10 @@ def main():
         parser.error(str(error))
     root = build_root(args.base, args.base_receipt, args.modules_dir,
                       args.output, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools,
-                      kernel=args.kernel, dtbs=args.dtbs or (args.dtb and args.dtb.parent / 'dtbs'))
+                      kernel=args.kernel, dtbs=args.dtbs)
     command = [sys.executable, '-m', 'orchard_hardware.image.recovery']
-    for name in ('base', 'base_receipt', 'modules_dir', 'loader', 'kernel', 'dtb', 'busybox', 'dropbear', 'dropbearkey',
+    command.extend(f'--dtb={path}' for path in recovery_dtbs(args.dtbs))
+    for name in ('base', 'base_receipt', 'modules_dir', 'loader', 'kernel', 'busybox', 'dropbear', 'dropbearkey',
                  'wpa_supplicant', 'wpa_cli', 'iw'):
         command.extend(['--' + name.replace('_', '-'), str(getattr(args, name))])
     command.extend(['--root-receipt', str(args.output / 'rootfs.json'),

@@ -61,8 +61,9 @@ uv run python -m release.j71b.build \
   --output out/releases/0.1.0-orchard.3
 ```
 
-To use explicit artifacts instead, supply all three of `--kernel FILE`, `--dtb FILE`
-and `--modules-dir DIRECTORY`. Partial overrides are rejected to avoid mixing
+To use explicit artifacts instead, supply all three of `--kernel FILE`, `--dtbs DIRECTORY`
+and `--modules-dir DIRECTORY`. The recovery carries the DTB of every device that
+shares the kernel; m1n1 boots with the one matching the device. Partial overrides are rejected to avoid mixing
 kernel bundles. That explicit path does not invoke the cached builder and remains
 compatible with CI's published wheel/component inputs. The default cache respects
 `XDG_CACHE_HOME` and `ORCHARD_CACHE_DIR`, just like RAM builds; no cache flag is needed.

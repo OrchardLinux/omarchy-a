@@ -154,7 +154,8 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
         from release.j71b.audit import audit_recovery
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            inputs = {'loader': b'loader', 'dtb': b'dtb', 'kernel': b'kernel',
+            fdt = b'\xd0\x0d\xfe\xed'
+            inputs = {'loader': b'loader', 'dtb': fdt + b'a', 'dtb2': fdt + b'b', 'kernel': b'kernel',
                       'initramfs': gzip.compress(b'070701' + b'\0' * 32)}
             for name, data in inputs.items():
                 (root / name).write_bytes(data)
@@ -163,12 +164,14 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
             argv = [sys.executable, '-m', 'orchard_hardware.boot.assemble', '--manifest', str(root / 'profile.json'),
                     '--output', str(image)]
             for name in inputs:
-                argv.extend(['--' + name, str(root / name)])
+                argv.extend(['--' + name.rstrip('2'), str(root / name)])
             subprocess.run(argv, check=True, capture_output=True)
-            expected = (inputs['loader'] + b'chosen.bootargs=test\n' + inputs['dtb'] + inputs['kernel'] +
+            expected = (inputs['loader'] + b'chosen.bootargs=test\n' + inputs['dtb'] + inputs['dtb2'] + inputs['kernel'] +
                         INITRAMFS_MAGIC + struct.pack('<I', len(inputs['initramfs'])) + inputs['initramfs'])
             self.assertEqual(image.read_bytes(), expected)
-            self.assertEqual(audit_recovery(image)['initramfs_sha256'], hashlib.sha256(inputs['initramfs']).hexdigest())
+            audit = audit_recovery(image)
+            self.assertEqual(audit['initramfs_sha256'], hashlib.sha256(inputs['initramfs']).hexdigest())
+            self.assertEqual(audit['dtbs'], 2)
 
     def test_recovery_adt_endpoint_owns_size_and_exact_binary_selection(self):
         with tempfile.TemporaryDirectory() as directory:
