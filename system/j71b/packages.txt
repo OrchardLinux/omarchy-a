@@ -28,6 +28,8 @@ upower
 zram-generator
 grim
 wlr-randr
+# The desktop's files app (desktop/configuration/org.kde.dolphin.desktop).
+dolphin
 xdg-desktop-portal
 xdg-desktop-portal-wlr
 pipewire
