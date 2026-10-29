@@ -1,0 +1,9 @@
+# Development NFS host. Device images and private roots are supplied separately.
+FROM docker.io/library/debian@sha256:a6db089d0e655c0b29cf0104d17ec02f391ff3039ee929a725c41c07fb405ead
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nfs-ganesha nfs-ganesha-vfs rpcbind dbus ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/ganesha /var/lib/nfs/ganesha /srv/root
+COPY entrypoint /usr/local/sbin/orchard-nfs-server
+RUN chmod 755 /usr/local/sbin/orchard-nfs-server
+ENTRYPOINT ["/usr/local/sbin/orchard-nfs-server"]

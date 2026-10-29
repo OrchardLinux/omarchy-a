@@ -1,0 +1,12 @@
+#!/bin/sh
+# Half the available RAM, capped at 512 MiB, with no storage-backed swap.
+set -eu
+g=/sys/block/zram0
+if grep -q '^/dev/zram0[[:space:]]' /proc/swaps; then exit 0; fi
+[ "$(cat "$g/disksize")" = 0 ]
+kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+size=$((kb * 1024 / 2 / 4096 * 4096))
+[ "$size" -le 536870912 ] || size=536870912
+printf '%s\n' "$size" > "$g/disksize"
+mkswap /dev/zram0
+swapon --priority 100 /dev/zram0

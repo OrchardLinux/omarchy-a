@@ -1,0 +1,14 @@
+[Unit]
+Description=Omarchy N61 compressed RAM swap
+DefaultDependencies=no
+After=systemd-udevd.service
+Before=swap.target
+ConditionPathExists=/sys/block/zram0/disksize
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/omarchy-zram
+
+[Install]
+WantedBy=swap.target

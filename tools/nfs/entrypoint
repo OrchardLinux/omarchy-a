@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+mkdir -p /run/rpcbind /run/dbus /run/ganesha /var/lib/dbus
+dbus-uuidgen --ensure=/var/lib/dbus/machine-id
+rpcbind -w
+dbus-daemon --system --fork
+exec /usr/bin/ganesha.nfsd -F -L STDOUT -f /etc/ganesha/ganesha.conf

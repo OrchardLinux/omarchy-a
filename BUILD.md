@@ -98,6 +98,21 @@ Choose new evidence directories. `wlrctl` is a test-only native AArch64 helper, 
 
 `tools/with-source-denied --deny PATH [--allow INPUT_DIRECTORY] -- COMMAND...` optionally verifies that a command does not read a source checkout.
 
+## N61 development
+
+N61 development uses the shared AArch64 desktop/base producers with its own NFS
+root composition. See [the N61 build and staging instructions](system/n61/README.md).
+The generated private root receipt feeds the hardware package's native NFS RAM
+experiment. Its image policy preserves the USB network root and selects phone
+scaling and memory defaults.
+
+The recorded N61 desktop build reached Arch Linux ARM and Labwc through USB/NFS
+on two boots with distinct identities. Both reported zero failed system units.
+The owner confirmed touch on each; the first covered the vertical edges and
+on-screen keyboard entry. The exact tested artifacts and source revisions are
+listed in the N61 instructions. USB/NFS tethering remains necessary, and
+installation on the phone's storage and untethered startup are future work.
+
 ## Publish
 
 Follow [Publishing Omarchy A](docs/releasing.md). Build/audit success is not physical-device qualification: test a fresh installation and a cold-restart `orchard launch` on supported hardware before announcing the release. The experimental desktop auto-logs in and grants passwordless sudo; this is disclosed in the README and must not be described as a secure daily-use system.

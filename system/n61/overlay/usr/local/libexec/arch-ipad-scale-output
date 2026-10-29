@@ -1,0 +1,11 @@
+#!/bin/bash
+# Preserve the kernel's timing and scale the N61 panel to 500 logical pixels.
+set -euo pipefail
+state=$(wlr-randr)
+mapfile -t outputs < <(awk '/^[^[:space:]]/ {print $1}' <<< "$state")
+if (( ${#outputs[@]} != 1 )) || ! grep -q '  Enabled: yes' <<< "$state" ||
+   ! grep -Eq '^[[:space:]]+(750x1334|1334x750) px, .*current' <<< "$state"; then
+  echo 'N61 single-panel mode is pending; preserving the current scale' >&2
+  exit 0
+fi
+wlr-randr --output "${outputs[0]}" --scale 1.5

@@ -1,0 +1,15 @@
+{
+  "policies": {
+    "ExtensionSettings": {
+      "@omafox": {
+        "installation_mode": "normal_installed",
+        "install_url": "file:///usr/lib/firefox/distribution/extensions/@omafox.xpi"
+      }
+    },
+    "Preferences": {
+      "dom.ipc.processCount": {"Value": 2, "Status": "default"},
+      "browser.cache.memory.capacity": {"Value": 16384, "Status": "default"},
+      "browser.tabs.unloadOnLowMemory": {"Value": true, "Status": "default"}
+    }
+  }
+}

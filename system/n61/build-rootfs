@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+exec "$here/../aarch64/build-rootfs" --profile n61 --packages "$here/packages.txt" "$@"

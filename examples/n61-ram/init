@@ -1,0 +1,40 @@
+#!/bin/busybox sh
+# N61 RAM experiment: expose a physical USB shell after checking the board.
+set -eu
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+/bin/busybox --install -s /bin
+mount -t proc -o nosuid,nodev,noexec proc /proc
+mount -t sysfs -o nosuid,nodev,noexec sysfs /sys
+mount -t devtmpfs -o nosuid devtmpfs /dev
+mount -t tmpfs -o nosuid,nodev tmpfs /run
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+exec </dev/console >/dev/console 2>&1
+echo /bin/false > /proc/sys/kernel/modprobe
+if ! tr '\000' '\n' </proc/device-tree/compatible | grep -qx 'apple,n61'; then
+    echo 'This experiment requires the Apple iPhone 6 N61 device tree.'
+    exec sh -i
+fi
+mount -t configfs -o nosuid,nodev,noexec configfs /sys/kernel/config
+name=$(cat /etc/hostname)
+g=/sys/kernel/config/usb_gadget/$name
+mkdir "$g"
+echo 0x05ac > "$g/idVendor"
+# The prototype PID matches the generic RAM example.
+echo 0x4144 > "$g/idProduct"
+mkdir -p "$g/strings/0x409" "$g/configs/c.1/strings/0x409"
+echo "Orchard $name" > "$g/strings/0x409/product"
+cat /proc/sys/kernel/random/boot_id > "$g/strings/0x409/serialnumber"
+echo 'N61 physical USB diagnostic shell' > "$g/configs/c.1/strings/0x409/configuration"
+# USB descriptor value; charger control requires a separate driver.
+echo 100 > "$g/configs/c.1/MaxPower"
+mkdir "$g/functions/acm.usb0"
+ln -s "$g/functions/acm.usb0" "$g/configs/c.1/acm.usb0"
+set -- /sys/class/udc/*
+[ "$#" -eq 1 ] && [ -e "$1" ]
+printf '%s\n' "${1##*/}" > "$g/UDC"
+echo "$name: USB root shell for a trusted host."
+while :; do
+    setsid sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1 || true
+    sleep 1
+done

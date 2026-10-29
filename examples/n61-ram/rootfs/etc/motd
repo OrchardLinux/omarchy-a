@@ -1,0 +1,5 @@
+Orchard iPhone 6 RAM experiment
+
+This image exposes a root shell over USB ACM. Use a trusted host.
+The startup script mounts RAM interfaces and leaves device storage inactive.
+Display and USB operation await a physical N61 test. Touch support needs work.

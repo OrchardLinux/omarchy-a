@@ -1,0 +1,37 @@
+# Arch Linux ARM userspace only. NEVER install linux-aarch64 in a device root.
+# Baseline; exact dependency snapshot comes from an empty pacman DB preview.
+base
+archlinuxarm-keyring
+pacman
+sudo
+python
+labwc
+quickshell
+qt6-imageformats
+foot
+ttf-dejavu
+ttf-jetbrains-mono-nerd
+ttf-nerd-fonts-symbols
+firefox
+fastfetch
+starship
+seatd
+networkmanager
+bluez
+bluez-utils
+upower
+grim
+wlr-randr
+xdg-desktop-portal
+xdg-desktop-portal-wlr
+pipewire
+pipewire-pulse
+wireplumber
+socat
+jq
+pango
+cairo
+wayland
+
+# Owner keys are provisioned during private NFS staging.
+openssh
