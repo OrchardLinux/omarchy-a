@@ -41,6 +41,10 @@
     <keybind key="XF86HomePage" onRelease="yes">
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />
     </keybind>
+    <!-- Super+Shift+Space hides or shows the top bar, as in upstream Omarchy. -->
+    <keybind key="W-S-space">
+      <action name="Execute" command="omarchy-toggle-bar" />
+    </keybind>
   </keyboard>
   <touch mouseEmulation="no" />
   <snapping>
