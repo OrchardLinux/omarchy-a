@@ -27,6 +27,20 @@ its device-side `init` and optional `rootfs/` files; no per-example wrappers,
 registration or configuration language. `examples/` is only where we keep samples:
 `./orchard build use_cases/my-test` or an unrelated absolute directory works too.
 
+Every payload also gets `/usr/libexec/orchard/usb-session`. When the payload's
+`init` runs it, the device has USB serial, USB networking and SSH for this host's
+key; the host key is pinned over USB serial on first use:
+
+```sh
+./orchard shell                      # root shell
+./orchard exec -- dmesg              # one command
+./orchard push FILE /tmp/FILE        # copy in, checked by SHA-256
+./orchard pull /run/log.txt log.txt  # copy out
+```
+
+`push`/`pull --serial` use the USB serial shell instead, for payloads without
+SSH (`transport = false` in the example's `orchard.toml`, as in `minimal-boot`).
+
 ## Supported devices
 
 | Device | Identifier | Status |

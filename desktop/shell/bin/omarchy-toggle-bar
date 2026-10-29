@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# omarchy:summary=Hide or show the top bar
+# Flips the shell's bar-off flag and asks the bar to re-read it, as upstream
+# Omarchy's command of the same name does. One toggle at a time.
+set -euo pipefail
+exec 9>"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-toggle-bar.lock"
+flock -n 9 || exit 0
+flag=$HOME/.local/state/omarchy/toggles/bar-off
+mkdir -p "${flag%/*}"
+if [ -e "$flag" ]; then rm -f "$flag"; else : >"$flag"; fi
+omarchy-shell -q omarchy.bar syncHidden

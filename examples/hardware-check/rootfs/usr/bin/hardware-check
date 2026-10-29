@@ -9,7 +9,7 @@
 #   hardware-check charge    live charger view; plug sources in and out (Ctrl-C ends)
 #
 # Results: /run/hardware-check.txt, kernel log /run/dmesg.txt. Over USB
-# networking both are at http://10.71.0.1:8080/.
+# networking both are at http://172.16.42.1:8080/.
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 REPORT=/run/hardware-check.txt
 WIFI_CONFIG=/etc/wpa_supplicant.conf
@@ -218,7 +218,7 @@ case "${1:-all}" in
         dmesg > /run/dmesg-boot.txt
         check_system; check_storage; check_pcie; check_wifi; check_battery; check_display; check_log
         say ""
-        say "Report: $REPORT, kernel log: /run/dmesg.txt (also at http://10.71.0.1:8080/)"
+        say "Report: $REPORT, kernel log: /run/dmesg.txt (also at http://172.16.42.1:8080/)"
         ;;
     touch) section "Touch"; watch_input 'touch|multitouch|z2' touch 'Drag on the screen' ;;
     keys) section "Keys"; watch_input 'gpio-keys|button|keys' keys 'Press each button a few times' ;;
