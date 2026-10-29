@@ -9,7 +9,6 @@ import subprocess
 import sys
 import time
 
-BACKLIGHT = Path('/sys/class/backlight/20e200080.backlight/brightness')
 RUNTIME = Path(os.environ['XDG_RUNTIME_DIR'])
 
 def command(*args, timeout=3):
@@ -19,7 +18,11 @@ def status():
     return json.loads(command('omarchy-shell', 'lock', 'status'))
 
 def brightness():
-    return int(BACKLIGHT.read_text())
+    # The one built-in panel backlight, as omarchy-screen-toggle picks it.
+    panels = list(Path('/sys/class/backlight').iterdir())
+    if len(panels) != 1:
+        raise RuntimeError(f'expected one panel backlight, found {len(panels)}')
+    return int((panels[0] / 'brightness').read_text())
 
 def set_visible(visible):
     if (brightness() > 0) != visible:

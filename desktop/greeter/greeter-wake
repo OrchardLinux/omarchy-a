@@ -1,5 +1,8 @@
 #!/bin/sh
 # Home wakes an already-blank greeter; it does not blank a lit one.
 set -eu
-read -r value < /sys/class/backlight/20e200080.backlight/brightness
+# The one built-in panel backlight, as omarchy-screen-toggle picks it.
+set -- /sys/class/backlight/*
+[ $# = 1 ] && [ -e "$1/brightness" ] || exit 1
+read -r value < "$1/brightness"
 if [ "$value" = 0 ]; then exec /usr/libexec/omarchy-screen-toggle; fi

@@ -1,3 +1,0 @@
-# Device-specific write permission, no root helper or blanket sudo.
-# The Arch session contract currently includes tablet in video.
-ACTION=="add", SUBSYSTEM=="backlight", KERNEL=="20e200080.backlight", RUN+="/usr/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/usr/bin/chmod g+w /sys/class/backlight/%k/brightness"

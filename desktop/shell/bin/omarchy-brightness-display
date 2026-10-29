@@ -5,16 +5,13 @@ set -euo pipefail
 
 # The override is for isolated tests, never set by the desktop session.
 base=${IPADLINUX_BACKLIGHT_DIR:-/sys/class/backlight}
+# The one built-in panel backlight, as omarchy-screen-toggle picks it.
 device=""
-if [[ -d $base/20e200080.backlight ]]; then
-  device=$base/20e200080.backlight
-else
-  for candidate in "$base"/*; do
-    [[ -d $candidate && -r $candidate/max_brightness ]] || continue
-    [[ -z $device ]] || { echo unavailable; exit 1; }
-    device=$candidate
-  done
-fi
+for candidate in "$base"/*; do
+  [[ -d $candidate && -r $candidate/max_brightness ]] || continue
+  [[ -z $device ]] || { echo unavailable; exit 1; }
+  device=$candidate
+done
 [[ -n $device && -r $device/max_brightness && -r $device/brightness ]] || { echo unavailable; exit 1; }
 read -r max < "$device/max_brightness"
 [[ $max =~ ^[0-9]+$ && $max -gt 0 ]] || { echo unavailable; exit 1; }
