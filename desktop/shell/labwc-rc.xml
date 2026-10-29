@@ -41,6 +41,75 @@
     <keybind key="XF86HomePage" onRelease="yes">
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />
     </keybind>
+    <!-- Keyboard shortcuts for a Bluetooth keyboard, after upstream Omarchy (W = Super).
+         labwc has no directional focus, so Super+arrows cycle windows; Super+Shift+arrows
+         snap the window to that half (top/bottom suit the portrait screen). -->
+    <keybind key="W-Return">
+      <action name="Execute" command="foot" />
+    </keybind>
+    <keybind key="W-S-b">
+      <action name="Execute" command="firefox" />
+    </keybind>
+    <keybind key="W-space">
+      <action name="Execute" command="omarchy-shell omarchy.dock apps" />
+    </keybind>
+    <keybind key="W-A-space">
+      <action name="Execute" command="omarchy-shell shell toggle omarchy.menu &apos;{&quot;menu&quot;:&quot;root&quot;}&apos;" />
+    </keybind>
+    <keybind key="W-Escape">
+      <action name="Execute" command="omarchy-shell shell toggle omarchy.menu &apos;{&quot;menu&quot;:&quot;system&quot;}&apos;" />
+    </keybind>
+    <keybind key="W-w">
+      <action name="Close" />
+    </keybind>
+    <keybind key="W-f">
+      <action name="ToggleFullscreen" />
+    </keybind>
+    <keybind key="W-m">
+      <action name="ToggleMaximize" />
+    </keybind>
+    <keybind key="W-Up">
+      <action name="PreviousWindowImmediate" />
+    </keybind>
+    <keybind key="W-S-Up">
+      <action name="SnapToEdge" direction="up" />
+    </keybind>
+    <keybind key="W-Down">
+      <action name="NextWindowImmediate" />
+    </keybind>
+    <keybind key="W-S-Down">
+      <action name="SnapToEdge" direction="down" />
+    </keybind>
+    <keybind key="W-Left">
+      <action name="PreviousWindowImmediate" />
+    </keybind>
+    <keybind key="W-S-Left">
+      <action name="SnapToEdge" direction="left" />
+    </keybind>
+    <keybind key="W-Right">
+      <action name="NextWindowImmediate" />
+    </keybind>
+    <keybind key="W-S-Right">
+      <action name="SnapToEdge" direction="right" />
+    </keybind>
+    <keybind key="A-Tab">
+      <action name="NextWindow" />
+    </keybind>
+    <keybind key="A-S-Tab">
+      <action name="PreviousWindow" />
+    </keybind>
+    <keybind key="Print">
+      <action name="Execute" command="sh -c &apos;mkdir -p ~/Pictures &amp;&amp; grim ~/Pictures/screenshot-$(date +%Y-%m-%d_%H-%M-%S).png&apos;" />
+    </keybind>
+    <keybind key="W-S-s">
+      <action name="Execute" command="sh -c &apos;mkdir -p ~/Pictures &amp;&amp; grim ~/Pictures/screenshot-$(date +%Y-%m-%d_%H-%M-%S).png&apos;" />
+    </keybind>
+    <keybind key="XF86MonBrightnessUp">
+      <action name="Execute" command="omarchy-brightness-display --no-osd +5%" />
+    </keybind>
+    <keybind key="XF86MonBrightnessDown">
+      <action name="Execute" command="omarchy-brightness-display --no-osd -5%" />
+    </keybind>
     <!-- Super+Shift+Space hides or shows the top bar, as in upstream Omarchy. -->
     <keybind key="W-S-space">
       <action name="Execute" command="omarchy-toggle-bar" />
