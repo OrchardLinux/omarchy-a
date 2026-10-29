@@ -48,8 +48,20 @@ colors_payload=$(base64 -w0 "$state/theme/colors.toml")
 shell_payload=$(base64 -w0 "$state/theme/shell.toml")
 omarchy-shell -q shell applyTheme "$colors_payload" "$shell_payload"
 omarchy-shell -q background set "$state/theme/backgrounds/$selected"
+if command -v omarchy-greeter-theme-publish >/dev/null; then omarchy-greeter-theme-publish || true; fi
 kill -HUP "$(pgrep -x labwc | head -n1)"
 omarchy-theme-set-foot || true
+# KDE applications use the same Omarchy colors through their platform theme.
+if "$root/bin/omarchy-theme-set-kde"; then
+  # Notify already-running KDE applications that their palette changed.
+  if [[ -n ${DBUS_SESSION_BUS_ADDRESS:-} ]] && command -v dbus-send >/dev/null; then
+    dbus-send --session --type=signal /KGlobalSettings org.kde.KGlobalSettings.notifyChange int32:0 int32:0 || true
+  fi
+else
+  echo 'Warning: could not update KDE colors' >&2
+fi
+# Apply upstream Omarchy's GTK light/dark and icon settings.
+omarchy-theme-set-gnome || echo 'Warning: could not update GTK theme settings' >&2
 # Recreate only the keyboard process so its runtime colours follow this theme.
 [[ ! -x $root/bin/omarchy-keyboard ]] || "$root/bin/omarchy-keyboard" restart || true
 # Match upstream's post-commit theme hook without its Hyprland backend.

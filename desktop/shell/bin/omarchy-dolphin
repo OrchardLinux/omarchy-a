@@ -1,0 +1,7 @@
+#!/bin/sh
+# Keep upstream's GTK Qt theme for the desktop; Dolphin needs KDE's platform
+# plugin to consume the per-theme kdeglobals palette outside Plasma.
+if [ -f /usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so ]; then
+  export QT_QPA_PLATFORMTHEME=kde
+fi
+exec /usr/bin/dolphin "$@"

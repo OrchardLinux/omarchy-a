@@ -1,0 +1,2 @@
+#!/bin/sh
+# The greeter itself is started by labwc -S so its exit ends the compositor.

@@ -4,7 +4,7 @@ set -euo pipefail
 export OMARCHY_PATH=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
 export PATH=/usr/local/bin:/usr/bin
 state="$HOME/.local/state/omarchy/current"
-source_theme="$OMARCHY_PATH/themes/tokyo-night"
+source_theme="$OMARCHY_PATH/themes/jade-horse"
 [[ -s "$source_theme/colors.toml" && -d "$source_theme/backgrounds" ]] || exit 1
 mkdir -p "$state" "$HOME/.local/share/themes/Omarchy-Current/labwc"
 if [[ ! -s "$state/theme.name" ]]; then
@@ -15,7 +15,7 @@ if [[ ! -s "$state/theme.name" ]]; then
   omarchy-theme-set-templates
   [[ -s "$state/next-theme/shell.toml" && -s "$state/next-theme/foot.ini" ]] || exit 1
   mv "$state/next-theme" "$state/theme"
-  printf '%s\n' 'tokyo-night' > "$state/theme.name"
+  printf '%s\n' 'jade-horse' > "$state/theme.name"
   background=$(find "$state/theme/backgrounds" -maxdepth 1 -type f -name '*.webp' -printf '%f\n' | sort | head -n1)
   [[ -n "$background" ]] || exit 1
   ln -s "$state/theme/backgrounds/$background" "$state/background"
@@ -23,6 +23,21 @@ if [[ ! -s "$state/theme.name" ]]; then
   python3 "$OMARCHY_PATH/render-labwc-buttons.py" "$state/theme/colors.toml" "$HOME/.local/share/themes/Omarchy-Current/labwc"
 fi
 [[ -s "$state/theme/colors.toml" && -s "$state/theme/shell.toml" && -e "$state/background" ]] || exit 1
+# Render the KDE palette for installations initialized before this template.
+if [[ ! -s "$state/theme/kdeglobals.colors" && ! -e "$state/next-theme" ]]; then
+  mkdir "$state/next-theme"
+  cp "$state/theme/colors.toml" "$state/next-theme/colors.toml"
+  if omarchy-theme-set-templates && [[ -s "$state/next-theme/kdeglobals.colors" ]]; then
+    cp "$state/next-theme/kdeglobals.colors" "$state/theme/kdeglobals.colors"
+  fi
+  rm -rf -- "$state/next-theme"
+fi
+if [[ -s "$state/theme/kdeglobals.colors" ]]; then
+  "$OMARCHY_PATH/bin/omarchy-theme-set-kde" || echo 'Warning: could not update KDE colors' >&2
+fi
+# Apply the same GTK light/dark and icon settings as upstream Omarchy.
+omarchy-theme-set-gnome || echo 'Warning: could not update GTK theme settings' >&2
+if command -v omarchy-greeter-theme-publish >/dev/null; then omarchy-greeter-theme-publish || true; fi
 # This only registers the user hook and queues local theme state; it does not
 # copy or reuse the VM's Firefox profile. Package installation is a separate step.
 if command -v omafox >/dev/null; then

@@ -79,7 +79,8 @@ class ScreenToggleTests(unittest.TestCase):
         binding = bindings[0]
         self.assertEqual(binding.get('onRelease'), 'yes')
         self.assertEqual(binding.get('allowWhenLocked'), 'yes')
+        # The power key locks before blanking; omarchy-tablet-power drives the toggle helper.
         self.assertEqual(binding.find('action').attrib,
-                         {'name': 'Execute', 'command': '/usr/libexec/omarchy-screen-toggle'})
+                         {'name': 'Execute', 'command': 'omarchy-tablet-power power'})
         self.assertEqual(system_files('test')['usr/libexec/omarchy-screen-toggle'],
                          (HELPER.read_bytes(), 0o755))
