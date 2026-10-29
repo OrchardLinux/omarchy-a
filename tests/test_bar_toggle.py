@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -28,6 +29,7 @@ class BarToggleTests(unittest.TestCase):
     def toggle(self):
         subprocess.run(['bash', str(SCRIPT)], env=self.env, check=True)
 
+    @unittest.skipUnless(shutil.which('flock'), 'the script needs util-linux flock, as on the device')
     def test_toggle_flips_the_flag_and_asks_the_bar_to_resync(self):
         self.toggle()
         self.assertTrue(self.flag.exists())
