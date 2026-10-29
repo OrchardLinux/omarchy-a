@@ -1,0 +1,1 @@
+tablet ALL=(root) NOPASSWD: /usr/bin/timedatectl set-timezone *

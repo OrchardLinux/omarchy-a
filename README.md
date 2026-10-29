@@ -35,7 +35,7 @@ registration or configuration language. `examples/` is only where we keep sample
 
 This image uses **tethered boot**: starting Linux after a cold restart requires a host computer running `orchard launch`.
 
-> **Security:** this experimental image automatically logs in as `tablet` and grants unrestricted passwordless sudo. It does not provide local access protection. Use a dedicated test device; do not store sensitive data on it.
+> **Security:** this experimental image logs in as `tablet` automatically at boot. `sudo` asks for the password chosen at install, and the screen lock takes a 6-digit PIN. There is no disk encryption, and the boot ROM exploit used to start Linux gives anyone holding the device full access. Use a dedicated test device; do not store sensitive data on it.
 
 Contributions for additional devices are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 

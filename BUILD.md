@@ -100,4 +100,4 @@ Choose new evidence directories. `wlrctl` is a test-only native AArch64 helper, 
 
 ## Publish
 
-Follow [Publishing Omarchy A](docs/releasing.md). Build/audit success is not physical-device qualification: test a fresh installation and a cold-restart `orchard launch` on supported hardware before announcing the release. The experimental desktop auto-logs in and grants passwordless sudo; this is disclosed in the README and must not be described as a secure daily-use system.
+Follow [Publishing Omarchy A](docs/releasing.md). Build/audit success is not physical-device qualification: test a fresh installation and a cold-restart `orchard launch` on supported hardware before announcing the release. The experimental desktop auto-logs in at boot and has no disk encryption; this is disclosed in the README and must not be described as a secure daily-use system.

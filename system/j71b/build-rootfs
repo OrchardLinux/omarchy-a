@@ -34,8 +34,9 @@ for package in "$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.
   pacman --root "$root" --gpgdir /etc/pacman.d/gnupg --noconfirm -U "$package"
 done
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
-# Native J71b login needs seatd's socket and DRM/input device access.
-usermod --root "$root" --append --groups seat,video,input tablet
+# Native J71b login needs seatd's socket and DRM/input device access; wheel
+# makes the account polkit's admin, so prompts take its password.
+usermod --root "$root" --append --groups seat,video,input,wheel tablet
 # Normalize only copied desktop ownership. Recursive chown of the installed
 # package tree clears setuid/setgid bits and file capabilities (including sudo).
 cp -a --no-preserve=ownership "$desktop/payload/." "$root/"

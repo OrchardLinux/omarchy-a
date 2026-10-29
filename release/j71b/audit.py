@@ -183,10 +183,16 @@ def verify_bluetooth(record, hashes, modes, owners, groups):
 
 
 def verify_tablet_sudo(hashes, modes, owners, groups):
-    name = 'etc/sudoers.d/90-tablet-passwordless'
-    expected = hashlib.sha256(b'tablet ALL=(ALL:ALL) NOPASSWD: ALL\n').hexdigest()
-    if (hashes.get(name), modes.get(name), owners.get(name), groups.get(name)) != (expected, 0o440, 0, 0):
-        raise ValueError('Missing or unsafe tablet passwordless sudo policy')
+    # sudo asks for the account password, which the installer sets; only the
+    # timezone menu's one command runs without it.
+    policy = {'etc/sudoers.d/90-tablet': b'tablet ALL=(ALL:ALL) ALL\n',
+              'etc/sudoers.d/omarchy-tzupdate': b'tablet ALL=(root) NOPASSWD: /usr/bin/timedatectl set-timezone *\n'}
+    for name, data in policy.items():
+        expected = hashlib.sha256(data).hexdigest()
+        if (hashes.get(name), modes.get(name), owners.get(name), groups.get(name)) != (expected, 0o440, 0, 0):
+            raise ValueError('Missing or unsafe tablet sudo policy: ' + name)
+    if any(path.startswith('etc/sudoers.d/') and path not in policy for path in hashes):
+        raise ValueError('Unexpected sudoers drop-in')
 
 
 def main():
