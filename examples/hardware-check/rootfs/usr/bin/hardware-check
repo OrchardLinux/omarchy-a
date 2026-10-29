@@ -1,0 +1,224 @@
+#!/bin/sh
+# Check what this device offers and write a report. Every check looks at what
+# is present first; what the device doesn't have is SKIP, not FAIL.
+#
+#   hardware-check           the automatic checks (about 3 minutes)
+#   hardware-check touch     drag on the screen for 20 s
+#   hardware-check keys      press the buttons for 20 s
+#   hardware-check charge    live charger view; plug sources in and out (Ctrl-C ends)
+#
+# Results: /run/hardware-check.txt, kernel log /run/dmesg.txt. Over USB
+# networking both are at http://10.71.0.1:8080/.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+REPORT=/run/hardware-check.txt
+WIFI_CONFIG=/etc/wpa_supplicant.conf
+DOWNLOAD_CONFIG=/etc/hardware-check.conf   # optional: DOWNLOAD_URL=http://…, DOWNLOAD_SHA256=…
+
+say() { echo "$*" | tee -a "$REPORT"; }
+result() { say "[$1] $2"; }
+section() { say ""; say "== $*"; }
+uptime_s() { cut -d. -f1 /proc/uptime; }
+
+battery() {
+    for supply in /sys/class/power_supply/*; do
+        [ "$(cat "$supply/type" 2>/dev/null)" = Battery ] && { echo "$supply"; return; }
+    done
+}
+
+check_system() {
+    say "hardware-check $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    say "kernel: $(uname -r)"
+    say "model: $(tr -d '\000' < /proc/device-tree/model 2>/dev/null)"
+    say "compatible: $(tr '\000' ' ' < /proc/device-tree/compatible 2>/dev/null)"
+}
+
+check_storage() {
+    section "Storage"
+    if [ ! -e /sys/class/block/nvme0n1 ]; then
+        result SKIP "no NVMe storage"
+        return
+    fi
+    writable=0
+    for ro in /sys/class/block/nvme*/ro; do
+        [ "$(cat "$ro")" = 1 ] || writable=1
+    done
+    if [ "$writable" = 0 ]; then result PASS "every NVMe namespace and partition read-only"
+    else result FAIL "an NVMe block device is still writable"; fi
+    start=$(uptime_s)
+    if dd if=/dev/nvme0n1 of=/dev/null bs=1M count=1024 2>>"$REPORT"; then
+        seconds=$(( $(uptime_s) - start )); [ "$seconds" -gt 0 ] || seconds=1
+        result PASS "read 1 GiB in ${seconds}s"
+    else
+        result FAIL "1 GiB read from nvme0n1"
+    fi
+}
+
+check_pcie() {
+    section "PCIe"
+    found=0
+    for device in /sys/bus/pci/devices/*; do
+        [ -e "$device/vendor" ] || continue
+        found=1
+        driver=$(basename "$(readlink "$device/driver" 2>/dev/null)" 2>/dev/null)
+        say "  ${device##*/} $(cat "$device/vendor"):$(cat "$device/device") class $(cat "$device/class") driver ${driver:-none}"
+    done
+    [ "$found" = 1 ] && result PASS "PCIe devices enumerated" || result SKIP "no PCIe devices"
+}
+
+check_wifi() {
+    section "Wi-Fi"
+    i=0
+    while [ -z "$(ls /sys/class/ieee80211 2>/dev/null)" ] && [ "$i" -lt 20 ]; do sleep 1; i=$((i + 1)); done
+    interface=$(ls /sys/class/net | grep -m1 '^wlan')
+    if [ -z "$interface" ]; then
+        if grep -qiE 'brcmf|wlan|wifi' /run/dmesg-boot.txt 2>/dev/null; then
+            result FAIL "a Wi-Fi driver logged messages but no interface appeared"
+        else
+            result SKIP "no Wi-Fi interface"
+        fi
+        return
+    fi
+    say "  $(dmesg | grep -m1 -iE 'brcmf_c_preinit_dcmds: Firmware|firmware: ' | sed 's/^\[[^]]*\] //')"
+    ip link set "$interface" up
+    networks=$(iw dev "$interface" scan 2>/dev/null | grep -c '^BSS ')
+    if [ "$networks" -gt 0 ]; then result PASS "scan found $networks networks"
+    else result FAIL "scan found no networks"; fi
+    if [ ! -f "$WIFI_CONFIG" ]; then
+        result SKIP "association: no $WIFI_CONFIG in this image"
+        return
+    fi
+    wpa_supplicant -B -i "$interface" -c "$WIFI_CONFIG" >>"$REPORT" 2>&1
+    i=0
+    while ! iw dev "$interface" link 2>/dev/null | grep -q Connected && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
+    if ! iw dev "$interface" link | grep -q Connected; then
+        result FAIL "not associated after ${i}s"
+        return
+    fi
+    result PASS "associated after ${i}s"
+    if ! udhcpc -i "$interface" -n -q -t 10 -s /usr/share/udhcpc/default.script >>"$REPORT" 2>&1; then
+        result FAIL "DHCP on $interface"
+        return
+    fi
+    result PASS "DHCP: $(ip -4 addr show "$interface" | grep -o 'inet [0-9./]*' | cut -d' ' -f2)"
+    gateway=$(ip route | grep -m1 '^default' | cut -d' ' -f3)
+    if [ -n "$gateway" ] && ping -c 5 -W 2 "$gateway" >>"$REPORT" 2>&1; then result PASS "ping gateway $gateway"
+    else result FAIL "ping gateway ${gateway:-none}"; fi
+    DOWNLOAD_URL=; DOWNLOAD_SHA256=
+    [ ! -f "$DOWNLOAD_CONFIG" ] || . "$DOWNLOAD_CONFIG"
+    if [ -z "$DOWNLOAD_URL" ]; then
+        result SKIP "download: no DOWNLOAD_URL in $DOWNLOAD_CONFIG"
+        return
+    fi
+    for run in 1 2 3; do
+        start=$(uptime_s)
+        sum=$(wget -q -O - "$DOWNLOAD_URL" | sha256sum | cut -d' ' -f1)
+        seconds=$(( $(uptime_s) - start )); [ "$seconds" -gt 0 ] || seconds=1
+        if [ -n "$DOWNLOAD_SHA256" ] && [ "$sum" != "$DOWNLOAD_SHA256" ]; then
+            result FAIL "download $run: checksum $sum, expected $DOWNLOAD_SHA256"
+        else
+            result PASS "download $run in ${seconds}s, sha256 $sum"
+        fi
+    done
+}
+
+check_battery() {
+    section "Battery"
+    supply=$(battery)
+    if [ -z "$supply" ]; then
+        result SKIP "no battery power supply"
+        return
+    fi
+    say "  $supply"
+    errors=0
+    for n in 1 2 3 4 5 6 7 8 9 10; do
+        line=""
+        for property in status capacity voltage_now current_now temp; do
+            value=$(cat "$supply/$property" 2>/dev/null) || { value=ERR; errors=$((errors + 1)); }
+            line="$line $property=$value"
+        done
+        say " $line"
+        sleep 2
+    done
+    if [ "$errors" = 0 ]; then result PASS "10 readings without errors"
+    else result FAIL "$errors failed reads"; fi
+    for other in /sys/class/power_supply/*; do
+        [ "$other" = "$supply" ] && continue
+        say "  ${other##*/}: online=$(cat "$other/online" 2>/dev/null) input_current_limit=$(cat "$other/input_current_limit" 2>/dev/null)"
+    done
+}
+
+check_display() {
+    section "Display and backlight"
+    if ls /sys/class/drm/card*-* >/dev/null 2>&1 || [ -e /dev/fb0 ]; then
+        result PASS "display: $(ls /sys/class/drm 2>/dev/null | tr '\n' ' ')$( [ -e /dev/fb0 ] && echo fb0)"
+    else
+        result FAIL "no display device"
+    fi
+    found=0
+    for light in /sys/class/backlight/*; do
+        [ -e "$light/brightness" ] || continue
+        found=1
+        old=$(cat "$light/brightness"); max=$(cat "$light/max_brightness")
+        echo $((max / 4)) > "$light/brightness"; sleep 1
+        now=$(cat "$light/brightness"); echo "$old" > "$light/brightness"
+        if [ "$now" = $((max / 4)) ]; then result PASS "${light##*/}: set $now of $max, restored $old"
+        else result FAIL "${light##*/}: wrote $((max / 4)), read $now"; fi
+    done
+    [ "$found" = 1 ] || result SKIP "no backlight"
+}
+
+check_log() {
+    section "Kernel log"
+    dmesg > /run/dmesg.txt
+    bad=$(grep -iE 'dart.*(fault|error)|nvme.*(timeout|reset)|I/O error|WARNING:|BUG:|Oops|Unable to handle|hung_task|soft lockup|blocking DMA' /run/dmesg.txt)
+    if [ -z "$bad" ]; then
+        result PASS "no IOMMU faults, NVMe timeouts, warnings or oopses"
+    else
+        result FAIL "kernel messages to look at:"
+        echo "$bad" | sed 's/^/    /' | tee -a "$REPORT"
+    fi
+}
+
+input_device() {
+    grep -l -iE "$1" /sys/class/input/event*/device/name 2>/dev/null | head -1 | sed 's|/device/name$||; s|.*/||'
+}
+
+watch_input() {
+    event=$(input_device "$1")
+    [ -n "$event" ] || { result SKIP "no $2 input device"; return; }
+    echo "$3 for 20 seconds."
+    timeout 20 hexdump -v -e '24/1 "%02x " "\n"' "/dev/input/$event" > "/run/$2.txt" 2>/dev/null
+    events=$(wc -l < "/run/$2.txt")
+    if [ "$events" -gt 0 ]; then result PASS "$2: $events input events"
+    else result FAIL "$2: no input events"; fi
+}
+
+charge() {
+    echo "Plug sources in and out; Ctrl-C ends. Also logged to $REPORT."
+    section "Charging session"
+    supply=$(battery)
+    while :; do
+        line=$(date -u +%H:%M:%S)
+        for other in /sys/class/power_supply/*; do
+            [ "$other" = "$supply" ] && continue
+            line="$line ${other##*/}:online=$(cat "$other/online" 2>/dev/null),limit=$(cat "$other/input_current_limit" 2>/dev/null)"
+        done
+        [ -n "$supply" ] && line="$line battery_current=$(cat "$supply/current_now" 2>/dev/null)"
+        say "$line"
+        sleep 1
+    done
+}
+
+case "${1:-all}" in
+    all)
+        : > "$REPORT"
+        dmesg > /run/dmesg-boot.txt
+        check_system; check_storage; check_pcie; check_wifi; check_battery; check_display; check_log
+        say ""
+        say "Report: $REPORT, kernel log: /run/dmesg.txt (also at http://10.71.0.1:8080/)"
+        ;;
+    touch) section "Touch"; watch_input 'touch|multitouch|z2' touch 'Drag on the screen' ;;
+    keys) section "Keys"; watch_input 'gpio-keys|button|keys' keys 'Press each button a few times' ;;
+    charge) charge ;;
+    *) echo "usage: hardware-check [touch|keys|charge]"; exit 2 ;;
+esac

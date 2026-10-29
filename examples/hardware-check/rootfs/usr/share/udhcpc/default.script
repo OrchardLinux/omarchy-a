@@ -1,0 +1,8 @@
+#!/bin/sh
+# Apply a DHCP lease (BusyBox udhcpc).
+[ "$1" = bound ] || [ "$1" = renew ] || exit 0
+ip addr flush dev "$interface"
+ip addr add "$ip/${mask:-24}" dev "$interface"
+for router in $router; do ip route replace default via "$router" dev "$interface"; break; done
+: > /etc/resolv.conf
+for server in $dns; do echo "nameserver $server" >> /etc/resolv.conf; done
