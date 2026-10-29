@@ -177,7 +177,10 @@ def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, blueto
         temporary = Path(temp)
         archive = temporary / 'rootfs.tar.zst'
         with archive.open('wb') as raw, subprocess.Popen(
-                ['zstd', '-T0', '-1', '--check', '-q', '-c'], stdin=subprocess.PIPE, stdout=raw) as compressor:
+                # -19 --long: 39% smaller than -1 for the same root (704 vs 1154 MiB), so
+                # 39% less to send over the device's ~12 MB/s USB link; decompression
+                # stays fast and needs no option (the window stays at zstd's default limit).
+                ['zstd', '-T0', '-19', '--long', '--check', '-q', '-c'], stdin=subprocess.PIPE, stdout=raw) as compressor:
             with tarfile.open(fileobj=compressor.stdin, mode='w|') as target:
                 def add(member, data=None):
                     nonlocal expanded, count
