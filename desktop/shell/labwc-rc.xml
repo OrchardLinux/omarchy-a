@@ -25,10 +25,9 @@
     <keybind key="XF86AudioLowerVolume">
       <action name="Execute" command="omarchy-brightness-display --no-osd -5%" />
     </keybind>
-    <!-- Short power-button release blanks/restores the backlight, not suspend.
-         Release-only avoids auto-repeat toggling while the key is held. -->
+    <!-- Lock before blanking; suspend is intentionally deferred until supported. -->
     <keybind key="XF86PowerOff" onRelease="yes" allowWhenLocked="yes">
-      <action name="Execute" command="/usr/libexec/omarchy-screen-toggle" />
+      <action name="Execute" command="omarchy-tablet-power power" />
     </keybind>
     <!-- Modifier-only release bindings preserve ordinary Cmd/Super chords. -->
     <keybind key="Super_L" onRelease="yes">
@@ -38,8 +37,8 @@
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />
     </keybind>
     <!-- J71b Home emits KEY_HOMEPAGE (172), not navigation KEY_HOME. -->
-    <keybind key="XF86HomePage" onRelease="yes">
-      <action name="Execute" command="omarchy-shell omarchy.dock apps" />
+    <keybind key="XF86HomePage" onRelease="yes" allowWhenLocked="yes">
+      <action name="Execute" command="omarchy-tablet-power home" />
     </keybind>
   </keyboard>
   <touch mouseEmulation="no" />

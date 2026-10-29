@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=labwc
+export WLR_RENDERER=pixman QT_QUICK_BACKEND=software QT_QPA_PLATFORM=wayland
+export LIBGL_ALWAYS_SOFTWARE=1 LIBSEAT_BACKEND=seatd
+export OMARCHY_TOUCH_MODE=1
+# The snapshot contains data only; the QML code below remains system-owned.
+theme=$(readlink -f /var/lib/omarchy-greeter-theme/current 2>/dev/null || true)
+case "$theme" in
+    /var/lib/omarchy-greeter-theme/snapshot-*) ;;
+    *) theme= ;;
+esac
+if [ -z "$theme" ] || [ ! -s "$theme/colors.toml" ] || [ ! -f "$theme/background" ]; then
+    theme=/usr/share/omarchy-greeter/default-theme
+fi
+export OMARCHY_GREETER_THEME_DIR=$theme
+# -S ends the compositor when the greeter exits, allowing greetd to launch the user session.
+exec /usr/bin/labwc -C /usr/share/omarchy-greeter/labwc -S 'qs -p /usr/share/omarchy-greeter/shell.qml'

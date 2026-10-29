@@ -11,14 +11,19 @@ set -euo pipefail
   exit 1
 }
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+# The user session must read its live theme, not the greeter's snapshot.
+unset OMARCHY_GREETER_THEME_DIR
 export OMARCHY_PATH=/home/tablet/.local/share/omarchy-ipad
 export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=labwc
 export WLR_RENDERER=pixman QT_QUICK_BACKEND=software QT_QPA_PLATFORM=wayland
+# Match pinned upstream Omarchy's GTK-backed Qt platform theme.
+export QT_QPA_PLATFORMTHEME=gtk3
 export OMARCHY_TOUCH_MODE=1
 export LIBGL_ALWAYS_SOFTWARE=1 LIBSEAT_BACKEND=seatd MOZ_ENABLE_WAYLAND=1
 export PATH=/usr/local/bin:/usr/bin
 # Services such as PipeWire and WirePlumber use the same user manager/bus as
 # Quickshell. Do not spawn a separate dbus-run-session instance.
 systemctl --user import-environment DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE XDG_CURRENT_DESKTOP
+if [[ -n ${QT_QPA_PLATFORMTHEME:-} ]]; then systemctl --user import-environment QT_QPA_PLATFORMTHEME; fi
 /usr/local/libexec/arch-ipad-first-theme
 exec /usr/bin/labwc

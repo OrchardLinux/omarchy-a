@@ -23,3 +23,4 @@ ln -nsf "$BACKGROUND" "$CURRENT_BACKGROUND_LINK"
 # Update the live shell background when it is running. Nothing watches the
 # symlink, so this is how the shell learns of the new background.
 omarchy-shell -q background set "$BACKGROUND"
+if command -v omarchy-greeter-theme-publish >/dev/null; then omarchy-greeter-theme-publish || true; fi

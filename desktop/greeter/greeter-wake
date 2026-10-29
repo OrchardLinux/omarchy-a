@@ -1,0 +1,5 @@
+#!/bin/sh
+# Home wakes an already-blank greeter; it does not blank a lit one.
+set -eu
+read -r value < /sys/class/backlight/20e200080.backlight/brightness
+if [ "$value" = 0 ]; then exec /usr/libexec/omarchy-screen-toggle; fi

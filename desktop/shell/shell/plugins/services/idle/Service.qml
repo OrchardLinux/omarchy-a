@@ -81,7 +81,7 @@ Item {
     root.idledThisCycle = false
     root.screensaverStartedThisCycle = false
     resetScreensaverWindows()
-    runProcess(lockProcess, "lock", "omarchy-system-lock")
+    runProcess(lockProcess, "lock", Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? "omarchy-tablet-power idle" : "omarchy-system-lock")
   }
 
   function startIdleCycle() {
