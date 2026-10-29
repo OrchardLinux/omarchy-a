@@ -14,9 +14,11 @@ mount -t devpts devpts /dev/pts
 exec </dev/console >/dev/console 2>&1
 
 # Drivers request helper modules (brcmfmac its firmware vendor module) through
-# the kernel's module loader; let them. Then load drivers for the devices that
-# are already present.
+# the kernel's module loader; let them. Devices that appear later, such as the
+# SmartIO DMA controller and the touchscreen behind it, get their driver from
+# the uevent helper. Then load drivers for the devices already present.
 echo /bin/modprobe > /proc/sys/kernel/modprobe
+echo /usr/libexec/module-hotplug > /proc/sys/kernel/hotplug
 coldplug() {
     for alias in /sys/bus/*/devices/*/modalias; do
         [ -r "$alias" ] && modprobe -qb "$(cat "$alias")" 2>/dev/null || true
