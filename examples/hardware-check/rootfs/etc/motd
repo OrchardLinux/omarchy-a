@@ -1,0 +1,9 @@
+RAM-only hardware check. Internal storage is read-only.
+
+  hardware-check           automatic checks (about 3 minutes)
+  hardware-check touch     drag on the screen for 20 s
+  hardware-check keys      press the buttons for 20 s
+  hardware-check charge    live charger view (Ctrl-C ends)
+
+The report is in /run/hardware-check.txt and at http://10.71.0.1:8080/
+over USB networking.

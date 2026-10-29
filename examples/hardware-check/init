@@ -1,0 +1,78 @@
+#!/bin/busybox sh
+# This example's PID 1: a RAM-only system that checks what the device offers.
+# Storage is set read-only as soon as it appears; nothing mounts it. USB
+# serial root shell plus USB networking; run `hardware-check` at the shell.
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+/bin/busybox --install -s /bin
+mount -t proc -o nosuid,nodev,noexec proc /proc
+mount -t sysfs -o nosuid,nodev,noexec sysfs /sys
+mount -t devtmpfs -o nosuid devtmpfs /dev
+mount -t tmpfs -o nosuid,nodev tmpfs /run
+mkdir -p /dev/pts /var/run /tmp
+mount -t devpts devpts /dev/pts
+exec </dev/console >/dev/console 2>&1
+
+# Drivers request helper modules (brcmfmac its firmware vendor module) through
+# the kernel's module loader; let them. Then load drivers for the devices that
+# are already present.
+echo /bin/modprobe > /proc/sys/kernel/modprobe
+coldplug() {
+    for alias in /sys/bus/*/devices/*/modalias; do
+        [ -r "$alias" ] && modprobe -qb "$(cat "$alias")" 2>/dev/null || true
+    done
+}
+
+# Storage: fence every NVMe namespace and partition read-only once they appear.
+(
+    i=0
+    while [ ! -e /sys/class/block/nvme0n1 ] && [ "$i" -lt 60 ]; do
+        coldplug
+        sleep 1
+        i=$((i + 1))
+    done
+    sleep 2
+    for d in /sys/class/block/nvme*; do
+        [ -e "$d" ] && blockdev --setro "/dev/${d##*/}"
+    done
+    echo "$i" > /run/storage-fence
+) &
+coldplug
+
+mount -t configfs -o nosuid,nodev,noexec configfs /sys/kernel/config
+name=$(cat /etc/hostname)
+g=/sys/kernel/config/usb_gadget/$name
+mkdir "$g"
+echo 0x05ac > "$g/idVendor"
+# Prototype PID, not an allocation. Distinct from recovery and discovery.
+echo 0x4144 > "$g/idProduct"
+mkdir -p "$g/strings/0x409" "$g/configs/c.1/strings/0x409"
+echo "Orchard $name" > "$g/strings/0x409/product"
+cat /proc/sys/kernel/random/boot_id > "$g/strings/0x409/serialnumber"
+echo 'Serial shell and USB network' > "$g/configs/c.1/strings/0x409/configuration"
+echo 100 > "$g/configs/c.1/MaxPower"
+mkdir "$g/functions/acm.usb0" "$g/functions/ecm.usb0"
+ln -s "$g/functions/acm.usb0" "$g/configs/c.1/acm.usb0"
+ln -s "$g/functions/ecm.usb0" "$g/configs/c.1/ecm.usb0"
+set -- /sys/class/udc/*
+[ "$#" -eq 1 ] && [ -e "$1" ]
+printf '%s\n' "${1##*/}" > "$g/UDC"
+
+# USB network: this device is 10.71.0.1; the host gets 10.71.0.2 by DHCP,
+# and can fetch /run (the report) from http://10.71.0.1:8080/.
+ip link set usb0 up 2>/dev/null || true
+ip addr add 10.71.0.1/24 dev usb0 2>/dev/null || true
+printf '%s\n' 'start 10.71.0.2' 'end 10.71.0.2' 'interface usb0' \
+    'option subnet 255.255.255.0' 'option lease 3600' > /run/udhcpd.conf
+touch /run/udhcpd.leases
+udhcpd -S /run/udhcpd.conf 2>/dev/null || true
+httpd -p 8080 -h /run 2>/dev/null || true
+
+echo "$name: RAM-only. USB root shell is unauthenticated; trusted host only."
+[ ! -f /etc/motd ] || cat /etc/motd
+# Quick Wi-Fi check at boot when the image carries a network to join.
+[ ! -f /etc/wpa_supplicant.conf ] || hardware-check wifi >/dev/null 2>&1 &
+while :; do
+    setsid -c sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1 || true
+    sleep 1
+done
