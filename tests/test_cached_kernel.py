@@ -54,7 +54,8 @@ class CachedKernelTests(unittest.TestCase):
     def argv(self, root):
         argv = ['build', '--release', 'test']
         for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear',
-                     'dropbearkey', 'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
+                     'dropbearkey', 'wpa-supplicant', 'wpa-cli', 'iw',
+                     'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
             path = root / name
             if name.endswith('-tools'):
                 path.mkdir()
@@ -76,7 +77,8 @@ class CachedKernelTests(unittest.TestCase):
 
     def test_missing_distro_inputs_fail_before_resolving_kernel(self):
         for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear',
-                     'dropbearkey', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
+                     'dropbearkey', 'wpa-supplicant', 'wpa-cli', 'iw',
+                     'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 argv = self.argv(root)

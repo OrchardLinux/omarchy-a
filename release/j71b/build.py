@@ -32,7 +32,7 @@ def resolve_kernel(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear', 'dropbearkey',
-                 'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
+                 'wpa-supplicant', 'wpa-cli', 'iw', 'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--dtbs', type=Path, help="every DTB of the kernel's platform, for the installed root "
                         '(default: dtbs/ next to --dtb)')
@@ -44,7 +44,8 @@ def main():
     if args.output.exists() or args.output.is_symlink():
         parser.error('Choose a new release output directory')
     # Reject missing distro inputs before a cache miss can start a kernel build.
-    for name in ('base', 'base_receipt', 'loader', 'pongo', 'busybox', 'dropbear', 'dropbearkey'):
+    for name in ('base', 'base_receipt', 'loader', 'pongo', 'busybox', 'dropbear', 'dropbearkey',
+                 'wpa_supplicant', 'wpa_cli', 'iw'):
         if not getattr(args, name).is_file():
             parser.error(f'Missing input file: {getattr(args, name)}')
     for name in ('cursor_tools', 'bluetooth_tools', 'labwc_tools'):
@@ -58,7 +59,8 @@ def main():
                       args.output, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools,
                       kernel=args.kernel, dtbs=args.dtbs or (args.dtb and args.dtb.parent / 'dtbs'))
     command = [sys.executable, '-m', 'orchard_hardware.image.recovery']
-    for name in ('base', 'base_receipt', 'modules_dir', 'loader', 'kernel', 'dtb', 'busybox', 'dropbear', 'dropbearkey'):
+    for name in ('base', 'base_receipt', 'modules_dir', 'loader', 'kernel', 'dtb', 'busybox', 'dropbear', 'dropbearkey',
+                 'wpa_supplicant', 'wpa_cli', 'iw'):
         command.extend(['--' + name.replace('_', '-'), str(getattr(args, name))])
     command.extend(['--root-receipt', str(args.output / 'rootfs.json'),
                     '--output', str(args.output / 'recovery.bin')])
