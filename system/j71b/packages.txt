@@ -17,6 +17,7 @@ fastfetch
 starship
 seatd
 networkmanager
+iw
 bluez
 bluez-utils
 upower
