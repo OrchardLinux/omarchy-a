@@ -1,7 +1,7 @@
 #!/bin/bash
-# Started from the PAM-authenticated autologin on tty1, never from SSH.
+# Started by greetd on VT1 once PAM accepted the PIN, never from SSH.
 set -euo pipefail
-[[ $(tty) == /dev/tty1 && ${USER:-} == tablet && -z ${SSH_CONNECTION:-} ]] || exit 1
+[[ ${XDG_VTNR:-} == 1 && ${USER:-} == tablet && -z ${SSH_CONNECTION:-} ]] || exit 1
 [[ -n ${XDG_SESSION_ID:-} && -d ${XDG_RUNTIME_DIR:-/nonexistent} && -O $XDG_RUNTIME_DIR ]] || {
   echo 'No active logind session/runtime directory; refusing GUI startup' >&2
   exit 1

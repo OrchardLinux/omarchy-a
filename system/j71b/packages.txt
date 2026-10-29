@@ -20,6 +20,8 @@ firefox
 fastfetch
 starship
 seatd
+# Boot login: the touch PIN greeter (desktop/greeter) on VT1.
+greetd
 networkmanager
 iw
 bluez

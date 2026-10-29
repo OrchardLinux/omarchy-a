@@ -51,6 +51,13 @@ class GreeterStagingTests(unittest.TestCase):
             self.assertNotIn('tokyo-night', first_theme)
             self.assertIn('tablet tablet', (target / 'usr/lib/tmpfiles.d/omarchy-greeter-theme.conf').read_text())
             self.assertTrue((target / 'home/tablet/.local/share/omarchy-ipad/bin/omarchy-greeter-theme-publish').is_file())
+            # Boot login is the PIN greeter on VT1, not a tty1 autologin.
+            greetd = (target / 'etc/greetd/config.toml').read_text()
+            self.assertIn('vt = 1', greetd)
+            self.assertIn('command = "/usr/local/libexec/omarchy-greeter-session"', greetd)
+            self.assertTrue((target / 'etc/systemd/system/greetd.service.d/seatd.conf').is_file())
+            self.assertFalse((target / 'etc/systemd/system/getty@tty1.service.d').exists())
+            self.assertFalse((target / 'home/tablet/.bash_profile').exists())
 
 
 if __name__ == '__main__':
