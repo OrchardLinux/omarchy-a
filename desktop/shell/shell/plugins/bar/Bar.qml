@@ -1545,7 +1545,10 @@ Item {
     // before it maps (see BarModel.cutoutPending), so it maps at its floor
     // instead of growing once the windows are laid out. The wait ends once, for
     // good: when the mode settles it, or after two seconds without one.
-    visible: !remapGuard.remapping && (cutoutWaitOver || !cutoutPending)
+    // labwc does not bring a parked layer surface back when its margin
+    // returns to 0, so a hidden bar stayed off screen for good. Unmap it
+    // instead; showing rebuilds it (~150 ms) rather than un-parking it.
+    visible: !root.barHidden && !remapGuard.remapping && (cutoutWaitOver || !cutoutPending)
     exclusionMode: root.barHidden ? ExclusionMode.Ignore : ExclusionMode.Auto
 
     ScreenMoveRemap {
