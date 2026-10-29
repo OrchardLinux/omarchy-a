@@ -61,7 +61,10 @@ def audit(manifest):
             raise ValueError('Asset integrity mismatch: ' + role)
         paths[role] = path
     recovery = audit_recovery(paths['recovery'])
-    runtime = audit_runtime(paths['recovery'], record['assets']['root'], record['release'])
+    # The public manifest leaves the kernel release out; the root's build receipt has it.
+    root = {**record['assets']['root'],
+            'kernel_release': json.loads((manifest.parent / 'rootfs.json').read_text())['kernel_release']}
+    runtime = audit_runtime(paths['recovery'], root, record['release'])
     recovery['runtime_members_verified'] = runtime['members']
     hashes, links, modes, owners, groups, sizes = {}, {}, {}, {}, {}, {}
     names, ancestors, directories = set(), set(), set()
