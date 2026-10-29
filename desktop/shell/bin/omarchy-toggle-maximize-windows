@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# omarchy:summary=Open new windows maximized, or not
+# labwc reads window rules from its rc.xml. Keep one marked block there in
+# step with the maximize-windows toggle, then have labwc reload. Off by default.
+set -euo pipefail
+flag=$HOME/.local/state/omarchy/toggles/maximize-windows
+rc=${XDG_CONFIG_HOME:-$HOME/.config}/labwc/rc.xml
+begin='<!-- omarchy:maximize-windows -->'
+end='<!-- /omarchy:maximize-windows -->'
+[[ -f $rc ]] || { echo "No labwc config at $rc" >&2; exit 1; }
+mkdir -p "${flag%/*}"
+if [[ -e $flag ]]; then rm -f "$flag"; else : >"$flag"; fi
+tmp=$(mktemp "$rc.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+awk -v begin="$begin" -v end="$end" -v on="$([[ -e $flag ]] && echo 1)" '
+  index($0, begin) { skip = 1 }
+  skip { if (index($0, end)) skip = 0; next }
+  /<\/labwc_config>/ && on {
+    print "  " begin
+    print "  <windowRules>"
+    print "    <windowRule identifier=\"*\"><action name=\"Maximize\" /></windowRule>"
+    print "  </windowRules>"
+    print "  " end
+  }
+  { print }
+' "$rc" >"$tmp"
+python3 -c 'import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1])' "$tmp" || {
+  echo "Refusing to write an invalid $rc" >&2
+  if [[ -e $flag ]]; then rm -f "$flag"; else : >"$flag"; fi
+  exit 1
+}
+cat "$tmp" >"$rc"
+labwc=${LABWC_PID:-$(pgrep -u "$(id -u)" -x labwc | head -1 || true)}
+[[ -z $labwc ]] || kill -HUP "$labwc"

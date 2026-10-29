@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# omarchy:summary=Exit 0 when the named Omarchy toggle is on
+# Toggles are flag files under ~/.local/state/omarchy/toggles, as in upstream
+# Omarchy; the menu's "when" conditions use this to pick On/Off entries.
+[[ $# == 1 && $1 =~ ^[a-z0-9-]+$ ]] || { echo "Usage: omarchy-toggle-enabled NAME" >&2; exit 2; }
+[[ -e $HOME/.local/state/omarchy/toggles/$1 ]]

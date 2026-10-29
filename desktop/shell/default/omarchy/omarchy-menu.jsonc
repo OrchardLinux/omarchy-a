@@ -126,6 +126,8 @@
 
   // Trigger
   "trigger.toggle": {"icon":"󰔎","label":"Toggle","aliases":["toggle","toggles"]},
+  "trigger.toggle.maximize-windows-on": {"icon":"󰊓","label":"Maximize Windows On","when":"! omarchy-toggle-enabled maximize-windows","action":"omarchy-toggle-maximize-windows"},
+  "trigger.toggle.maximize-windows-off": {"icon":"󰊓","label":"Maximize Windows Off","when":"omarchy-toggle-enabled maximize-windows","action":"omarchy-toggle-maximize-windows"},
   "trigger.toggle.idle-lock-on": {"icon":"","label":"Stay Awake On","when":"[[ ! -f ~/.local/state/omarchy/indicators/stay-awake ]]","action":"omarchy-toggle-idle"},
   "trigger.toggle.idle-lock-off": {"icon":"","label":"Stay Awake Off","when":"[[ -f ~/.local/state/omarchy/indicators/stay-awake ]]","action":"omarchy-toggle-idle"},
   "trigger.toggle.notifications-on": {"icon":"󰂛","label":"Notifications On","when":"[[ $(omarchy-shell notifications isDnd) == on ]]","action":"omarchy-toggle-notification-silencing"},
