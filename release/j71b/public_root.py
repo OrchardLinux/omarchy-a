@@ -141,7 +141,7 @@ def boot_files(kernel, dtb, kernel_release):
             'etc/kernel/devicetree': (name.encode() + b'\n', 0o644)}
 
 
-def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_tools, bluetooth_tools=None,
+def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, bluetooth_tools=None,
           labwc_tools=None, *, kernel, dtb):
     if outdir.exists():
         raise ValueError('Choose a new release output directory')
@@ -159,7 +159,6 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
     additions['etc/omarchy/package-privileges.json'] = (json.dumps(privileges, sort_keys=True).encode(), 0o644)
     additions.update(system_files(kernel_release))
     additions.update(boot_files(kernel, dtb, kernel_release))
-    additions['usr/libexec/omarchy-dropbear'] = (dropbear.read_bytes(), 0o755)
     additions['etc/polkit-1/rules.d/60-j71b-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
     additions['etc/orchard/release.json'] = (json.dumps({
         'protocol': 1, 'release': release, 'profile': 'j71b', 'kernel_release': kernel_release}).encode(), 0o644)
@@ -237,7 +236,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
                     member = tarfile.TarInfo(name)
                     member.mode, member.size = mode, len(data)
                     add(member, data)
-                for unit in ('omarchy-diagnostics.service', 'omarchy-pacman-init.service'):
+                for unit in ('omarchy-pacman-init.service',):
                     member = tarfile.TarInfo('etc/systemd/system/multi-user.target.wants/' + unit)
                     member.type, member.linkname, member.mode = tarfile.SYMTYPE, '/usr/lib/systemd/system/' + unit, 0o777
                     if member.name not in seen:
@@ -247,7 +246,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
             if compressor.wait():
                 raise ValueError('Public root compression failed')
         required = {'lib', 'usr/lib/systemd/systemd', 'etc/group', 'etc/gshadow', qml_path,
-                    'arch-ipad-ui-manifest.json', 'usr/libexec/omarchy-diagnostics'}
+                    'arch-ipad-ui-manifest.json'}
         if not required <= seen or not privileges.keys() <= seen or not replacements.keys() <= seen:
             raise ValueError('Incomplete public root or privileged package metadata')
         receipt = {'schema': 1, 'kind': 'rootfs', 'profile': 'j71b', 'release': release,
@@ -261,11 +260,11 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('base', 'base-receipt', 'modules-dir', 'dropbear', 'outdir', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
+    for name in ('base', 'base-receipt', 'modules-dir', 'outdir', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--release', required=True)
     args = parser.parse_args()
-    print(json.dumps(build(args.base, args.base_receipt, args.modules_dir, args.dropbear, args.outdir, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools), indent=2))
+    print(json.dumps(build(args.base, args.base_receipt, args.modules_dir, args.outdir, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools), indent=2))
 
 
 if __name__ == '__main__':

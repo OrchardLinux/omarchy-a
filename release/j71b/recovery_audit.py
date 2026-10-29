@@ -67,7 +67,7 @@ def audit_runtime(image, root_spec, release):
                         records[name] = data
     prefix = 'usr/libexec/orchard-j71b/'
     required = {prefix + name for name in ('device.py', 'archive.py', 'staging.py', 'handoff.py',
-                                          'image_policy.py', 'permissions.py', 'storage.py', 'identity.py', 'adt.py')}
+                                          'storage.py', 'identity.py', 'adt.py')}
     required |= {'init', 'usr/bin/orchard-device', 'sbin/capture-adt', 'sbin/authorize-key',
                  'sbin/recovery-start-ssh', 'usr/bin/python3', 'etc/orchard/firmware.json',
                  'usr/sbin/blkid', 'usr/sbin/sfdisk', 'usr/sbin/mke2fs', 'etc/mke2fs.conf'}

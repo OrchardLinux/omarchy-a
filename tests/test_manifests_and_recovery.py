@@ -73,7 +73,7 @@ class RecoverySealing(unittest.TestCase):
             'init', 'usr/bin/orchard-device', 'usr/bin/python3', 'sbin/capture-adt',
             'sbin/authorize-key', 'sbin/recovery-start-ssh', 'usr/sbin/blkid', 'usr/sbin/sfdisk',
             'usr/sbin/mke2fs', 'etc/mke2fs.conf')}
-        for name in ('device.py', 'archive.py', 'staging.py', 'handoff.py', 'image_policy.py', 'permissions.py', 'storage.py', 'identity.py', 'adt.py'):
+        for name in ('device.py', 'archive.py', 'staging.py', 'handoff.py', 'storage.py', 'identity.py', 'adt.py'):
             files['usr/libexec/orchard-j71b/' + name] = b'# runtime\n'
         config = {'root': {**root, 'sha256': 'b' * 64} if different_root else root,
                   'release': 'test-1', 'protocol': 1, 'profile': 'j71b'}

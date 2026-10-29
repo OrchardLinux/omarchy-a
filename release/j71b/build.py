@@ -38,8 +38,6 @@ def main():
         parser.add_argument('--' + name, type=Path,
                             help='explicit kernel bundle; omit all three kernel inputs to use the Orchard cache')
     parser.add_argument('--release', required=True)
-    parser.add_argument('--cleanup-receipt', type=Path, action='append', default=[],
-                        help='compatible previous public root receipt for legacy staging cleanup')
     args = parser.parse_args()
     if args.output.exists() or args.output.is_symlink():
         parser.error('Choose a new release output directory')
@@ -50,24 +48,18 @@ def main():
     for name in ('cursor_tools', 'bluetooth_tools', 'labwc_tools'):
         if not getattr(args, name).is_dir():
             parser.error(f'Missing tools directory: {getattr(args, name)}')
-    for receipt in args.cleanup_receipt:
-        if not receipt.is_file():
-            parser.error(f'Missing cleanup receipt: {receipt}')
     try:
         resolve_kernel(args)
     except ValueError as error:
         parser.error(str(error))
-    root = build_root(args.base, args.base_receipt, args.modules_dir, args.dropbear,
+    root = build_root(args.base, args.base_receipt, args.modules_dir,
                       args.output, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools,
                       kernel=args.kernel, dtb=args.dtb)
     command = [sys.executable, '-m', 'orchard_hardware.image.recovery']
     for name in ('base', 'base_receipt', 'modules_dir', 'loader', 'kernel', 'dtb', 'busybox', 'dropbear', 'dropbearkey'):
         command.extend(['--' + name.replace('_', '-'), str(getattr(args, name))])
-    command.extend(['--policy-dir', str(PROJECT / 'image/j71b'),
-                    '--root-receipt', str(args.output / 'rootfs.json'),
+    command.extend(['--root-receipt', str(args.output / 'rootfs.json'),
                     '--output', str(args.output / 'recovery.bin')])
-    for receipt in args.cleanup_receipt:
-        command.extend(['--cleanup-receipt', str(receipt)])
     subprocess.run(command, check=True)
     shutil.copyfile(args.pongo, args.output / 'pongo.bin')
     assets = {}
