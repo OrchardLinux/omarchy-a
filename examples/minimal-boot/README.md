@@ -39,6 +39,9 @@ runtime is only offline-tested so far.
 
 ## Serial access
 
+This example's `orchard.toml` sets `transport = false`: serial only, no USB
+network or SSH (`orchard shell`). `orchard push/pull --serial` still work.
+
 After `Boot this device? [Y/n]`, connect to the actual new USB serial port:
 
 ```sh

@@ -11,7 +11,7 @@ appears.
 ```sh
 ./orchard build examples/hardware-check --device <board> --modules --firmware
 ./orchard run examples/hardware-check
-screen /dev/cu.usbmodem* 115200        # Linux: screen /dev/ttyACM0 115200
+./orchard shell                        # or: screen /dev/cu.usbmodem* 115200
 ```
 
 At the shell, run `hardware-check`. It takes about three minutes and checks:
@@ -28,7 +28,7 @@ Then, if you want: `hardware-check touch`, `hardware-check keys` and
 only the Wi-Fi checks.
 
 The report is `/run/hardware-check.txt`, the kernel log `/run/dmesg.txt`. With USB
-networking up (the host gets 10.71.0.2), both are at `http://10.71.0.1:8080/`.
+networking up (the host gets 172.16.42.2), both are at `http://172.16.42.1:8080/`.
 
 `--firmware` puts the device's firmware into the image; the first build
 downloads the device's IPSW once and caches it. `--modules` includes the kernel
