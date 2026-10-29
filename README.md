@@ -104,7 +104,7 @@ Connect the iPad in DFU mode and run:
 orchard launch
 ```
 
-The bootloader reads the boot entries from the iPad's boot partition and starts the one you choose (or the only one). Nothing is downloaded beyond the bootloader, and nothing is formatted or reinstalled. See the [CLI launch instructions](https://github.com/OrchardLinux/cli#launch-an-installed-system).
+The bootloader reads the boot entries from the iPad's boot partition and starts the one you choose (or the only one). It works from any computer with Orchard installed: nothing is downloaded, formatted or reinstalled. See the [CLI launch instructions](https://github.com/OrchardLinux/cli#launch-an-installed-system).
 
 ## More than an installer
 
