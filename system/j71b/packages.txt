@@ -20,6 +20,7 @@ networkmanager
 bluez
 bluez-utils
 upower
+zram-generator
 grim
 wlr-randr
 xdg-desktop-portal
