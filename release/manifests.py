@@ -17,7 +17,7 @@ def write(output, version, root):
     document = ('schema = 1\nkind = "orchard.install"\ndistro = "omarchy-a"\n'
                 'name = "Omarchy A"\nversion = ' + json.dumps(version) + '\n'
                 'device = "j71b"\nboot_method = "checkm8-pongo"\n'
-                'min_orchard = "0.1.10"\nprotocol = 1\n\n'
+                'min_orchard = "0.1.11"\nprotocol = 1\n\n'
                 '[install]\ndefault_root = "/omarchy"\n')
     for role, name in (('root', 'rootfs.tar.zst'), ('boot', 'recovery.bin'), ('pongo', 'pongo.bin')):
         item = receipt(output / name)

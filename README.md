@@ -4,6 +4,29 @@ An experimental, [Omarchy](https://omarchy.org/)-inspired desktop for Apple A-se
 
 Includes a device-aware CLI and release format for installation, diagnostics, and bringing Omarchy A to more hardware.
 
+## Development checkout
+
+CLI and hardware sources live in the `cli/` and `hardware/` Git submodules.
+[uv](https://docs.astral.sh/uv/) manages both as editable local packages; no
+virtual-environment activation or published Orchard release is required.
+
+`./orchard` initializes missing source submodules and prepares Python automatically.
+Existing submodule checkouts and local edits are never reset or updated. Cloning
+with `--recurse-submodules` also works.
+
+For a minimal RAM boot:
+
+```sh
+./orchard build examples/minimal-boot
+./orchard run examples/minimal-boot
+```
+
+The root launcher always uses this checkout's editable CLI and `.venv`, not a
+globally installed Orchard or another active environment. Each example contains
+its device-side `init` and optional `rootfs/` files; no per-example wrappers,
+registration or configuration language. `examples/` is only where we keep samples:
+`./orchard build use_cases/my-test` or an unrelated absolute directory works too.
+
 ## Supported devices
 
 | Device | Identifier | Status |

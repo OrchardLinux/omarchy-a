@@ -10,43 +10,47 @@ Assembly runs the same producers, artifact auditor, CLI resolution and publicati
 
 ## Local setup
 
-Run commands from this repository. Requires Python 3.9+ with venv/pip, `zstd`, and a native ARM64 Podman environment for image/component builds.
+Run commands from this repository. Requires uv, `zstd`, and a native ARM64 Podman
+environment for image/component builds. Pongo builds additionally need macOS/Xcode.
 
 ## Set up build tools
 
 ```sh
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install --only-binary=:all: -r \
-  https://github.com/OrchardLinux/cli/releases/latest/download/requirements.txt
-python -m pip install -r requirements-build.txt
+./orchard --version
 ```
 
-Use `orchard-hardware>=0.1.10,<0.2`. To test unpublished packages, install compatible CLI/hardware wheels by their explicit filesystem paths instead of using the hosted requirements. No sibling checkout is required.
+The launcher initializes missing CLI/hardware submodules and uv installs them
+editable into the workspace environment. No activation, published wheel pair or
+Orchard release is required for local development. Use `uv run python ...` for the
+existing Python producers below, or the workspace interpreter selected by your
+editor. CI's explicit published-input path remains unchanged.
+
+The root `orchard.toml` selects the default hardware recipe with `device = "j71b"`.
+RAM builds and automatic kernel resolution below use that setting.
 
 ## Produce components
 
 - `desktop/build-sources` and `desktop/build`: desktop applications and payload.
 - `system/build-rootfs`: signed Arch Linux ARM base and package receipt; see [system/j71b/README.md](system/j71b/README.md).
-- Installed hardware producers: kernel, DTB, modules and static BusyBox/Dropbear tools; see [hardware build instructions](https://github.com/OrchardLinux/hardware/blob/main/BUILD.md).
+- Hardware supplies kernel, DTB, module and static BusyBox/Dropbear recipes; see [hardware build instructions](https://github.com/OrchardLinux/hardware/blob/main/BUILD.md). Local assembly automatically resolves the kernel/DTB/modules through Orchard's shared cache. Build the static tools separately; supply explicit kernel artifacts only when overriding that default.
 - `python boot/build-loader`: distro-branded loader. Pongo sources and build instructions are under `boot/pongo/`.
 
 Retain each component's receipt. Kernel, modules and DTB must be compatible. Do not change hardware activation or timing as part of presentation changes.
 
 ## Assemble
 
-The following example uses component artifacts collected under `out/components/`. Explicit input paths may point anywhere; no source imports from another checkout occur.
+The following example uses distro-owned components collected under `out/components/`.
+The omitted kernel/DTB/module inputs come from the same Orchard builder and cache
+as `./orchard build examples/minimal-boot`. Matching inputs reuse the compiled
+bundle without checking out or compiling Linux again. Loader/Pongo branding,
+userspace and assembly remain owned by this repository.
 
 ```sh
-python -m release.j71b.build \
+uv run python -m release.j71b.build \
   --release 0.1.0-orchard.3 \
   --base out/components/base/rootfs.tar.gz \
   --base-receipt out/components/base/rootfs.tar.gz.json \
-  --modules-dir out/components/kernel/lib/modules \
   --loader out/components/m1n1.bin \
-  --kernel out/components/kernel/Image.gz \
-  --dtb out/components/kernel/j71b.dtb \
   --pongo out/components/Pongo.bin \
   --busybox out/components/boot/busybox \
   --dropbear out/components/boot/dropbear \
@@ -56,6 +60,12 @@ python -m release.j71b.build \
   --labwc-tools out/components/desktop/labwc-tools \
   --output out/releases/0.1.0-orchard.3
 ```
+
+To use explicit artifacts instead, supply all three of `--kernel FILE`, `--dtb FILE`
+and `--modules-dir DIRECTORY`. Partial overrides are rejected to avoid mixing
+kernel bundles. That explicit path does not invoke the cached builder and remains
+compatible with CI's published wheel/component inputs. The default cache respects
+`XDG_CACHE_HOME` and `ORCHARD_CACHE_DIR`, just like RAM builds; no cache flag is needed.
 
 Choose a new version and output directory for each build. Root builds first; recovery embeds its exact stream receipt, and the index is written last. Installed wheel resources supply hardware code and scripts. `image/j71b/image_policy.py` and `permissions.py` supply desktop readiness, systemd and privilege policy.
 

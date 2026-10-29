@@ -62,7 +62,7 @@ def audit(manifest):
     names, ancestors, directories = set(), set(), set()
     desktop = public = privileges = cursor = bluetooth = labwc = None
     recipe = json.loads(firmware_path('j71b').read_text())
-    private = {item['destination'] for item in recipe['files'] + recipe['generated']}
+    private = {item['destination'] for item in recipe['outputs']}
     with subprocess.Popen(['zstd', '-d', '-q', '-c', str(paths['root'])], stdout=subprocess.PIPE) as decoder:
         with tarfile.open(fileobj=decoder.stdout, mode='r|') as archive:
             for member in archive:
@@ -141,7 +141,7 @@ def audit(manifest):
     verify_labwc(labwc, hashes, modes, owners, groups)
     if 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml' not in desktop:
         raise ValueError('Pairing UI is absent from desktop integrity manifest')
-    for name in ('j71b-check-platform', 'j71b-charge-lease', 'omarchy-diagnostics', 'omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-screen-toggle', 'omarchy-bluetooth-pair'):
+    for name in ('omarchy-diagnostics', 'omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-screen-toggle', 'omarchy-bluetooth-pair'):
         if modes.get('usr/libexec/' + name) != 0o755:
             raise ValueError('Required helper is not executable: ' + name)
     if links.get('lib') != (True, 'usr/lib') or owners.get('home/tablet') != 1000 or sizes.get('etc/machine-id') != 0:
