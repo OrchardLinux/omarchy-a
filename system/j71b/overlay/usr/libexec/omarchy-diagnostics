@@ -11,5 +11,6 @@ chmod 600 /root/.ssh/authorized_keys
 if ! [ /run/recovery/authorized_keys -ef /root/.ssh/authorized_keys ]; then
     mount --bind /run/recovery/authorized_keys /root/.ssh/authorized_keys
 fi
-exec /usr/libexec/omarchy-dropbear -F -E -s -g -j -k -P /run/recovery/dropbear.pid \
+# -W: a 4 MiB receive window; the default 24 KiB halves USB transfers.
+exec /usr/libexec/omarchy-dropbear -F -E -s -g -j -k -W 4194304 -P /run/recovery/dropbear.pid \
  -r /run/recovery/ssh_host_ed25519_key -p 172.16.42.1:22
