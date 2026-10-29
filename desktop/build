@@ -94,10 +94,11 @@ def build(output):
         if shutil.which(tool) is None:
             raise RuntimeError(f'{tool} is required')
     (HERE / '.work').mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='desktop-', dir=HERE / '.work') as temporary:
+    # gpg's agent socket lives in its home directory, and socket paths are
+    # limited to about 100 bytes: a deep checkout's .work/ is too long for it.
+    with tempfile.TemporaryDirectory(prefix='desktop-', dir=HERE / '.work') as temporary, \
+            tempfile.TemporaryDirectory(prefix='oa-gpg-') as gnupg:
         work = Path(temporary)
-        gnupg = work / 'gnupg'
-        gnupg.mkdir(mode=0o700)
         subprocess.run(['gpg', '--homedir', str(gnupg), '--batch', '--import',
                         str(INPUTS / 'omarchy-pkgs.asc')], check=True, stdout=subprocess.DEVNULL)
         result = subprocess.run(['gpg', '--homedir', str(gnupg), '--batch', '--status-fd', '1',

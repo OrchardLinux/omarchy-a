@@ -1,0 +1,93 @@
+#!/usr/bin/python3
+"""Publish public theme data for the unprivileged greeter, never executable QML.
+
+The caller owns the snapshot directory; the greeter only reads it. Atomic
+snapshot replacement keeps a running or starting greeter off partial files.
+"""
+import fcntl
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+DEST = Path('/var/lib/omarchy-greeter-theme')
+STATE = Path.home() / '.local/state/omarchy/current'
+FALLBACK = Path('/usr/share/omarchy-greeter/default-theme/background')
+MAX_CONFIG = 128 * 1024
+MAX_IMAGE = 32 * 1024 * 1024
+IMAGES = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
+VIDEOS = {'.mp4', '.mkv', '.webm', '.mov', '.avi'}
+
+
+def copy_bounded(source, target, limit):
+    with source.open('rb') as src, target.open('xb') as dst:
+        data = src.read(limit + 1)
+        if len(data) > limit:
+            raise ValueError(f'{source.name} exceeds the size limit')
+        dst.write(data)
+    target.chmod(0o644)
+
+
+def publish():
+    if not DEST.is_dir():
+        raise RuntimeError('greeter theme directory is not provisioned')
+    fd = os.open(DEST / '.publish.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'r+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        build = Path(tempfile.mkdtemp(prefix='snapshot-', dir=DEST))
+        build.chmod(0o755)
+        link = None
+        published = False
+        try:
+            copy_bounded(STATE / 'theme/colors.toml', build / 'colors.toml', MAX_CONFIG)
+            for source, name in ((STATE / 'theme/shell.toml', 'shell.toml'),
+                                 (Path.home() / '.config/omarchy/shell.toml', 'user-shell.toml')):
+                if source.is_file():
+                    copy_bounded(source, build / name, MAX_CONFIG)
+            background = (STATE / 'background').resolve(strict=True)
+            if background.suffix.lower() in IMAGES:
+                copy_bounded(background, build / 'background', MAX_IMAGE)
+            elif background.suffix.lower() in VIDEOS and shutil.which('ffmpegthumbnailer'):
+                poster = build / 'poster.png'
+                try:
+                    subprocess.run(['ffmpegthumbnailer', '-i', str(background), '-o', str(poster), '-s', '1920'],
+                                   check=True, timeout=8, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if not poster.is_file() or poster.stat().st_size > MAX_IMAGE:
+                        raise ValueError('video poster is missing or too large')
+                    poster.rename(build / 'background')
+                    (build / 'background').chmod(0o644)
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    poster.unlink(missing_ok=True)
+                    copy_bounded(FALLBACK, build / 'background', MAX_IMAGE)
+            else:
+                copy_bounded(FALLBACK, build / 'background', MAX_IMAGE)
+            # The link points only to this newly created, completed directory.
+            link = DEST / ('.current-' + build.name)
+            os.symlink(build.name, link)
+            os.replace(link, DEST / 'current')
+            link = None
+            published = True
+            # Retain a few previous versions for readers that resolved the old
+            # link just before the swap; do not follow user-created symlinks.
+            snapshots = sorted((p for p in DEST.iterdir() if p.name.startswith('snapshot-')
+                                and p.is_dir() and not p.is_symlink()),
+                               key=lambda p: p.stat().st_mtime_ns, reverse=True)
+            for old in snapshots[3:]:
+                if old != build:
+                    shutil.rmtree(old, ignore_errors=True)
+        except BaseException:
+            if link is not None:
+                link.unlink(missing_ok=True)
+            if not published:
+                shutil.rmtree(build, ignore_errors=True)
+            raise
+
+
+if __name__ == '__main__':
+    try:
+        publish()
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        print(f'Greeter theme not updated: {error}', file=sys.stderr)
+        sys.exit(1)

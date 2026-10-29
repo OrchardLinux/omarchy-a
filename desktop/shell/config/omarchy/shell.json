@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "idle": { "screensaver": 0, "lock": 0 },
+  "idle": { "screensaver": 0, "lock": 300 },
   "bar": {
     "position": "top",
     "background": "opaque",
@@ -19,7 +19,7 @@
     }
   },
   "disabledPlugins": [
-    "omarchy.dock", "omarchy.lock", "omarchy.idle", "omarchy.polkit",
+    "omarchy.dock", "omarchy.polkit",
     "omarchy.notifications", "omarchy.osd", "omarchy.media",
     "omarchy.battery", "omarchy.nightlight", "omarchy.remote-session",
     "omarchy.reminders", "omarchy.emojis",

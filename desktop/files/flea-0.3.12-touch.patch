@@ -1,0 +1,143 @@
+--- a/ui/Theme.qml
++++ b/ui/Theme.qml
+@@ -124,8 +124,8 @@
+     }
+ 
+     // Row height follows the font so it scales with omarchy display text size.
+-    readonly property int rowHeight: Math.round(font.bodySmall * lineBoxRatio) + 2 * spacing.rowPaddingY
+-    readonly property int fileRowHeight: Density.rowHeight(Math.round(font.bodySmall * lineBoxRatio), spacing.rowPaddingY, ViewState.density)
++    readonly property int rowHeight: Math.max(46, Math.round(font.bodySmall * lineBoxRatio) + 2 * spacing.rowPaddingY)
++    readonly property int fileRowHeight: Math.max(48, Density.rowHeight(Math.round(font.bodySmall * lineBoxRatio), spacing.rowPaddingY, ViewState.density))
+     // The icon slot is the row's text line box, so an icon can never change the row height.
+     readonly property int iconSize: root.rowHeight - 2 * root.spacing.rowPaddingY
+     // A mark is sized from the type scale, never from its slot: 19, the canvas's own M.mark, is the row and menu one.
+@@ -142,7 +142,7 @@
+     // The boards use one two-unit stroke on the shared 24-unit glyph grid.
+     readonly property real strokeWidth: 2
+     // WCAG 2.5.8 floor. Marks stay at their type-scale size; the hit box grows to this.
+-    readonly property int hitMin: 24
++    readonly property int hitMin: 40
+     // The wheel, see ui/FastScrollHandler.qml: a notch is the platform's lines times notchPx times the
+     // multiplier (PR 16's pair, 4x on Omarchy Spotify); touchpad pixels move times TOUCH_GAIN (decided 2026-10-01).
+     readonly property QtObject scroll: QtObject {
+@@ -159,13 +159,13 @@
+     // reference (qui's rail rows sit around 0.85 of its list row, Finder's around 0.75), so the
+     // rail gets its own row height and icon slot instead of borrowing the list's directly.
+     readonly property real railRowRatio: 0.78
+-    readonly property int railRowHeight: Math.round(root.rowHeight * root.railRowRatio)
++    readonly property int railRowHeight: Math.max(44, Math.round(root.rowHeight * root.railRowRatio))
+     readonly property int railIconSize: root.railRowHeight - 2 * root.spacing.rowPaddingY
+ 
+     // The header and status bar are thin chrome strips, not data rows (Finder's own header sits
+     // well under its row height); this keeps both denser than a list row without a pixel constant.
+     readonly property real chromeRowRatio: 0.72
+-    readonly property int chromeHeight: Math.round(root.rowHeight * root.chromeRowRatio)
++    readonly property int chromeHeight: Math.max(48, Math.round(root.rowHeight * root.chromeRowRatio))
+     // A chrome control's frame is inset from its strip on every side, and the strip carries its own
+     // rule along the bottom edge, so the inset has to clear that rule too: two lines that touch read
+     // as one line whatever colour they are. A quarter of the caption keeps the margin visible at
+--- a/ui/List.qml
++++ b/ui/List.qml
+@@ -169,10 +169,16 @@
+             id: tap
+             enabled: !cell.renaming
+             acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+-            // A press held past the interval must not fire while the button is
+-            // still down on a row about to be dragged; the release still arms.
+-            onPressedChanged: if (pressed) root.pane.pressSlowClick()
++            property bool touchMenuOpened: false
++            onPressedChanged: if (pressed) { touchMenuOpened = false; root.pane.pressSlowClick() }
++            onLongPressed: {
++                if (listingIndex >= 0) {
++                    touchMenuOpened = true
++                    Tap.tappedMenu(listingIndex, tap.point, root.pane, root.menu)
++                }
++            }
+             onTapped: function (eventPoint, button) {
++                if (touchMenuOpened) { touchMenuOpened = false; return }
+                 if (button === Qt.MiddleButton)
+                     Tap.tappedTab(root.pane.rowFor(listingIndex), root.pane.path, root.pane)
+                 else if (button === Qt.RightButton)
+@@ -205,9 +211,14 @@
+     // background menu. Tap.onBackground says the point missed every delegate, which is what leaves a
+     // right click on a row to that row's own handler above.
+     TapHandler {
+-        acceptedButtons: Qt.RightButton
+-        onTapped: function (eventPoint) {
+-            if (Tap.onBackground(root, eventPoint))
++        id: backgroundTap
++        acceptedButtons: Qt.LeftButton | Qt.RightButton
++        onLongPressed: {
++            if (Tap.onBackground(root, backgroundTap.point))
++                root.menu.openBackground(backgroundTap.point.scenePosition)
++        }
++        onTapped: function (eventPoint, button) {
++            if (button === Qt.RightButton && Tap.onBackground(root, eventPoint))
+                 root.menu.openBackground(eventPoint.scenePosition)
+         }
+     }
+--- a/ui/GridArea.qml
++++ b/ui/GridArea.qml
+@@ -262,10 +262,16 @@
+                 id: tap
+                 enabled: !cell.renaming
+                 acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+-                // A press held past the interval must not fire while the button is
+-                // still down on a row about to be dragged; the release still arms.
+-                onPressedChanged: if (pressed) root.pane.pressSlowClick()
++                property bool touchMenuOpened: false
++                onPressedChanged: if (pressed) { touchMenuOpened = false; root.pane.pressSlowClick() }
++                onLongPressed: {
++                    if (cell.listingIndex >= 0) {
++                        touchMenuOpened = true
++                        Tap.tappedMenu(cell.listingIndex, tap.point, root.pane, root.menu)
++                    }
++                }
+                 onTapped: function (eventPoint, button) {
++                    if (touchMenuOpened) { touchMenuOpened = false; return }
+                     if (cell.listingIndex < 0) return
+                     if (button === Qt.MiddleButton)
+                         Tap.tappedTab(root.pane.rowFor(cell.listingIndex), root.pane.path, root.pane)
+@@ -393,9 +399,14 @@
+     // The space past the last tile is the directory's own, the same rule ui/List.qml carries: a
+     // tile's right click belongs to its delegate, and tileAt is what tells the two apart.
+     TapHandler {
+-        acceptedButtons: Qt.RightButton
+-        onTapped: function (eventPoint) {
+-            if (root.tileAt(eventPoint.position.x, eventPoint.position.y) < 0)
++        id: backgroundTap
++        acceptedButtons: Qt.LeftButton | Qt.RightButton
++        onLongPressed: {
++            if (root.tileAt(backgroundTap.point.position.x, backgroundTap.point.position.y) < 0)
++                root.menu.openBackground(backgroundTap.point.scenePosition)
++        }
++        onTapped: function (eventPoint, button) {
++            if (button === Qt.RightButton && root.tileAt(eventPoint.position.x, eventPoint.position.y) < 0)
+                 root.menu.openBackground(eventPoint.scenePosition)
+         }
+     }
+--- a/ui/RowDrag.qml
++++ b/ui/RowDrag.qml
+@@ -40,6 +40,9 @@
+ 
+     DragHandler {
+         id: lift
++        // A finger drag belongs to the scrolling view, not file drag-and-drop.
++        // Mouse and touchpad drags retain Flea's existing drag-and-drop behavior.
++        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+         enabled: root.pane === null || (!root.pane.renamePending && root.pane.renamingIndex !== root.listingIndex)
+         target: null
+         // Preserve List's grab contract: the Flickable must not take the row drag after its threshold.
+--- a/ui/boot/shell.qml
++++ b/ui/boot/shell.qml
+@@ -12,8 +12,8 @@
+     FloatingWindow {
+         id: fleaWindow
+         title: "Flea"
+-        implicitWidth: 900
+-        implicitHeight: 600
++        implicitWidth: 720
++        implicitHeight: 760
+         // Never seen: the body covers it on the first frame. ui/Theme.qml's own fallback, for the record.
+         color: "#101315"
+         property bool rendererFallbackStarted: false

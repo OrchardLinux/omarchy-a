@@ -10,9 +10,9 @@ Do it within about 20 seconds of the logo appearing. After that, palera1n gives 
 
 Something other than this Orchard command already exploited the device, usually a palera1n or checkra1n process left over from an earlier attempt. Stop it (`pkill -f checkra1n; pkill palera1n`), force-restart the iPad and enter DFU again. Orchard releases newer than cli 0.1.10 stop the leftover process themselves.
 
-## `No available GPT Linux-data partition`
+## `No free space or Linux partition of at least 9 GiB`
 
-The installer only uses an existing, unformatted GPT Linux-data partition. Repeat [Make room for Linux](../README.md#3-make-room-for-linux) and make sure **unformatted Linux partition** is selected. Adjusting the APFS size alone doesn't create one.
+The installer needs free space next to iPadOS, or an earlier Linux install to replace; it never resizes iPadOS. Repeat [Make room for Linux](../README.md#3-make-room-for-linux) and reserve more space.
 
 ## Recovery is visible, but SSH cannot connect
 
@@ -43,10 +43,10 @@ These commands require the credentials established for the current device and bo
 
 ## Installation failed or stopped responding
 
-Follow the reported recovery instructions. A failed attempt can require cleanup and a fresh DFU boot.
+Run `orchard install` again. It reads the disk afresh, and a partition an interrupted run created shows up as a target to replace. The install log is `/run/orchard/install.log` on the recovery until it restarts.
 
-- Never blindly repeat a format whose outcome is unknown. Inspect the partition and saved report first.
-- A readiness timeout can occur after the root filesystem has been installed. Do not reinstall solely because that check timed out; inspect status and diagnostics first.
-- Replacing an existing installation permanently deletes the selected destination without a backup. A failed replacement cannot restore those contents.
+- The installer checks the partition table against its plan before the first write and refuses a stale plan; nothing is changed then.
+- Replacing an existing installation permanently deletes it without a backup.
+- If Omarchy A doesn't start after the install, put the iPad in DFU mode and run `orchard launch`.
 
 See [How it works](how-it-works.md) for the installation lifecycle and failure handling.

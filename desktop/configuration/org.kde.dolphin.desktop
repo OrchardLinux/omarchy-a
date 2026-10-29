@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Dolphin
+GenericName=File Manager
+Comment=Browse files and folders
+Icon=system-file-manager
+Exec=omarchy-dolphin %U
+Terminal=false
+Categories=Qt;KDE;System;FileTools;FileManager;
+MimeType=inode/directory;
+DBusActivatable=false
+StartupNotify=true

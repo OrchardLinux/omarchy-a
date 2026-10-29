@@ -14,7 +14,9 @@ QtObject {
 
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateHome: home + "/.local/state"
-  readonly property string currentThemePath: stateHome + "/omarchy/current/theme"
+  // The greeter runs as a separate user and reads a data-only theme snapshot.
+  readonly property string greeterThemePath: Quickshell.env("OMARCHY_GREETER_THEME_DIR")
+  readonly property string currentThemePath: greeterThemePath || stateHome + "/omarchy/current/theme"
 
   property color foreground: "#cacccc"
   property color background: "#101315"
@@ -243,16 +245,32 @@ QtObject {
   // Machine-level override, layered on top of whatever theme is active. This
   // is where `omarchy display text size` writes `[font] base-size`. Watched so the
   // CLI takes effect live without restarting the shell; absent by default.
+  property Process greeterThemePublisher: Process {
+    id: greeterThemePublisher
+    command: ["omarchy-greeter-theme-publish"]
+  }
+  property Timer greeterThemePublishTimer: Timer {
+    id: greeterThemePublishTimer
+    interval: 500
+    onTriggered: {
+      if (greeterThemePublisher.running) restart()
+      else greeterThemePublisher.running = true
+    }
+  }
   property FileView userShellFile: FileView {
     id: userShellFile
-    path: root.home + "/.config/omarchy/shell.toml"
+    path: root.greeterThemePath ? root.greeterThemePath + "/user-shell.toml" : root.home + "/.config/omarchy/shell.toml"
     watchChanges: true
     printErrors: false
     onLoaded: root.loadUserShell(text())
     // Re-read on change (including first creation) before loading — `text()`
     // is stale in the change signal itself, so route both paths through reload
     // → onLoaded to always parse fresh content.
-    onFileChanged: reload()
+    onFileChanged: {
+      reload()
+      if (!root.greeterThemePath && Quickshell.env("OMARCHY_TOUCH_MODE") === "1")
+        greeterThemePublishTimer.restart()
+    }
     onLoadFailed: root.loadUserShell("")
   }
 }

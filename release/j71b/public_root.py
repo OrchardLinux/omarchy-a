@@ -127,7 +127,27 @@ def system_files(kernel_release):
     return additions
 
 
-def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_tools, bluetooth_tools=None, labwc_tools=None):
+def boot_files(kernel, dtbs, kernel_release):
+    """The kernel and every DTB of its platform, where kernel-install finds them.
+
+    One root serves every board of the kernel's platform: the installer writes
+    the board's DTB name to /etc/kernel/devicetree, and kernel-install copies
+    that DTB with the kernel to the boot partition and writes the BLS entry
+    (hardware docs/boot-contract.md). mkinitcpio builds the initrd.
+    """
+    base = f'usr/lib/modules/{kernel_release}/'
+    result = {base + 'vmlinuz': (kernel.read_bytes(), 0o644)}
+    for path in sorted(dtbs.glob('*.dtb')):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('Unsafe DTB input: ' + path.name)
+        result[base + 'dtb/' + path.name] = (path.read_bytes(), 0o644)
+    if len(result) == 1:
+        raise ValueError('No DTBs in ' + str(dtbs))
+    return result
+
+
+def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, bluetooth_tools=None,
+          labwc_tools=None, *, kernel, dtbs):
     if outdir.exists():
         raise ValueError('Choose a new release output directory')
     record = json.loads(base_receipt.read_text())
@@ -143,7 +163,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
     additions.update(desktop_extra)
     additions['etc/omarchy/package-privileges.json'] = (json.dumps(privileges, sort_keys=True).encode(), 0o644)
     additions.update(system_files(kernel_release))
-    additions['usr/libexec/omarchy-dropbear'] = (dropbear.read_bytes(), 0o755)
+    additions.update(boot_files(kernel, dtbs, kernel_release))
     additions['etc/polkit-1/rules.d/60-j71b-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
     additions['etc/orchard/release.json'] = (json.dumps({
         'protocol': 1, 'release': release, 'profile': 'j71b', 'kernel_release': kernel_release}).encode(), 0o644)
@@ -157,7 +177,10 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
         temporary = Path(temp)
         archive = temporary / 'rootfs.tar.zst'
         with archive.open('wb') as raw, subprocess.Popen(
-                ['zstd', '-T0', '-1', '--check', '-q', '-c'], stdin=subprocess.PIPE, stdout=raw) as compressor:
+                # -19 --long: 39% smaller than -1 for the same root (704 vs 1154 MiB), so
+                # 39% less to send over the device's ~12 MB/s USB link; decompression
+                # stays fast and needs no option (the window stays at zstd's default limit).
+                ['zstd', '-T0', '-19', '--long', '--check', '-q', '-c'], stdin=subprocess.PIPE, stdout=raw) as compressor:
             with tarfile.open(fileobj=compressor.stdin, mode='w|') as target:
                 def add(member, data=None):
                     nonlocal expanded, count
@@ -221,7 +244,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
                     member = tarfile.TarInfo(name)
                     member.mode, member.size = mode, len(data)
                     add(member, data)
-                for unit in ('omarchy-diagnostics.service', 'omarchy-pacman-init.service'):
+                for unit in ('omarchy-pacman-init.service',):
                     member = tarfile.TarInfo('etc/systemd/system/multi-user.target.wants/' + unit)
                     member.type, member.linkname, member.mode = tarfile.SYMTYPE, '/usr/lib/systemd/system/' + unit, 0o777
                     if member.name not in seen:
@@ -231,7 +254,7 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
             if compressor.wait():
                 raise ValueError('Public root compression failed')
         required = {'lib', 'usr/lib/systemd/systemd', 'etc/group', 'etc/gshadow', qml_path,
-                    'arch-ipad-ui-manifest.json', 'usr/libexec/omarchy-diagnostics'}
+                    'arch-ipad-ui-manifest.json'}
         if not required <= seen or not privileges.keys() <= seen or not replacements.keys() <= seen:
             raise ValueError('Incomplete public root or privileged package metadata')
         receipt = {'schema': 1, 'kind': 'rootfs', 'profile': 'j71b', 'release': release,
@@ -245,11 +268,11 @@ def build(base, base_receipt, modules_dir, dropbear, outdir, release, cursor_too
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('base', 'base-receipt', 'modules-dir', 'dropbear', 'outdir', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
+    for name in ('base', 'base-receipt', 'modules-dir', 'outdir', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--release', required=True)
     args = parser.parse_args()
-    print(json.dumps(build(args.base, args.base_receipt, args.modules_dir, args.dropbear, args.outdir, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools), indent=2))
+    print(json.dumps(build(args.base, args.base_receipt, args.modules_dir, args.outdir, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools), indent=2))
 
 
 if __name__ == '__main__':

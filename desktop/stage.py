@@ -46,7 +46,34 @@ def main():
     source = target / "home/tablet/.local/share/omarchy-ipad"
     # Copy shell sources and immutable upstream theme assets.
     shutil.copytree(PORT, source, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    shutil.copytree(FORK / "themes", source / "themes", symlinks=True)
+    # Greeter assets are system-owned, never read from the user's home directory.
+    greeter = target / "usr/share/omarchy-greeter"
+    shutil.copytree(HERE / "greeter", greeter)
+    # Copy trusted shared UI code, not the tablet user's mutable shell tree.
+    for module in ("Commons", "Ui"):
+        shutil.copytree(PORT / "shell" / module, greeter / module)
+    for name in ("LockView.qml", "LockFeedSurface.qml"):
+        copy(PORT / "shell/plugins/lock" / name, greeter / "plugins/lock" / name)
+    # Overlay the upstream Jade Horse replacement without updating the whole UI pin.
+    themes = source / "themes"
+    shutil.copytree(FORK / "themes", themes, symlinks=True)
+    shutil.rmtree(themes / "osaka-jade", ignore_errors=True)
+    shutil.copytree(HERE / "themes/jade-horse", themes / "jade-horse", dirs_exist_ok=True)
+    default = themes / "jade-horse"
+    copy(default / "colors.toml", greeter / "default-theme/colors.toml")
+    if (default / "shell.toml").is_file():
+        copy(default / "shell.toml", greeter / "default-theme/shell.toml")
+    backgrounds = sorted(p for p in (default / "backgrounds").iterdir()
+                         if p.is_file() and p.suffix.lower() in (".webp", ".png", ".jpg", ".jpeg"))
+    if not backgrounds:
+        raise ValueError("default theme has no image background")
+    copy(backgrounds[0], greeter / "default-theme/background")
+    tmpfiles = target / "usr/lib/tmpfiles.d/omarchy-greeter-theme.conf"
+    tmpfiles.parent.mkdir(parents=True, exist_ok=True)
+    tmpfiles.write_text("d /var/lib/omarchy-greeter-theme 0755 tablet tablet -\n")
+    (greeter / "labwc/autostart").chmod(0o755)
+    copy(HERE / "greeter/greeter-session", target / "usr/local/libexec/omarchy-greeter-session", 0o755)
+    copy(HERE / "greeter/greeter-wake", target / "usr/local/libexec/omarchy-greeter-wake", 0o755)
     keyboard = source / "trials/wvkbd-mobintl-v0.20-font18-special15-state"
     copy(KEYBOARD, keyboard, 0o755)
     for script in (source / "bin").iterdir():
@@ -64,14 +91,15 @@ def main():
         PORT / "fastfetch/config.jsonc": config / "fastfetch/config.jsonc",
         PORT / "starship/starship.toml": config / "starship.toml",
         CONFIG / "bashrc": target / "home/tablet/.bashrc",
-        CONFIG / "bash_profile": target / "home/tablet/.bash_profile",
         PORT / "fontconfig/fonts.conf": config / "fontconfig/fonts.conf",
         PORT / "fastfetch/about.txt": config / "omarchy/branding/about.txt",
         PORT / "fastfetch/about-compact.txt": config / "omarchy/branding/about-compact.txt",
         CONFIG / "first-theme": target / "usr/local/libexec/arch-ipad-first-theme",
         CONFIG / "scale-output": target / "usr/local/libexec/arch-ipad-scale-output",
         CONFIG / "login-session": target / "usr/local/libexec/arch-ipad-login-session",
-        CONFIG / "getty-autologin.conf": target / "etc/systemd/system/getty@tty1.service.d/arch-ipad-autologin.conf",
+        CONFIG / "org.kde.dolphin.desktop": target / "home/tablet/.local/share/applications/org.kde.dolphin.desktop",
+        HERE / "greeter/greetd.toml": target / "etc/greetd/config.toml",
+        HERE / "greeter/greetd-seatd.conf": target / "etc/systemd/system/greetd.service.d/seatd.conf",
         CONFIG / "networkmanager.rules": target / "etc/polkit-1/rules.d/40-arch-ipad-networkmanager.rules",
         FORK / "applications/foot.desktop": target / "usr/local/share/applications/foot.desktop",
         XPI: target / "usr/lib/firefox/distribution/extensions/@omafox.xpi",

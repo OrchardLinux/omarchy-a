@@ -1,0 +1,3 @@
+# The panel backlight is writable by video (the tablet user), with no root
+# helper or blanket sudo. Every supported device has exactly one backlight.
+ACTION=="add", SUBSYSTEM=="backlight", RUN+="/usr/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/usr/bin/chmod g+w /sys/class/backlight/%k/brightness"

@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<labwc_config>
+  <core><decoration>server</decoration></core>
+  <keyboard>
+    <keybind key="XF86PowerOff" onRelease="yes">
+      <action name="Execute" command="/usr/libexec/omarchy-screen-toggle" />
+    </keybind>
+    <keybind key="XF86HomePage" onRelease="yes">
+      <action name="Execute" command="/usr/local/libexec/omarchy-greeter-wake" />
+    </keybind>
+  </keyboard>
+</labwc_config>

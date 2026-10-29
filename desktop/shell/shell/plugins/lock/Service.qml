@@ -795,12 +795,12 @@ Item {
 
   Process {
     id: wakeProcess
-    command: ["bash", "-c", "omarchy-system-wake"]
+    command: ["bash", "-c", Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? "omarchy-tablet-power wake" : "omarchy-system-wake"]
   }
 
   Process {
     id: blankProcess
-    command: ["bash", "-c", "omarchy-brightness-keyboard off; omarchy-brightness-display off"]
+    command: ["bash", "-c", Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? "omarchy-tablet-power blank-locked" : "omarchy-brightness-keyboard off; omarchy-brightness-display off"]
   }
 
   // Quickshell exposes no DPMS signal, so the panel state is polled while a
@@ -830,7 +830,7 @@ Item {
 
   Timer {
     id: idleBlankTimer
-    interval: 5000
+    interval: Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? 15000 : 5000
     repeat: false
     property double armedAt: 0
     onTriggered: {
@@ -844,7 +844,7 @@ Item {
       // Only a password check in flight should hold the display up. The
       // fingerprint PAM stays armed for the whole lock, so gating on
       // `authenticating` here would keep the panel lit until unlock.
-      if (root.lockRequested && !root.authenticatingPassword) root.runBlank()
+      if (root.lockRequested && sessionLock.secure && !root.authenticatingPassword) root.runBlank()
     }
   }
 
@@ -943,6 +943,15 @@ Item {
       // omarchy-system-sleep-lock asks for the lock before every suspend.
       if (root.currentlyLocked()) root.noteSleepRequested()
       if (!root.currentlyLocked() && !root.beginLock()) return "failed"
+      return "ok"
+    }
+
+    function woke(): string {
+      if (root.currentlyLocked()) {
+        root.displaysBlank = false
+        root.armBlankTimer()
+        root.resumeFingerprint()
+      }
       return "ok"
     }
 

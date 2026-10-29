@@ -1,0 +1,94 @@
+#!/usr/bin/python3
+"""Tablet lock/backlight policy. Suspend is intentionally not requested yet."""
+import fcntl
+import json
+import os
+import shutil
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+RUNTIME = Path(os.environ['XDG_RUNTIME_DIR'])
+
+def command(*args, timeout=3):
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=True).stdout.strip()
+
+def status():
+    return json.loads(command('omarchy-shell', 'lock', 'status'))
+
+def brightness():
+    # The one built-in panel backlight, as omarchy-screen-toggle picks it.
+    panels = list(Path('/sys/class/backlight').iterdir())
+    if len(panels) != 1:
+        raise RuntimeError(f'expected one panel backlight, found {len(panels)}')
+    return int((panels[0] / 'brightness').read_text())
+
+def set_visible(visible):
+    if (brightness() > 0) != visible:
+        subprocess.run(['/usr/libexec/omarchy-screen-toggle'], check=True, timeout=3)
+    if (brightness() > 0) != visible:
+        raise RuntimeError('backlight did not change')
+
+def note_external_wake():
+    # Tell the locked shell to restart its display timeout without spawning
+    # another wake helper while this process holds the policy lock.
+    if status().get('locked'):
+        command('omarchy-shell', 'lock', 'woke')
+
+def lock_and_blank():
+    # Blanking is visual feedback, not a security boundary. Do it before any
+    # shell IPC so a slow lock cannot delay the screen turning off.
+    try:
+        set_visible(False)
+        state = status()
+        if not state.get('secure'):
+            if command('omarchy-shell', 'lock', 'lock') != 'ok':
+                raise RuntimeError('lock request rejected')
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if status().get('secure'):
+                    break
+                time.sleep(0.15)
+            else:
+                raise RuntimeError('session lock not confirmed')
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        # Never leave an unsecured desktop looking locked.
+        try:
+            set_visible(True)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as restore_error:
+            raise RuntimeError(f'lock failed ({error}); display restore failed ({restore_error})') from error
+        raise
+
+def main():
+    action = sys.argv[1] if len(sys.argv) == 2 else ''
+    if action not in ('power', 'home', 'idle', 'wake', 'blank-locked'):
+        raise ValueError('expected power, home, idle, wake or blank-locked')
+    # Serialize physical buttons, idle transitions, and lock-screen wake requests.
+    fd = os.open(RUNTIME / 'omarchy-tablet-power.lock', os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if action == 'wake':
+            set_visible(True)
+        elif action == 'power':
+            if brightness() == 0:
+                set_visible(True)
+                note_external_wake()
+            else: lock_and_blank()
+        elif action == 'home':
+            if brightness() == 0:
+                set_visible(True)
+                note_external_wake()
+            elif not status().get('locked'): command('omarchy-shell', 'omarchy.dock', 'apps')
+        else:
+            lock_and_blank()
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+        print('Tablet power action failed: ' + str(error), file=sys.stderr)
+        notifier = shutil.which('notify-send')
+        if notifier:
+            subprocess.run([notifier, 'Unable to lock or change display', str(error)], check=False)
+        sys.exit(1)

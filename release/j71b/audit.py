@@ -18,14 +18,19 @@ from .recovery_audit import audit_runtime
 
 def audit_recovery(image):
     receipt = json.loads(Path(str(image) + '.json').read_text())
-    parts, end = {}, 0
+    parts, dtbs, end = {}, 0, 0
     with image.open('rb') as stream:
         for row in receipt['components']:
-            if row['name'] in parts or row['offset'] != end or row['bytes'] <= 0:
+            # One DTB per device the recovery boots; every other part once.
+            if (row['name'] in parts and row['name'] != 'dtb') or row['offset'] != end or row['bytes'] <= 0:
                 raise ValueError('Invalid recovery component boundaries')
             data = stream.read(row['bytes'])
             if len(data) != row['bytes'] or hashlib.sha256(data).hexdigest() != row['sha256']:
                 raise ValueError('Recovery component integrity mismatch: ' + row['name'])
+            if row['name'] == 'dtb':
+                if not data.startswith(b'\xd0\x0d\xfe\xed'):
+                    raise ValueError('Recovery DTB component is not a devicetree')
+                dtbs += 1
             parts[row['name']] = (row, data[:32])
             end += row['bytes']
     if end != image.stat().st_size or receipt['image_sha256'] != sha(image):
@@ -38,7 +43,7 @@ def audit_recovery(image):
             header != INITRAMFS_MAGIC + struct.pack('<I', size) or
             not parts['initramfs'][1].startswith(b'\x1f\x8b')):
         raise ValueError('Initramfs is not framed for Linux decompression')
-    return {'passed': True, 'initramfs_encoding': receipt['initramfs_encoding'],
+    return {'passed': True, 'dtbs': dtbs, 'initramfs_encoding': receipt['initramfs_encoding'],
             'compressed_bytes': size, 'initramfs_sha256': parts['initramfs'][0]['sha256']}
 
 
@@ -56,7 +61,10 @@ def audit(manifest):
             raise ValueError('Asset integrity mismatch: ' + role)
         paths[role] = path
     recovery = audit_recovery(paths['recovery'])
-    runtime = audit_runtime(paths['recovery'], record['assets']['root'], record['release'])
+    # The public manifest leaves the kernel release out; the root's build receipt has it.
+    root = {**record['assets']['root'],
+            'kernel_release': json.loads((manifest.parent / 'rootfs.json').read_text())['kernel_release']}
+    runtime = audit_runtime(paths['recovery'], root, record['release'])
     recovery['runtime_members_verified'] = runtime['members']
     hashes, links, modes, owners, groups, sizes = {}, {}, {}, {}, {}, {}
     names, ancestors, directories = set(), set(), set()
@@ -141,7 +149,7 @@ def audit(manifest):
     verify_labwc(labwc, hashes, modes, owners, groups)
     if 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml' not in desktop:
         raise ValueError('Pairing UI is absent from desktop integrity manifest')
-    for name in ('omarchy-diagnostics', 'omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-screen-toggle', 'omarchy-bluetooth-pair'):
+    for name in ('omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-screen-toggle', 'omarchy-bluetooth-pair'):
         if modes.get('usr/libexec/' + name) != 0o755:
             raise ValueError('Required helper is not executable: ' + name)
     if links.get('lib') != (True, 'usr/lib') or owners.get('home/tablet') != 1000 or sizes.get('etc/machine-id') != 0:
@@ -183,10 +191,16 @@ def verify_bluetooth(record, hashes, modes, owners, groups):
 
 
 def verify_tablet_sudo(hashes, modes, owners, groups):
-    name = 'etc/sudoers.d/90-tablet-passwordless'
-    expected = hashlib.sha256(b'tablet ALL=(ALL:ALL) NOPASSWD: ALL\n').hexdigest()
-    if (hashes.get(name), modes.get(name), owners.get(name), groups.get(name)) != (expected, 0o440, 0, 0):
-        raise ValueError('Missing or unsafe tablet passwordless sudo policy')
+    # sudo asks for the account password, which the installer sets; only the
+    # timezone menu's one command runs without it.
+    policy = {'etc/sudoers.d/90-tablet': b'tablet ALL=(ALL:ALL) ALL\n',
+              'etc/sudoers.d/omarchy-tzupdate': b'tablet ALL=(root) NOPASSWD: /usr/bin/timedatectl set-timezone *\n'}
+    for name, data in policy.items():
+        expected = hashlib.sha256(data).hexdigest()
+        if (hashes.get(name), modes.get(name), owners.get(name), groups.get(name)) != (expected, 0o440, 0, 0):
+            raise ValueError('Missing or unsafe tablet sudo policy: ' + name)
+    if any(path.startswith('etc/sudoers.d/') and path not in policy for path in hashes):
+        raise ValueError('Unexpected sudoers drop-in')
 
 
 def main():

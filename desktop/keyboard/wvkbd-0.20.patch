@@ -1,31 +1,17 @@
 --- a/config.mobintl.h
 +++ b/config.mobintl.h
-@@ -1,7 +1,8 @@
- #ifndef config_h_INCLUDED
- #define config_h_INCLUDED
- 
+@@ -4 +4,2 @@
 -#define DEFAULT_FONT "Sans 14"
 +#define DEFAULT_FONT "JetBrainsMono Nerd Font 16"
 +#define SPECIAL_FONT "JetBrainsMono Nerd Font 13"
- #define DEFAULT_ROUNDING 5
- #define SHIFT_SPACE_IS_TAB
- static const int transparency = 255;
-@@ -28,7 +29,7 @@
-   .text_press = {.color = UINT32_MAX},
-   .text_swipe = {.color = UINT32_MAX},
-   .text = {.color = UINT32_MAX},
+@@ -31 +32 @@
 -  .font = DEFAULT_FONT,
 +  .font = SPECIAL_FONT,
-   .rounding = DEFAULT_ROUNDING,
- }
- };
 --- a/main.c
 +++ b/main.c
-@@ -74,6 +74,18 @@
- static int rounding = DEFAULT_ROUNDING;
- static bool hidden = false;
- static bool im_auto = false;
-+
+@@ -13,0 +14 @@
++#include <time.h>
+@@ -77,0 +79,12 @@
 +/* Report the actual layer-surface state to the tablet shell. No protocol or
 + * key behavior changes; absent WVKBD_STATE_FILE this is upstream behavior. */
 +static void report_visibility(bool visible)
@@ -37,22 +23,250 @@
 +    fputs(visible ? "1\n" : "0\n", file);
 +    fclose(file);
 +}
- 
- /* event handler prototypes */
- static void wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
-@@ -605,6 +617,7 @@
- 
-     keyboard.scale = scale;
-     hidden = false;
++
+@@ -138,0 +152,138 @@
++/* Drag the actual layer surface, preserving its exclusive zone until hide.
++ * Surface-local motion changes as the surface moves: add the current offset
++ * to recover the finger's position in the original surface coordinates. */
++enum drag_source { DRAG_NONE, DRAG_POINTER, DRAG_TOUCH };
++static enum drag_source drag_source = DRAG_NONE;
++static int32_t drag_touch_id;
++static int drag_start_y, drag_offset, drag_last_y;
++static uint32_t drag_last_time;
++static double drag_velocity;
++static bool animating, animation_hide;
++static int animation_from, animation_to;
++static int64_t animation_started;
++/* Delay the initial key briefly so a downward drag does not type a letter.
++ * Long holds still deliver the key for normal modifier and repeat behavior. */
++static enum drag_source pending_source = DRAG_NONE;
++static int32_t pending_id;
++static int pending_x, pending_y;
++static uint32_t pending_time;
++static int64_t pending_started;
++
++static int64_t monotonic_ms(void)
++{
++    struct timespec t;
++    clock_gettime(CLOCK_MONOTONIC, &t);
++    return (int64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
++}
++
++static void drag_position(int offset)
++{
++    if (!layer_surface) return;
++    if (offset < 0) offset = 0;
++    if (offset > (int)height) offset = height;
++    drag_offset = offset;
++    zwlr_layer_surface_v1_set_margin(layer_surface, 0, 0, -offset, 0);
++    if (keyboard.exclusive)
++        zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, height + offset);
++    wl_surface_commit(draw_surf.surf);
++}
++
++static void drag_begin(enum drag_source source, int32_t id, int y, uint32_t time)
++{
++    animating = false;
++    drag_source = source;
++    drag_touch_id = id;
++    drag_start_y = y + drag_offset;
++    drag_last_y = drag_start_y;
++    drag_last_time = time;
++    drag_velocity = 0;
++}
++
++static void drag_motion(int y, uint32_t time)
++{
++    int absolute_y = y + drag_offset;
++    uint32_t dt = time - drag_last_time;
++    if (dt > 0 && dt < 150) {
++        drag_velocity = (double)(absolute_y - drag_last_y) / dt;
++    } else if (dt >= 150) {
++        drag_velocity = 0;
++    }
++    drag_last_time = time;
++    drag_last_y = absolute_y;
++    drag_position(absolute_y - drag_start_y);
++}
++
++static void drag_finish(bool cancelled, uint32_t time)
++{
++    bool flick = time - drag_last_time < 120 && drag_velocity > 0.6;
++    /* Near the bottom edge there is less screen left for the finger to travel. */
++    int threshold = ((int)height - drag_start_y) * 2 / 3;
++    if (threshold < 12) threshold = 12;
++    if (threshold > (int)height / 3) threshold = height / 3;
++    bool dismiss = !cancelled && (drag_offset >= threshold ||
++                                  (drag_offset >= 20 && flick));
++    drag_source = DRAG_NONE;
++    animation_from = drag_offset;
++    animation_to = dismiss ? height : 0;
++    animation_hide = dismiss;
++    animation_started = monotonic_ms();
++    animating = animation_from != animation_to;
++    if (!animating && dismiss) hide();
++}
++
++static void animation_tick(void)
++{
++    if (!animating) return;
++    double t = (monotonic_ms() - animation_started) / 180.0;
++    if (t >= 1.0) {
++        animating = false;
++        drag_position(animation_to);
++        if (animation_hide) hide();
++        return;
++    }
++    if (t < 0) t = 0;
++    double ease = 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t);
++    drag_position(animation_from + (int)((animation_to - animation_from) * ease));
++}
++
++static void pending_begin(enum drag_source source, int32_t id, int x, int y, uint32_t time)
++{
++    pending_source = source;
++    pending_id = id;
++    pending_x = x;
++    pending_y = y;
++    pending_time = time;
++    pending_started = monotonic_ms();
++}
++
++static void pending_commit(void)
++{
++    if (pending_source == DRAG_NONE) return;
++    pending_source = DRAG_NONE;
++    kbd_unpress_key(&keyboard, pending_time);
++    struct key *key = kbd_get_key(&keyboard, pending_x, pending_y);
++    if (key) kbd_press_key(&keyboard, key, pending_time);
++    else if (keyboard.compose) {
++        keyboard.compose = 0;
++        kbd_switch_layout(&keyboard, keyboard.prevlayout, keyboard.last_abc_index);
++    }
++}
++
++static void pending_motion(int x, int y, uint32_t time)
++{
++    int dx = x - pending_x, dy = y - pending_y;
++    if (dy >= 12 && dy > abs(dx)) {
++        enum drag_source source = pending_source;
++        int32_t id = pending_id;
++        int start_y = pending_y;
++        uint32_t start_time = pending_time;
++        pending_source = DRAG_NONE;
++        kbd_release_key(&keyboard, time);
++        drag_begin(source, id, start_y, start_time);
++        drag_motion(y, time);
++    } else if (abs(dx) >= 12 || dy <= -12) {
++        pending_commit();
++        kbd_motion_key(&keyboard, time, x, y);
++    }
++}
++
+@@ -255,16 +406,3 @@
+-    struct key *next_key;
+-    uint32_t touch_x, touch_y;
+-
+-    touch_x = wl_fixed_to_int(x);
+-    touch_y = wl_fixed_to_int(y);
+-
+-    kbd_unpress_key(&keyboard, time);
+-
+-    next_key = kbd_get_key(&keyboard, touch_x, touch_y);
+-    if (next_key) {
+-        kbd_press_key(&keyboard, next_key, time);
+-    } else if (keyboard.compose) {
+-        keyboard.compose = 0;
+-        kbd_switch_layout(&keyboard, keyboard.prevlayout,
+-                          keyboard.last_abc_index);
+-    }
++    if (drag_source != DRAG_NONE || animating || pending_source != DRAG_NONE) return;
++    if (surface == draw_surf.surf)
++        pending_begin(DRAG_TOUCH, id, wl_fixed_to_int(x), wl_fixed_to_int(y), time);
+@@ -280,0 +419,9 @@
++    if (drag_source == DRAG_TOUCH) {
++        if (id == drag_touch_id) drag_finish(false, time);
++        return;
++    }
++    if (drag_source != DRAG_NONE || animating) return;
++    if (pending_source == DRAG_TOUCH) {
++        if (id != pending_id) return;
++        pending_commit();
++    } else if (pending_source != DRAG_NONE) return;
+@@ -292 +439 @@
+-    uint32_t touch_x, touch_y;
++    int touch_x, touch_y;
+@@ -296,0 +444,10 @@
++    if (drag_source == DRAG_TOUCH) {
++        if (id == drag_touch_id) drag_motion(touch_y, time);
++        return;
++    }
++    if (drag_source != DRAG_NONE || animating) return;
++    if (pending_source == DRAG_TOUCH) {
++        if (id == pending_id) pending_motion(touch_x, touch_y, time);
++        return;
++    }
++    if (pending_source != DRAG_NONE) return;
+@@ -307,0 +465,3 @@
++    if (pending_source == DRAG_TOUCH) pending_source = DRAG_NONE;
++    if (drag_source == DRAG_TOUCH) drag_finish(true, drag_last_time);
++    else if (layer_surface_configured) kbd_release_key(&keyboard, 0);
+@@ -326,0 +487,2 @@
++    cur_x = wl_fixed_to_int(surface_x);
++    cur_y = wl_fixed_to_int(surface_y);
+@@ -347,2 +509,3 @@
+-    if (cur_press) {
+-        kbd_motion_key(&keyboard, time, cur_x, cur_y);
++    if (drag_source == DRAG_POINTER) {
++        drag_motion(cur_y, time);
++        return;
+@@ -349,0 +513,4 @@
++    if (cur_press && drag_source == DRAG_NONE && !animating) {
++        if (pending_source == DRAG_POINTER) pending_motion(cur_x, cur_y, time);
++        else if (pending_source == DRAG_NONE) kbd_motion_key(&keyboard, time, cur_x, cur_y);
++    }
+@@ -360 +527 @@
+-    struct key *next_key;
++    if (button != BTN_LEFT) return;
+@@ -362 +529,5 @@
+-
++    if (drag_source == DRAG_POINTER) {
++        if (!cur_press) drag_finish(false, time);
++        return;
++    }
++    if (drag_source != DRAG_NONE || animating) return;
+@@ -364 +535,2 @@
+-        kbd_unpress_key(&keyboard, time);
++        if (pending_source == DRAG_NONE && cur_x >= 0 && cur_y >= 0)
++            pending_begin(DRAG_POINTER, 0, cur_x, cur_y, time);
+@@ -365,0 +538,2 @@
++        if (pending_source == DRAG_POINTER) pending_commit();
++        else if (pending_source != DRAG_NONE) return;
+@@ -368,11 +541,0 @@
+-
+-    if (cur_press && cur_x >= 0 && cur_y >= 0) {
+-        next_key = kbd_get_key(&keyboard, cur_x, cur_y);
+-        if (next_key) {
+-            kbd_press_key(&keyboard, next_key, time);
+-        } else if (keyboard.compose) {
+-            keyboard.compose = 0;
+-            kbd_switch_layout(&keyboard, keyboard.prevlayout,
+-                              keyboard.last_abc_index);
+-        }
+-    }
+@@ -607,0 +771 @@
 +    report_visibility(true);
- 
-     if (wfs_mgr && viewporter) {
-         wp_viewport_set_destination(draw_surf_viewport, keyboard.w,
-@@ -758,6 +771,7 @@
-     draw_surf.attached = false;
- 
-     hidden = true;
+@@ -721,0 +886,5 @@
++    animating = false;
++    drag_source = DRAG_NONE;
++    pending_source = DRAG_NONE;
++    drag_offset = 0;
++    cur_press = false;
+@@ -760,0 +930 @@
 +    report_visibility(false);
- }
- 
- void
+@@ -1185 +1355,4 @@
+-        poll(fds, 2, -1);
++        poll(fds, 2, (animating || pending_source != DRAG_NONE) ? 16 : -1);
++        animation_tick();
++        if (pending_source != DRAG_NONE && monotonic_ms() - pending_started >= 300)
++            pending_commit();

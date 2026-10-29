@@ -17,7 +17,7 @@ class CachedKernelTests(unittest.TestCase):
     def args(self, supplied=(False, False, False)):
         return argparse.Namespace(**{
             name: Path('/explicit') / name if present else None
-            for name, present in zip(('kernel', 'dtb', 'modules_dir'), supplied)
+            for name, present in zip(('kernel', 'dtbs', 'modules_dir'), supplied)
         }, loader=Path('/branded/loader'), pongo=Path('/branded/pongo'))
 
     def test_omitted_bundle_uses_generic_builder_and_preserves_branding(self):
@@ -30,7 +30,7 @@ class CachedKernelTests(unittest.TestCase):
         api.configured_device.assert_called_once_with(build.PROJECT)
         api.prepare_kernel.assert_called_once_with(device='new-board')
         self.assertEqual(args.kernel, Path('/shared/kernel/Image.gz'))
-        self.assertEqual(args.dtb, Path('/shared/kernel/new-board.dtb'))
+        self.assertEqual(args.dtbs, Path('/shared/kernel/dtbs'))
         self.assertEqual(args.modules_dir, Path('/shared/kernel/lib/modules'))
         self.assertEqual(args.loader, Path('/branded/loader'))
         self.assertEqual(args.pongo, Path('/branded/pongo'))
@@ -54,7 +54,8 @@ class CachedKernelTests(unittest.TestCase):
     def argv(self, root):
         argv = ['build', '--release', 'test']
         for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear',
-                     'dropbearkey', 'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
+                     'dropbearkey', 'wpa-supplicant', 'wpa-cli', 'iw',
+                     'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
             path = root / name
             if name.endswith('-tools'):
                 path.mkdir()
@@ -76,7 +77,8 @@ class CachedKernelTests(unittest.TestCase):
 
     def test_missing_distro_inputs_fail_before_resolving_kernel(self):
         for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear',
-                     'dropbearkey', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
+                     'dropbearkey', 'wpa-supplicant', 'wpa-cli', 'iw',
+                     'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 argv = self.argv(root)

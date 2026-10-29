@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Effects
+import Quickshell
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -25,9 +26,10 @@ Item {
   property string passwordText: ""
   property bool syncingPasswordText: false
 
-  readonly property string placeholderText: Commons.I18n.t("lock.enterPassword")
-  readonly property int fieldWidth: 381
-  readonly property int fieldHeight: 67
+  readonly property bool touchPin: Quickshell.env("OMARCHY_TOUCH_MODE") === "1"
+  readonly property string placeholderText: touchPin ? "Enter PIN" : Commons.I18n.t("lock.enterPassword")
+  readonly property int fieldWidth: Math.min(touchPin ? 465 : 381, Math.max(1, width - 48))
+  readonly property int fieldHeight: touchPin ? 93 : 67
   readonly property int outlineThickness: 3
   readonly property int fieldFontSize: Math.round(Style.font.heading * 1.125)
   readonly property int passwordDotFontSize: Math.round(Style.font.heading * 1.33)
@@ -60,6 +62,19 @@ Item {
 
   function clearPassword() {
     passwordTextEdited("")
+  }
+
+  // Only the surface receiving user input submits. Mirrored lock surfaces
+  // share passwordText, but must not each submit when that binding changes.
+  function editPin(value) {
+    if (!inputEnabled || authenticatingPassword) return
+    var pin = String(value).replace(/[^0-9]/g, "").slice(0, 6)
+    passwordTextEdited(pin)
+    syncPasswordText()
+    if (pin.length === 6) {
+      passwordTextEdited("")
+      submitPassword(pin)
+    }
   }
 
   // Waking a DPMS-blanked display can stall the compositor for seconds while
@@ -147,18 +162,22 @@ Item {
 
     MouseArea {
       anchors.fill: parent
-      hoverEnabled: true
+      // Creating a lock surface can synthesize a pointer movement. On a tablet
+      // that is not a wake gesture and must not undo Power's immediate blank.
+      hoverEnabled: !root.touchPin
       onClicked: { root.wakeRequested(); root.forcePasswordFocus() }
-      onPositionChanged: root.wakeRequested()
+      onPositionChanged: if (!root.touchPin) root.wakeRequested()
     }
 
     BorderSurface {
       id: inputField
       width: root.fieldWidth
       height: root.fieldHeight
-      anchors.centerIn: parent
-      color: Commons.Color.lock.background
-      borderSpec: root.inputBorderSpec
+      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.verticalCenterOffset: root.touchPin ? -Math.min(170, Math.round(root.height * 0.17)) : 0
+      color: root.touchPin ? "transparent" : Commons.Color.lock.background
+      borderSpec: root.touchPin ? Border.none() : root.inputBorderSpec
       radius: Style.cornerRadius
       clip: true
 
@@ -177,6 +196,9 @@ Item {
         clip: true
         enabled: root.inputEnabled && !root.authenticatingPassword
         readOnly: root.authenticatingPassword
+        opacity: root.touchPin ? 0 : 1
+        maximumLength: root.touchPin ? 6 : 32767
+        inputMethodHints: root.touchPin ? Qt.ImhDigitsOnly | Qt.ImhNoPredictiveText | Qt.ImhSensitiveData : Qt.ImhSensitiveData
         echoMode: TextInput.Password
         passwordCharacter: "\u25CF"
         passwordMaskDelay: 0
@@ -194,7 +216,10 @@ Item {
         }
 
         onTextChanged: {
-          if (!root.syncingPasswordText) root.passwordTextEdited(text)
+          if (!root.syncingPasswordText) {
+            if (root.touchPin) root.editPin(text)
+            else root.passwordTextEdited(text)
+          }
           if (text.length > 0) {
             root.wakeRequested()
           }
@@ -202,6 +227,7 @@ Item {
         }
 
         onAccepted: {
+          if (root.touchPin) return
           var submitted = root.passwordText
           root.passwordTextEdited("")
           if (submitted.length > 0) root.submitPassword(submitted)
@@ -224,7 +250,7 @@ Item {
         textFormat: Text.PlainText
         anchors.fill: passwordInput
         text: root.authenticatingPassword ? Commons.I18n.t("lock.checking") : (root.failureMessage.length > 0 ? root.failureMessage : root.placeholderText)
-        visible: passwordInput.text.length === 0
+        visible: !root.touchPin && passwordInput.text.length === 0
         color: root.authenticatingPassword ? Commons.Color.lock.text : (root.failureMessage.length > 0 ? Commons.Color.lock.textError : Commons.Color.lock.placeholder)
         font.family: Style.font.family
         font.pixelSize: root.fieldFontSize
@@ -246,13 +272,100 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: inputField.borderRight + 18
         anchors.verticalCenter: parent.verticalCenter
-        visible: root.fingerprintConfigured
+        visible: !root.touchPin && root.fingerprintConfigured
         text: root.fingerprintUnavailable ? "󰺱" : "󰈷"
         color: root.fingerprintUnavailable ? Commons.Color.lock.textError : Commons.Color.lock.placeholder
         font.family: Style.font.family
         font.pixelSize: Math.round(root.fieldFontSize * 1.1)
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
+      }
+    }
+
+    Column {
+      anchors.centerIn: inputField
+      spacing: 26
+      visible: root.touchPin
+
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: root.authenticatingPassword ? Commons.I18n.t("lock.checking") : (root.errorState ? root.failureMessage : root.placeholderText)
+        color: root.errorState ? Commons.Color.lock.textError : Commons.Color.lock.text
+        font.family: Style.font.family
+        font.pixelSize: Math.max(26, root.fieldFontSize)
+        horizontalAlignment: Text.AlignHCenter
+        width: root.fieldWidth
+        elide: Text.ElideRight
+      }
+      Row {
+        anchors.horizontalCenter: parent.horizontalCenter
+        spacing: 26
+        Repeater {
+          model: 6
+          Rectangle {
+            required property int index
+            width: 18; height: 18; radius: 9
+            // The PIN itself is cleared on submit; keep only its visual
+            // indicator filled until authentication finishes.
+            color: root.authenticatingPassword || index < root.passwordText.length ? Commons.Color.lock.text : "transparent"
+            border.width: 2
+            border.color: root.errorState ? Commons.Color.lock.textError : Commons.Color.lock.text
+          }
+        }
+      }
+    }
+
+    Grid {
+      anchors.top: inputField.bottom
+      anchors.topMargin: 60
+      anchors.horizontalCenter: parent.horizontalCenter
+      visible: root.touchPin
+      columns: 3
+      rowSpacing: 12
+      columnSpacing: 12
+      Repeater {
+        model: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"]
+        BorderSurface {
+          id: pinKey
+          required property string modelData
+          readonly property bool backspaceKey: modelData === "⌫"
+          width: (root.fieldWidth - 24) / 3
+          height: 70
+          radius: Style.cornerRadius
+          color: backspaceKey ? "transparent" : Commons.Color.lock.background
+          borderSpec: backspaceKey ? Border.none() : Border.surfaceSpec("lock", "border", Commons.Color.lock.border, 1, "border-alpha")
+          opacity: modelData === "" ? 0 : (root.inputEnabled && !root.authenticatingPassword ? 1 : 0.55)
+
+          Rectangle {
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: Math.max(0, Style.cornerRadius - 1)
+            color: pinMouse.pressed
+              ? Style.pressedFillFor(Commons.Color.lock.text, Commons.Color.accent)
+              : (pinKey.backspaceKey ? "transparent" : Style.normalFillFor(Commons.Color.lock.text, Commons.Color.accent))
+          }
+          Text {
+            anchors.centerIn: parent
+            text: pinKey.modelData
+            color: pinKey.backspaceKey ? Commons.Color.lock.placeholder : Commons.Color.lock.text
+            font.family: Style.font.family
+            font.pixelSize: Math.max(27, Math.round(Style.font.heading * 1.1))
+          }
+          MouseArea {
+            id: pinMouse
+            anchors.fill: parent
+            enabled: pinKey.modelData !== "" && root.inputEnabled && !root.authenticatingPassword
+            onClicked: {
+              root.wakeRequested()
+              if (pinKey.modelData === "⌫") root.editPin(root.passwordText.slice(0, -1))
+              else if (root.passwordText.length < 6) {
+                root.clearFailureRequested()
+                root.editPin(root.passwordText + pinKey.modelData)
+              }
+              root.forcePasswordFocus()
+            }
+          }
+        }
       }
     }
 
@@ -265,7 +378,7 @@ Item {
       anchors.top: inputField.bottom
       anchors.topMargin: 18
       anchors.horizontalCenter: inputField.horizontalCenter
-      visible: root.fingerprintConfigured && root.fingerprintUnavailable
+      visible: !root.touchPin && root.fingerprintConfigured && root.fingerprintUnavailable
       text: Commons.I18n.t("lock.fingerprintUnavailable")
       color: Commons.Color.lock.textError
       font.family: Style.font.family

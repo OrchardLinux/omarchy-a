@@ -65,24 +65,25 @@ def audit_runtime(image, root_spec, release):
                     hashes[name] = hashlib.sha256(data).hexdigest()
                     if name in ('etc/orchard/release.json', 'etc/orchard/public.SHA256SUMS'):
                         records[name] = data
-    prefix = 'usr/libexec/orchard-j71b/'
-    required = {prefix + name for name in ('device.py', 'archive.py', 'staging.py', 'handoff.py',
-                                          'image_policy.py', 'permissions.py', 'storage.py', 'identity.py', 'adt.py')}
+    prefix = 'usr/libexec/orchard/'
+    required = {prefix + name for name in ('device.py', 'identity.py', 'storage-fence', 'adt.py')}
     required |= {'init', 'usr/bin/orchard-device', 'sbin/capture-adt', 'sbin/authorize-key',
-                 'sbin/recovery-start-ssh', 'usr/bin/python3', 'etc/orchard/firmware.json',
+                 'sbin/recovery-start-ssh', 'usr/bin/python3',
                  'usr/sbin/blkid', 'usr/sbin/sfdisk', 'usr/sbin/mke2fs', 'etc/mke2fs.conf'}
     if not required <= names:
-        raise ValueError('Missing recovery endpoint/policy/runtime')
+        raise ValueError('Missing recovery endpoint/runtime')
     for name in ('init', 'usr/bin/orchard-device', 'sbin/capture-adt', 'sbin/authorize-key', 'sbin/recovery-start-ssh',
-                 'usr/sbin/blkid', 'usr/sbin/sfdisk', 'usr/sbin/mke2fs'):
+                 prefix + 'storage-fence', 'usr/sbin/blkid', 'usr/sbin/sfdisk', 'usr/sbin/mke2fs'):
         if not stat.S_ISREG(modes[name]) or modes[name] & 0o111 != 0o111:
             raise ValueError('Recovery helper is not executable: ' + name)
-    if any('omarchy-j71b' in name or name == 'usr/bin/omarchy-device' for name in names):
+    if any('omarchy-j71b' in name or 'orchard-j71b' in name or name == 'usr/bin/omarchy-device' for name in names):
         raise ValueError('Old agent namespace remains in recovery')
+    # The host checks the root's hash; the recovery only has to belong to this
+    # release and carry the root's kernel modules.
     config = json.loads(records['etc/orchard/release.json'])
-    expected = {key: root_spec[key] for key in ('sha256', 'bytes', 'expanded_bytes', 'members', 'compression')}
-    if config['root'] != expected or config['release'] != release or config['protocol'] != 1 or config['profile'] != 'j71b':
-        raise ValueError('Recovery is not locked to the published root')
+    if (config['release'] != release or config['protocol'] != 1 or
+            config['kernel_release'] != root_spec['kernel_release']):
+        raise ValueError('Recovery does not belong to this release')
     public = records['etc/orchard/public.SHA256SUMS'].decode()
     for line in public.splitlines():
         digest, name = line.split('  ', 1)

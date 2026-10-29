@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""Merge the generated Omarchy KDE palette without replacing user settings."""
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+import tempfile
+
+SECTION = re.compile(r'^\s*\[([^]\n]+)\]\s*(?:[#;].*)?$')
+KEY = re.compile(r'^\s*([^=\s]+)\s*=')
+RGB = re.compile(r'^\d{1,3},\d{1,3},\d{1,3}$')
+
+
+def palette(path):
+    result = {}
+    section = None
+    for line in path.read_text().splitlines():
+        header = SECTION.match(line)
+        if header:
+            section = header.group(1)
+            if not (section.startswith('Colors:') or section == 'WM'):
+                raise ValueError(f'unexpected palette section: {section}')
+            result.setdefault(section, {})
+        elif line.strip() and not line.lstrip().startswith(('#', ';')):
+            if section is None or '=' not in line:
+                raise ValueError('invalid palette line')
+            key, value = (part.strip() for part in line.split('=', 1))
+            if not KEY.match(line) or not RGB.fullmatch(value) or any(int(x) > 255 for x in value.split(',')):
+                raise ValueError(f'invalid palette value: {line}')
+            result[section][key] = value
+    if not result.get('Colors:View') or not result.get('Colors:Window'):
+        raise ValueError('incomplete KDE palette')
+    return result
+
+
+def merge(existing, colors):
+    pending = {section: dict(values) for section, values in colors.items()}
+    lines = []
+    current = None
+
+    def finish():
+        if current in pending:
+            lines.extend(f'{key}={value}\n' for key, value in pending[current].items())
+            del pending[current]
+
+    for line in existing.splitlines(keepends=True):
+        header = SECTION.match(line.rstrip('\r\n'))
+        if header:
+            finish()
+            current = header.group(1)
+        key = KEY.match(line)
+        if current in pending and key and key.group(1) in pending[current]:
+            name = key.group(1)
+            lines.append(f'{name}={pending[current].pop(name)}\n')
+        else:
+            lines.append(line if line.endswith('\n') else line + '\n')
+    finish()
+    for section, values in pending.items():
+        lines.append(f'\n[{section}]\n')
+        lines.extend(f'{key}={value}\n' for key, value in values.items())
+    return ''.join(lines)
+
+
+def publish(source, dest):
+    colors = palette(source)  # Validate everything before touching kdeglobals.
+    old = dest.read_text() if dest.exists() else ''
+    updated = merge(old, colors)
+    if updated == old:
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(dest.stat().st_mode) if dest.exists() else 0o600
+    fd, name = tempfile.mkstemp(prefix='.kdeglobals.', dir=dest.parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(updated)
+            stream.flush()
+            os.fchmod(stream.fileno(), mode)
+        os.replace(name, dest)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def main():
+    home = Path.home()
+    source = home / '.local/state/omarchy/current/theme/kdeglobals.colors'
+    dest = Path(os.environ.get('XDG_CONFIG_HOME') or home / '.config') / 'kdeglobals'
+    try:
+        publish(source, dest)
+    except (OSError, UnicodeError, ValueError) as error:
+        print(f'Could not update KDE colors: {error}', file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

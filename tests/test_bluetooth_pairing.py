@@ -75,11 +75,13 @@ class PairingPolicyTests(unittest.IsolatedAsyncioTestCase):
 class PairingPackagingTests(unittest.TestCase):
     def test_named_release_bindings_and_brightness_repeat(self):
         tree = ET.fromstring((PROJECT / 'desktop/shell/labwc-rc.xml').read_bytes())
-        for key in ('Super_L', 'Super_R', 'XF86HomePage'):
+        for key, command in (('Super_L', 'omarchy-shell omarchy.dock apps'),
+                             ('Super_R', 'omarchy-shell omarchy.dock apps'),
+                             ('XF86HomePage', 'omarchy-tablet-power home')):  # also wakes a locked screen
             bindings = tree.findall("./keyboard/keybind[@key='%s']" % key)
             self.assertEqual(len(bindings), 1)
             self.assertEqual(bindings[0].get('onRelease'), 'yes')
-            self.assertEqual(bindings[0].find('action').get('command'), 'omarchy-shell omarchy.dock apps')
+            self.assertEqual(bindings[0].find('action').get('command'), command)
         for key in ('XF86AudioRaiseVolume', 'XF86AudioLowerVolume'):
             self.assertIsNone(tree.find("./keyboard/keybind[@key='%s']" % key).get('onRelease'))
 

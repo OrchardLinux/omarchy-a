@@ -61,20 +61,19 @@ uv run python -m release.j71b.build \
   --output out/releases/0.1.0-orchard.3
 ```
 
-To use explicit artifacts instead, supply all three of `--kernel FILE`, `--dtb FILE`
-and `--modules-dir DIRECTORY`. Partial overrides are rejected to avoid mixing
+To use explicit artifacts instead, supply all three of `--kernel FILE`, `--dtbs DIRECTORY`
+and `--modules-dir DIRECTORY`. The recovery carries the DTB of every device that
+shares the kernel; m1n1 boots with the one matching the device. Partial overrides are rejected to avoid mixing
 kernel bundles. That explicit path does not invoke the cached builder and remains
 compatible with CI's published wheel/component inputs. The default cache respects
 `XDG_CACHE_HOME` and `ORCHARD_CACHE_DIR`, just like RAM builds; no cache flag is needed.
 
-Choose a new version and output directory for each build. Root builds first; recovery embeds its exact stream receipt, and the index is written last. Installed wheel resources supply hardware code and scripts. `image/j71b/image_policy.py` and `permissions.py` supply desktop readiness, systemd and privilege policy.
+Choose a new version and output directory for each build. Root builds first; recovery embeds its exact stream receipt, and the index is written last. Installed wheel resources supply hardware code and scripts. The installed root carries no Orchard device runtime: it boots directly from its own kernel-install boot entry.
 
 ## Validate without a device
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests -v
-ORCHARD_TEST_DIAGNOSTICS_TOOLS="$PWD/out/components/boot" \
-  PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests -v
 python -m release.j71b.audit out/releases/0.1.0-orchard.3/j71b-checkm8-pongo.toml
 orchard resolve out/releases/0.1.0-orchard.3/index.toml
 ```
@@ -100,4 +99,4 @@ Choose new evidence directories. `wlrctl` is a test-only native AArch64 helper, 
 
 ## Publish
 
-Follow [Publishing Omarchy A](docs/releasing.md). Build/audit success is not physical-device qualification: test a fresh installation and a cold-restart `orchard launch` on supported hardware before announcing the release. The experimental desktop auto-logs in and grants passwordless sudo; this is disclosed in the README and must not be described as a secure daily-use system.
+Follow [Publishing Omarchy A](docs/releasing.md). Build/audit success is not physical-device qualification: test a fresh installation and a cold-restart `orchard launch` on supported hardware before announcing the release. The experimental desktop auto-logs in at boot and has no disk encryption; this is disclosed in the README and must not be described as a secure daily-use system.
