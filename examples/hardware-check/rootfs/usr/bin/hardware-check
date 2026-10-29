@@ -5,6 +5,7 @@
 #   hardware-check           the automatic checks (about 3 minutes)
 #   hardware-check touch     drag on the screen for 20 s
 #   hardware-check keys      press the buttons for 20 s
+#   hardware-check wifi      only the Wi-Fi checks
 #   hardware-check charge    live charger view; plug sources in and out (Ctrl-C ends)
 #
 # Results: /run/hardware-check.txt, kernel log /run/dmesg.txt. Over USB
@@ -68,7 +69,8 @@ check_pcie() {
 check_wifi() {
     section "Wi-Fi"
     i=0
-    while [ -z "$(ls /sys/class/ieee80211 2>/dev/null)" ] && [ "$i" -lt 20 ]; do sleep 1; i=$((i + 1)); done
+    # The driver loads the firmware first and registers the interface after it.
+    while ! ls /sys/class/net | grep -q '^wlan' && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
     interface=$(ls /sys/class/net | grep -m1 '^wlan')
     if [ -z "$interface" ]; then
         if grep -qiE 'brcmf|wlan|wifi' /run/dmesg-boot.txt 2>/dev/null; then
@@ -109,9 +111,9 @@ check_wifi() {
         result SKIP "download: no DOWNLOAD_URL in $DOWNLOAD_CONFIG"
         return
     fi
-    for run in 1 2 3; do
+    for run in 1 2 3 4 5; do
         start=$(uptime_s)
-        sum=$(wget -q -O - "$DOWNLOAD_URL" | sha256sum | cut -d' ' -f1)
+        sum=$(timeout 60 wget -q -O - "$DOWNLOAD_URL" | sha256sum | cut -d' ' -f1)
         seconds=$(( $(uptime_s) - start )); [ "$seconds" -gt 0 ] || seconds=1
         if [ -n "$DOWNLOAD_SHA256" ] && [ "$sum" != "$DOWNLOAD_SHA256" ]; then
             result FAIL "download $run: checksum $sum, expected $DOWNLOAD_SHA256"
@@ -119,6 +121,7 @@ check_wifi() {
             result PASS "download $run in ${seconds}s, sha256 $sum"
         fi
     done
+    dmesg | grep -iE 'txstatus|brcmf_fw_crashed|halted|dart.*fault' | sed 's/^/    /' | tee -a "$REPORT"
 }
 
 check_battery() {
@@ -219,6 +222,7 @@ case "${1:-all}" in
         ;;
     touch) section "Touch"; watch_input 'touch|multitouch|z2' touch 'Drag on the screen' ;;
     keys) section "Keys"; watch_input 'gpio-keys|button|keys' keys 'Press each button a few times' ;;
+    wifi) : > "$REPORT"; dmesg > /run/dmesg-boot.txt; check_system; check_wifi; dmesg > /run/dmesg.txt; say "DONE" ;;
     charge) charge ;;
-    *) echo "usage: hardware-check [touch|keys|charge]"; exit 2 ;;
+    *) echo "usage: hardware-check [wifi|touch|keys|charge]"; exit 2 ;;
 esac

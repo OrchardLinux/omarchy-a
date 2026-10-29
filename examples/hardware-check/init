@@ -70,7 +70,9 @@ httpd -p 8080 -h /run 2>/dev/null || true
 
 echo "$name: RAM-only. USB root shell is unauthenticated; trusted host only."
 [ ! -f /etc/motd ] || cat /etc/motd
+# Quick Wi-Fi check at boot when the image carries a network to join.
+[ ! -f /etc/wpa_supplicant.conf ] || hardware-check wifi >/dev/null 2>&1 &
 while :; do
-    setsid sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1 || true
+    setsid -c sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1 || true
     sleep 1
 done

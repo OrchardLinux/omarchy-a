@@ -24,7 +24,8 @@ At the shell, run `hardware-check`. It takes about three minutes and checks:
 - the kernel log (IOMMU faults, NVMe timeouts, warnings, oopses).
 
 Then, if you want: `hardware-check touch`, `hardware-check keys` and
-`hardware-check charge` (plug chargers in and out).
+`hardware-check charge` (plug chargers in and out). `hardware-check wifi` runs
+only the Wi-Fi checks.
 
 The report is `/run/hardware-check.txt`, the kernel log `/run/dmesg.txt`. With USB
 networking up (the host gets 10.71.0.2), both are at `http://10.71.0.1:8080/`.
@@ -47,9 +48,14 @@ network={
 For a timed, checksummed download, create `rootfs/etc/hardware-check.conf`:
 
 ```sh
-DOWNLOAD_URL=http://192.168.0.10:8000/100MB.bin
+DOWNLOAD_URL=http://192.168.0.10:8000/10MB.bin
 DOWNLOAD_SHA256=<sha256 of that file>
 ```
 
+The download runs five times, each stopped after 60 s; a file of about 10 MB
+keeps the check short.
+
 Both files stay local: `.gitignore` keeps them out of git. Without them, those
-checks are skipped.
+checks are skipped. With `wpa_supplicant.conf` in the image, the Wi-Fi checks
+also run by themselves at boot; their report is at the same address when they
+finish.
