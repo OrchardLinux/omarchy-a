@@ -1,10 +1,7 @@
 """Publish a single-target TOML manifest and its pinned index."""
 import json
 from pathlib import Path
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib
+import tomllib
 
 from orchard_hardware.image.integrity import sha
 
