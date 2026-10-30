@@ -11,10 +11,10 @@ import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
-import orchard_hardware
+from orchard.hardware import ROOT
 
 PROJECT = Path(__file__).resolve().parents[1]
-HARDWARE = Path(orchard_hardware.__file__).parent
+HARDWARE = ROOT
 
 def stream(entries):
     output = io.BytesIO()
@@ -150,7 +150,7 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
 
     def test_recovery_framing_preserves_the_compressed_initramfs(self):
         import struct
-        from orchard_hardware.boot.assemble import INITRAMFS_MAGIC
+        from orchard.image.assemble import INITRAMFS_MAGIC
         from release.j71b.audit import audit_recovery
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -161,7 +161,7 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
                 (root / name).write_bytes(data)
             (root / 'profile.json').write_text(json.dumps({'bootargs': 'chosen.bootargs=test\n'}))
             image = root / 'recovery.bin'
-            argv = [sys.executable, '-m', 'orchard_hardware.boot.assemble', '--manifest', str(root / 'profile.json'),
+            argv = [sys.executable, '-m', 'orchard.image.assemble', '--manifest', str(root / 'profile.json'),
                     '--output', str(image)]
             for name in inputs:
                 argv.extend(['--' + name.rstrip('2'), str(root / name)])

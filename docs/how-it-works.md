@@ -35,7 +35,7 @@ PongoOS receives the recovery payload over USB. The payload combines m1n1, boot 
 
 Recovery is a small Linux system containing USB connectivity, SSH, storage tools and kernel modules. It brings up internal storage read-only at boot and never writes to it by itself.
 
-The installer writes two partitions next to iPadOS: a boot partition and the Omarchy A root. Every later start goes through the same chain, but m1n1 loads the kernel, initrd and device tree from the boot partition instead of recovery from the host (see the [boot contract](https://github.com/OrchardLinux/hardware/blob/main/docs/boot-contract.md)).
+The installer writes two partitions next to iPadOS: a boot partition and the Omarchy A root. Every later start goes through the same chain, but m1n1 loads the kernel, initrd and device tree from the boot partition instead of recovery from the host (see the [boot contract](https://github.com/OrchardLinux/orchard/blob/main/docs/boot-contract.md)).
 
 ## What a release contains
 
@@ -113,5 +113,5 @@ The install script checks the partition table against the plan before its first 
 
 - [Release assembly](../release/j71b/build.py) and [manifest generation](../release/manifests.py).
 - [Image assembly and validation instructions](../BUILD.md).
-- [Host orchestration](https://github.com/OrchardLinux/cli/blob/main/src/orchard_cli/service.py) and the [install script](https://github.com/OrchardLinux/cli/blob/main/src/orchard_cli/install_device.py).
-- [Recovery runtime](https://github.com/OrchardLinux/hardware/tree/main/runtime/recovery), [recovery image producer](https://github.com/OrchardLinux/hardware/tree/main/image) and the [boot contract](https://github.com/OrchardLinux/hardware/blob/main/docs/boot-contract.md).
+- [Host orchestration](https://github.com/OrchardLinux/orchard/blob/main/src/orchard/service.py) and the [install script](https://github.com/OrchardLinux/orchard/blob/main/src/orchard/install_device.py).
+- [Recovery runtime](https://github.com/OrchardLinux/orchard/tree/main/runtime/recovery), [recovery image producer](https://github.com/OrchardLinux/orchard/tree/main/src/orchard/image) and the [boot contract](https://github.com/OrchardLinux/orchard/blob/main/docs/boot-contract.md).

@@ -1,3 +1,0 @@
-# Local test settings: Wi-Fi credentials and an optional download to time.
-rootfs/etc/wpa_supplicant.conf
-rootfs/etc/hardware-check.conf

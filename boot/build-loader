@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import orchard_hardware
+from orchard.hardware import ROOT as HARDWARE
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--output', required=True, type=Path)
@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='omarchy-loader-') as temporary:
     if not args.logo_header:
         subprocess.run([sys.executable, str(here / 'generate-logo.py'),
                         '--size', '480', '--output', str(header)], check=True)
-    subprocess.run([str(Path(orchard_hardware.__file__).parent / 'boot/m1n1/build'),
+    subprocess.run([str(HARDWARE / 'boot/m1n1/build'),
                     'j71b', '--output', str(args.output),
                     '--extra-patch', str(here / 'm1n1/patches/j71b/0002-omarchy-splash.patch'),
                     '--include-header', str(header), '--extra-cflags', '-DOMARCHY_SPLASH',

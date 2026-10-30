@@ -21,14 +21,13 @@ class CachedKernelTests(unittest.TestCase):
         }, loader=Path('/branded/loader'), pongo=Path('/branded/pongo'))
 
     def test_omitted_bundle_uses_generic_builder_and_preserves_branding(self):
-        api = ModuleType('orchard_cli.build')
+        api = ModuleType('orchard.build')
         api.prepare_kernel = Mock(return_value=Path('/shared/kernel'))
-        api.configured_device = Mock(return_value='new-board')
         args = self.args()
-        with patch.dict(sys.modules, {'orchard_cli.build': api}):
+        with patch.dict(sys.modules, {'orchard.build': api}):
             build.resolve_kernel(args)
-        api.configured_device.assert_called_once_with(build.PROJECT)
-        api.prepare_kernel.assert_called_once_with(device='new-board')
+        # The J71b release builds for J71b, whatever board a developer chose.
+        api.prepare_kernel.assert_called_once_with(device='j71b')
         self.assertEqual(args.kernel, Path('/shared/kernel/Image.gz'))
         self.assertEqual(args.dtbs, Path('/shared/kernel/dtbs'))
         self.assertEqual(args.modules_dir, Path('/shared/kernel/lib/modules'))
@@ -38,7 +37,7 @@ class CachedKernelTests(unittest.TestCase):
     def test_explicit_bundle_does_not_import_cached_builder(self):
         args = self.args((True, True, True))
         before = vars(args).copy()
-        with patch.dict(sys.modules, {'orchard_cli.build': None}):
+        with patch.dict(sys.modules, {'orchard.build': None}):
             build.resolve_kernel(args)
         self.assertEqual(vars(args), before)
 
@@ -47,7 +46,7 @@ class CachedKernelTests(unittest.TestCase):
             if not any(supplied) or all(supplied):
                 continue
             with self.subTest(supplied=supplied), \
-                    patch.dict(sys.modules, {'orchard_cli.build': None}), \
+                    patch.dict(sys.modules, {'orchard.build': None}), \
                     self.assertRaisesRegex(ValueError, 'together'):
                 build.resolve_kernel(self.args(supplied))
 

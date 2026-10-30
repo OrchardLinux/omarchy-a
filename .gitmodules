@@ -1,6 +1,0 @@
-[submodule "hardware"]
-	path = hardware
-	url = https://github.com/OrchardLinux/hardware.git
-[submodule "cli"]
-	path = cli
-	url = https://github.com/OrchardLinux/cli.git

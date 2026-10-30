@@ -7,8 +7,8 @@ import subprocess
 import struct
 import tarfile
 
-from orchard_hardware.boot.assemble import INITRAMFS_MAGIC
-from orchard_hardware import firmware_path
+from orchard.image.assemble import INITRAMFS_MAGIC
+from orchard.hardware import firmware_path
 from release.manifests import read_release
 
 from .public_root import sha

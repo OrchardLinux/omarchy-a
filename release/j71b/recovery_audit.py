@@ -5,7 +5,7 @@ import json
 from pathlib import Path, PurePosixPath
 import stat
 
-from orchard_hardware import firmware_path
+from orchard.hardware import firmware_path
 
 
 def read_newc(stream):

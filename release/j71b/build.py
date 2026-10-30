@@ -9,9 +9,6 @@ import sys
 
 from .public_root import build as build_root, sha
 from release.manifests import write as write_manifests
-from importlib.metadata import version as package_version
-
-PROJECT = Path(__file__).resolve().parents[2]
 
 
 def resolve_kernel(args):
@@ -21,9 +18,10 @@ def resolve_kernel(args):
         if not all(supplied):
             raise ValueError('Provide --kernel, --dtbs and --modules-dir together, or omit all three')
         return
-    from orchard_cli.build import configured_device, prepare_kernel
-    device = configured_device(PROJECT)
-    kernel = prepare_kernel(device=device)
+    from orchard.build import prepare_kernel
+    # This is the J71b release; moving device files out of the distribution
+    # (the device layer) replaces release/j71b with one release for all boards.
+    kernel = prepare_kernel(device='j71b')
     args.kernel = kernel / 'Image.gz'
     args.dtbs = kernel / 'dtbs'
     args.modules_dir = kernel / 'lib/modules'
@@ -31,9 +29,9 @@ def resolve_kernel(args):
 
 def recovery_dtbs(dtbs):
     """One recovery boots every device that shares this kernel: m1n1 picks its DTB."""
-    import orchard_hardware
-    platform = orchard_hardware.device('j71b')['kernel']['platform']
-    names = [orchard_hardware.device(profile)['kernel'] for profile in orchard_hardware.profiles()]
+    from orchard import hardware
+    platform = hardware.device('j71b')['kernel']['platform']
+    names = [hardware.device(profile)['kernel'] for profile in hardware.profiles()]
     paths = [dtbs / (kernel['dtb'] + '.dtb') for kernel in names if kernel['platform'] == platform]
     missing = [path.name for path in paths if not path.is_file()]
     if missing:
@@ -68,7 +66,7 @@ def main():
     root = build_root(args.base, args.base_receipt, args.modules_dir,
                       args.output, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools,
                       kernel=args.kernel, dtbs=args.dtbs)
-    command = [sys.executable, '-m', 'orchard_hardware.image.recovery']
+    command = [sys.executable, '-m', 'orchard.image.recovery']
     command.extend(f'--dtb={path}' for path in recovery_dtbs(args.dtbs))
     for name in ('base', 'base_receipt', 'modules_dir', 'loader', 'kernel', 'busybox', 'dropbear', 'dropbearkey',
                  'wpa_supplicant', 'wpa_cli', 'iw'):
@@ -88,7 +86,8 @@ def main():
                 'qualification': 'pending-fresh-hardware-installation', 'assets': assets}
     published = write_manifests(args.output, args.release, root)
     # Assembly provenance is separate from the public installation contract.
-    manifest['hardware_package'] = package_version('orchard-hardware')
+    from orchard import hardware
+    manifest['orchard'] = hardware.revision()
     manifest['inputs'] = {name: {'bytes': path.stat().st_size, 'sha256': sha(path)}
                           for name, path in vars(args).items() if isinstance(path, Path) and path.is_file()}
     (args.output / 'build-receipt.json').write_text(json.dumps(manifest, indent=2) + '\n')

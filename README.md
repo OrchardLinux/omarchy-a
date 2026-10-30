@@ -6,40 +6,29 @@ Includes a device-aware CLI and release format for installation, diagnostics, an
 
 ## Development checkout
 
-CLI and hardware sources live in the `cli/` and `hardware/` Git submodules.
-[uv](https://docs.astral.sh/uv/) manages both as editable local packages; no
-virtual-environment activation or published Orchard release is required.
+This repository is the distribution: desktop, root filesystem and release. The
+hardware support and the `orchard` tool live in
+[orchard](https://github.com/OrchardLinux/orchard); put its launcher on your PATH
+once (see its [README](https://github.com/OrchardLinux/orchard#develop)). Here,
+`orchard` runs orchard's `main` by default. To work against your own orchard
+checkout, e.g. a branch with a driver you need, name it in `orchard.local.toml`,
+which is never committed:
 
-`./orchard` initializes missing source submodules and prepares Python automatically.
-Existing submodule checkouts and local edits are never reset or updated. Cloning
-with `--recurse-submodules` also works.
-
-For a minimal RAM boot:
-
-```sh
-./orchard build examples/minimal-boot
-./orchard run examples/minimal-boot
+```toml
+orchard = "../orchard-installer"
+device = "j71b"
 ```
 
-The root launcher always uses this checkout's editable CLI and `.venv`, not a
-globally installed Orchard or another active environment. Each example contains
-its device-side `init` and optional `rootfs/` files; no per-example wrappers,
-registration or configuration language. `examples/` is only where we keep samples:
-`./orchard build use_cases/my-test` or an unrelated absolute directory works too.
-
-Every payload also gets `/usr/libexec/orchard/usb-session`. When the payload's
-`init` runs it, the device has USB serial, USB networking and SSH for this host's
-key; the host key is pinned over USB serial on first use:
+Run this repository's tests and producers in that orchard's environment:
 
 ```sh
-./orchard shell                      # root shell
-./orchard exec -- dmesg              # one command
-./orchard push FILE /tmp/FILE        # copy in, checked by SHA-256
-./orchard pull /run/log.txt log.txt  # copy out
+orchard python -m unittest discover -s tests
+orchard python -m release.j71b.build ...
 ```
 
-`push`/`pull --serial` use the USB serial shell instead, for payloads without
-SSH (`transport = false` in the example's `orchard.toml`, as in `minimal-boot`).
+RAM experiments and device bring-up happen in orchard itself, with its
+[examples](https://github.com/OrchardLinux/orchard/tree/main/examples) and
+[bring-up guide](https://github.com/OrchardLinux/orchard/blob/main/docs/device-bring-up.md).
 
 ## Supported devices
 
@@ -125,8 +114,7 @@ An iPad cannot boot a Linux installer like a PC boots an ISO. [How Omarchy A get
 ## Contribute or bring up a device
 
 - **Desktop:** improve touch interaction, the shell, applications, and Omarchy integration here.
-- **Hardware:** contribute kernel patches, device trees, firmware recipes, and runtime support to [hardware](https://github.com/OrchardLinux/hardware).
-- **Host tooling:** improve device adapters, boot transports, and installation workflows in [CLI](https://github.com/OrchardLinux/cli).
+- **Hardware and host tooling:** contribute kernel patches, device trees, firmware recipes, runtime support, device adapters, boot transports and installation workflows to [orchard](https://github.com/OrchardLinux/orchard).
 - **Create your own remix:** customize the desktop, root filesystem, and image policy using the same release format; [minimal-linux](https://github.com/OrchardLinux/minimal-linux) provides a smaller, Alpine-based example.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for bring-up guidance and [BUILD.md](BUILD.md) for image assembly and validation.

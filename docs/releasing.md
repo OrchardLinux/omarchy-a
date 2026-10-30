@@ -4,7 +4,7 @@ Build and validate a coherent local release using [BUILD.md](../BUILD.md). Its r
 
 ## GitHub builds
 
-Push a `v*` version tag to run the native build workflow and create a draft release, or use manual dispatch to build downloadable workflow artifacts without creating a release. Its explicit hardware/CLI dependency tags must already be published. See [BUILD.md](../BUILD.md#github-actions). Review and qualify the draft before publishing; the automatic-login/passwordless-sudo warning remains required.
+Push a `v*` version tag to run the native build workflow and create a draft release, or use manual dispatch to build downloadable workflow artifacts without creating a release. Its component release tag must already be published; the tools are orchard's `main`, and the receipt records the exact commit. See [BUILD.md](../BUILD.md#github-actions). Review and qualify the draft before publishing; the automatic-login/passwordless-sudo warning remains required.
 
 Public tag/manual builds attest all final assets, including `SHA256SUMS`, and retain `omarchy-a-build.sigstore.jsonl` with workflow/draft release assets. Private or unknown-visibility builds skip signing and bundle copying. Signing permissions belong only to final assembly; public signing failures prevent release creation. The bundle is not listed in the signed checksum manifest. Verify a file with `gh attestation verify FILE --repo OrchardLinux/omarchy-a`; this does not qualify the image on a device.
 
@@ -38,7 +38,7 @@ https://github.com/OrchardLinux/omarchy-a/releases/latest/download/index.toml
 
 Only that entry point follows latest. Its manifest and image references point to specific release tags, preventing cross-release mixing.
 
-Publish the [CLI wheel requirements](https://github.com/OrchardLinux/cli/blob/main/docs/releases.md) and the [hardware shared launcher](https://github.com/OrchardLinux/hardware/blob/main/boot/quiet/README.md) before announcing the bootstrap. The launcher catalogue must include this release's exact root receipt and compatible kernel/runtime inputs; a wheel alone does not enable `orchard launch`. `install.sh` lives in this repository; project packages do not need PyPI publication.
+Publish the [orchard release](https://github.com/OrchardLinux/orchard/blob/main/docs/releases.md) with the [shared launcher](https://github.com/OrchardLinux/orchard/blob/main/boot/quiet/README.md) before announcing the bootstrap. The launcher catalogue must include this release's exact root receipt and compatible kernel/runtime inputs; a wheel alone does not enable `orchard launch`. `install.sh` lives in this repository; project packages do not need PyPI publication.
 
 Before announcing a release:
 

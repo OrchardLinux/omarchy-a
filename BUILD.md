@@ -4,9 +4,9 @@
 
 `.github/workflows/build.yml` runs unit tests on pull requests and `main`. Version tags (`v*`) and manual dispatches additionally generate the loader artwork on macOS, build m1n1 on Linux ARM64, and the signed Arch Linux ARM userspace on a native ARM64 worker using the same pinned Arch job image and `install-toolchain` recipes as local builds. Source packages build as an unprivileged user; rootfs package assembly runs as root in the disposable job. No nested Podman is used. Shared recipe path variables select actual CI paths instead of container mounts. Native execution is not a security or network sandbox.
 
-`ci/dependencies` installs a hashed, published CLI/hardware wheel pair and verifies the compiled hardware bundle. Select immutable dependency tags during manual dispatch; tag builds use explicit defaults in the workflow. Hardware code comes from the wheel, not a sibling checkout or an implicit `main` branch.
+`ci/dependencies` checks out orchard's `main` (or `ORCHARD_REF`) and verifies the compiled component bundle of a published orchard release. Select the release tag of the components during manual dispatch; tag builds use the explicit default in the workflow. The release receipt records the exact orchard commit that built it.
 
-Assembly runs the same producers, artifact auditor, CLI resolution and publication staging as local builds. Version tags create **draft** releases; manual builds only retain workflow artifacts for seven days. Nothing automatically announces a release or operates a device. Follow the [release order](https://github.com/OrchardLinux/hardware/blob/main/docs/ci.md), then qualify fresh installation and cold-restart launch on hardware.
+Assembly runs the same producers, artifact auditor, CLI resolution and publication staging as local builds. Version tags create **draft** releases; manual builds only retain workflow artifacts for seven days. Nothing automatically announces a release or operates a device. Follow the [release order](https://github.com/OrchardLinux/orchard/blob/main/docs/ci.md), then qualify fresh installation and cold-restart launch on hardware.
 
 ## Local setup
 
@@ -16,25 +16,20 @@ environment for image/component builds.
 ## Set up build tools
 
 ```sh
-./orchard --version
+orchard --version
 ```
 
-The launcher initializes missing CLI/hardware submodules and uv installs them
-editable into the workspace environment. No activation, published wheel pair or
-Orchard release is required for local development. Use `uv run python ...` for the
-existing Python producers below, or the workspace interpreter selected by your
-editor. CI's explicit published-input path remains unchanged.
-
-The root `orchard.toml` selects the default hardware recipe with `device = "j71b"`.
-RAM builds and automatic kernel resolution below use that setting.
+`orchard` comes from orchard's launcher on your PATH and runs orchard's `main`, or
+the checkout your `orchard.local.toml` names. Run the Python producers below with
+`orchard python ...`, which uses that checkout's environment.
 
 ## Produce components
 
 - `desktop/build-sources` and `desktop/build`: desktop applications and payload.
 - `system/build-rootfs`: signed Arch Linux ARM base and package receipt; see [system/j71b/README.md](system/j71b/README.md).
-- Hardware supplies kernel, DTB, module and static BusyBox/Dropbear recipes; see [hardware build instructions](https://github.com/OrchardLinux/hardware/blob/main/BUILD.md). Local assembly automatically resolves the kernel/DTB/modules through Orchard's shared cache. Build the static tools separately; supply explicit kernel artifacts only when overriding that default.
+- Hardware supplies kernel, DTB, module and static BusyBox/Dropbear recipes; see [orchard's build instructions](https://github.com/OrchardLinux/orchard/blob/main/BUILD.md). Local assembly automatically resolves the kernel/DTB/modules through Orchard's shared cache. Build the static tools separately; supply explicit kernel artifacts only when overriding that default.
 - `python boot/build-loader`: distro-branded loader (m1n1 with the Omarchy logo).
-- Pongo is not built here. Releases ship hardware's one Pongo, `quiet/pongo.bin` from the hardware component bundle (black screen; the logo appears with m1n1).
+- Pongo is not built here. Releases ship orchard's one Pongo, `quiet/pongo.bin` from the orchard component bundle (black screen; the logo appears with m1n1).
 
 Retain each component's receipt. Kernel, modules and DTB must be compatible. Do not change hardware activation or timing as part of presentation changes.
 
@@ -42,12 +37,12 @@ Retain each component's receipt. Kernel, modules and DTB must be compatible. Do 
 
 The following example uses distro-owned components collected under `out/components/`.
 The omitted kernel/DTB/module inputs come from the same Orchard builder and cache
-as `./orchard build examples/minimal-boot`. Matching inputs reuse the compiled
+as `orchard build` in orchard's examples. Matching inputs reuse the compiled
 bundle without checking out or compiling Linux again. Loader branding,
 userspace and assembly remain owned by this repository.
 
 ```sh
-uv run python -m release.j71b.build \
+orchard python -m release.j71b.build \
   --release 0.1.0-orchard.3 \
   --base out/components/base/rootfs.tar.gz \
   --base-receipt out/components/base/rootfs.tar.gz.json \

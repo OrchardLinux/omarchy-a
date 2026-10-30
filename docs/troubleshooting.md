@@ -39,7 +39,7 @@ orchard status
 orchard diagnostics
 ```
 
-These commands require the credentials established for the current device and boot. See the [CLI documentation](https://github.com/OrchardLinux/cli#documentation) for detailed workflows.
+These commands require the credentials established for the current device and boot. See the [orchard documentation](https://github.com/OrchardLinux/orchard#develop) for detailed workflows.
 
 ## Installation failed or stopped responding
 
