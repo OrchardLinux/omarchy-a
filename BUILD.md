@@ -31,6 +31,7 @@ RAM builds and automatic kernel resolution below use that setting.
 ## Produce components
 
 - `desktop/build-sources` and `desktop/build`: desktop applications and payload.
+- `desktop/build-aop`: J71b AOP daemon; `--test` runs synthetic AFK checks. See `desktop/aop/README.md`.
 - `system/build-rootfs`: signed Arch Linux ARM base and package receipt; see [system/j71b/README.md](system/j71b/README.md).
 - Hardware supplies kernel, DTB, module and static BusyBox/Dropbear recipes; see [hardware build instructions](https://github.com/OrchardLinux/hardware/blob/main/BUILD.md). Local assembly automatically resolves the kernel/DTB/modules through Orchard's shared cache. Build the static tools separately; supply explicit kernel artifacts only when overriding that default.
 - `python boot/build-loader`: distro-branded loader (m1n1 with the Omarchy logo).

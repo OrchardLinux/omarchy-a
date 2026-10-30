@@ -27,10 +27,12 @@ class GreeterStagingTests(unittest.TestCase):
             keyboard.write_bytes(b'keyboard')
             xpi = root / 'extension.xpi'
             xpi.write_bytes(b'extension')
+            daemon = root / 'apple-aop-daemon'
+            daemon.write_bytes(b'AArch64 test fixture')
             target = root / 'payload'
             args = ['stage.py', str(target), '--upstream', str(upstream), '--keyboard', str(keyboard),
                     '--keyboard-sha256', hashlib.sha256(keyboard.read_bytes()).hexdigest(),
-                    '--omafox-xpi', str(xpi)]
+                    '--omafox-xpi', str(xpi), '--aop-daemon', str(daemon)]
             with patch.object(sys, 'argv', args), patch.object(stage, 'XPI_SHA', hashlib.sha256(xpi.read_bytes()).hexdigest()):
                 stage.main()
             greeter = target / 'usr/share/omarchy-greeter'
@@ -58,6 +60,9 @@ class GreeterStagingTests(unittest.TestCase):
             self.assertTrue((target / 'etc/systemd/system/greetd.service.d/seatd.conf').is_file())
             self.assertFalse((target / 'etc/systemd/system/getty@tty1.service.d').exists())
             self.assertFalse((target / 'home/tablet/.bash_profile').exists())
+            self.assertEqual((target / 'usr/libexec/apple-aop-daemon').read_bytes(), daemon.read_bytes())
+            self.assertTrue((target / 'usr/libexec/apple-aop').stat().st_mode & 0o111)
+            self.assertTrue((target / 'usr/lib/systemd/user/apple-aop-rotate.service').is_file())
 
 
 if __name__ == '__main__':

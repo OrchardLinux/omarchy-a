@@ -12,3 +12,4 @@ export OMARCHY_PATH=/home/tablet/.local/share/omarchy-ipad
 printf '0\n' > "$XDG_RUNTIME_DIR/omarchy-keyboard-visible"
 "$OMARCHY_PATH/bin/omarchy-keyboard" run > "$XDG_RUNTIME_DIR/omarchy-keyboard.log" 2>&1 &
 qs -p "$OMARCHY_PATH/shell/shell.qml" > "$XDG_RUNTIME_DIR/omarchy-shell.log" 2>&1 &
+/usr/libexec/apple-aop-session-start > "$XDG_RUNTIME_DIR/apple-aop-session.log" 2>&1 &

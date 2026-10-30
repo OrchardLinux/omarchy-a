@@ -126,10 +126,12 @@ def build(output):
             raise ValueError('Omarchy checkout differs from pin')
         result_dir = work / 'result'
         result_dir.mkdir()
+        aop = work / 'apple-aop-daemon'
+        subprocess.run([sys.executable, str(HERE / 'build-aop'), '--output', str(aop)], check=True)
         subprocess.run([sys.executable, str(HERE / 'stage.py'), str(result_dir / 'payload'),
                         '--upstream', str(upstream), '--keyboard', str(sources / 'wvkbd-mobintl'),
                         '--keyboard-sha256', built_files['wvkbd-mobintl'],
-                        '--omafox-xpi', str(FILES['omafox_xpi'])], check=True)
+                        '--omafox-xpi', str(FILES['omafox_xpi']), '--aop-daemon', str(aop)], check=True)
         packages = result_dir / 'packages'
         packages.mkdir()
         shutil.copyfile(sources / 'omafox.pkg.tar.xz', packages / 'omafox.pkg.tar.xz')

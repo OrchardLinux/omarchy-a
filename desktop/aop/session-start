@@ -1,0 +1,6 @@
+#!/bin/sh
+# The labwc session owns this user's compositor environment.
+if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -n "${LABWC_PID:-}" ]; then
+    systemctl --user import-environment WAYLAND_DISPLAY LABWC_PID XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
+    systemctl --user restart apple-aop-rotate.service
+fi

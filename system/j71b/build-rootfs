@@ -47,7 +47,7 @@ install -d "$root/etc/systemd/system"
 for unit in sleep suspend hibernate hybrid-sleep suspend-then-hibernate; do
   ln -s /dev/null "$root/etc/systemd/system/$unit.target"
 done
-systemctl --root="$root" enable greetd.service NetworkManager.service bluetooth.service seatd.service
+systemctl --root="$root" enable greetd.service NetworkManager.service bluetooth.service seatd.service apple-aop.service
 : > "$root/etc/machine-id"
 # Without a static name, NetworkManager adopts the network's reverse DNS
 # name and BlueZ advertises "archlinux" to accessories.

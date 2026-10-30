@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--keyboard", type=Path, required=True, help="built wvkbd-mobintl binary")
     parser.add_argument("--keyboard-sha256", required=True, help="hash from the source-build manifest")
     parser.add_argument("--omafox-xpi", type=Path, required=True, help="signed Omafox extension")
+    parser.add_argument("--aop-daemon", type=Path, required=True, help="built AArch64 AOP service")
     args = parser.parse_args()
     FORK, KEYBOARD, XPI = args.upstream, args.keyboard, args.omafox_xpi
     target = args.target.resolve()
@@ -84,6 +85,13 @@ def main():
             link.symlink_to(Path("/home/tablet/.local/share/omarchy-ipad/bin") / script.name)
     config = target / "home/tablet/.config"
     mapping = {
+        HERE / "aop/firmware.py": target / "usr/libexec/apple-aop",
+        HERE / "aop/rotate.py": target / "usr/libexec/apple-aop-rotate",
+        HERE / "aop/session-start": target / "usr/libexec/apple-aop-session-start",
+        HERE / "aop/apple-aop.service": target / "usr/lib/systemd/system/apple-aop.service",
+        HERE / "aop/apple-aop-rotate.service": target / "usr/lib/systemd/user/apple-aop-rotate.service",
+        HERE / "aop/rotation.json": config / "apple-aop/rotation.json",
+        args.aop_daemon: target / "usr/libexec/apple-aop-daemon",
         PORT / "config/omarchy/shell.json": config / "omarchy-ipad/shell.json",
         PORT / "labwc-rc.xml": config / "labwc/rc.xml",
         CONFIG / "labwc-autostart": config / "labwc/autostart",
@@ -107,6 +115,8 @@ def main():
     }
     for src, dst in mapping.items():
         copy(src, dst)
+    for name in ("apple-aop", "apple-aop-daemon", "apple-aop-rotate", "apple-aop-session-start"):
+        (target / "usr/libexec" / name).chmod(0o755)
     # Branding is static; kernel, memory and CPU information use live probes.
     assert "VM prototype" not in (config / "fastfetch/config.jsonc").read_text()
     # Offer Suspend only when the kernel-side charger PM contract is ready.
