@@ -70,7 +70,7 @@ the DTB of every board of its platform; m1n1 boots with the one matching the
 device. The cache respects `XDG_CACHE_HOME` and `ORCHARD_CACHE_DIR`, just like RAM
 builds.
 
-Choose a new version and output directory for each build. Root builds first; recoveries embed its exact stream receipt, and `release.toml` and the index are written last. The installed root carries no Orchard device runtime: it boots directly from its own kernel-install boot entry.
+Choose a new version and output directory for each build. Root builds first; recoveries embed its exact stream receipt, and `release.toml` and the index are written last. The installed root carries no Orchard device runtime: it boots directly from the boot entry orchard's installer writes.
 
 ## Validate without a device
 

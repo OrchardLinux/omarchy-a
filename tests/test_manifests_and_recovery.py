@@ -45,7 +45,7 @@ class Publication(unittest.TestCase):
             self.assertNotIn('device', doc)
             self.assertEqual(doc['platforms'], platforms)
             self.assertEqual(doc['orchard'], ORCHARD)
-            self.assertEqual(doc['install']['default_root'], '/omarchy')
+            self.assertEqual(doc['install'], {'default_root': '/omarchy', 'account': True})
             self.assertEqual(doc['root']['sha256'], hashlib.sha256(b'rootfs.tar.zst').hexdigest())
             self.assertEqual(doc['min_orchard'], '0.2.0')
             self.assertEqual(manifests.read_release(path)['platforms'], platforms)

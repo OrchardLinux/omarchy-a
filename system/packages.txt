@@ -4,8 +4,6 @@ base
 archlinuxarm-keyring
 pacman
 sudo
-# Builds the initrd when kernel-install adds the Orchard kernel (etc/kernel/install.conf).
-mkinitcpio
 # The installer hashes the lock-screen PIN with it; the PIN check uses it too.
 openssl
 python
