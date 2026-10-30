@@ -16,7 +16,7 @@ here = Path(__file__).resolve().parent
 with tempfile.TemporaryDirectory(prefix='omarchy-loader-') as temporary:
     header = args.logo_header or Path(temporary) / 'omarchy-logo.h'
     if not args.logo_header:
-        subprocess.run([sys.executable, str(here / 'pongo/generate-logo.py'),
+        subprocess.run([sys.executable, str(here / 'generate-logo.py'),
                         '--size', '480', '--output', str(header)], check=True)
     subprocess.run([str(Path(orchard_hardware.__file__).parent / 'boot/m1n1/build'),
                     'j71b', '--output', str(args.output),

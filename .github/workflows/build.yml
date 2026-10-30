@@ -71,11 +71,12 @@ jobs:
           .venv/bin/python -m pip install ./hardware ./cli
           .venv/bin/python -m pip check
       - run: .venv/bin/python -m unittest discover -s tests -v
-  pongo:
+  # Pongo is not built here: releases ship hardware's one Pongo (quiet/pongo.bin).
+  artwork:
     if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     needs: test
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
       - name: Reuse unchanged successful outputs
         if: inputs.reuse_run_id != ''
@@ -95,25 +96,20 @@ jobs:
           python-version: '3.12'
       - run: brew install imagemagick librsvg
         if: inputs.reuse_run_id == ''
-      - name: Build branded Pongo and matching loader artwork
+      - name: Generate the loader artwork
         if: inputs.reuse_run_id == ''
         run: |
-          python boot/build-pongo.py --output out/boot/pongo.bin
-          python boot/pongo/generate-logo.py --size 480 --output out/boot/omarchy-logo.h
-          python boot/pongo/test-renderer.py
+          python boot/generate-logo.py --size 480 --output out/boot/omarchy-logo.h
           tar -C out -czf out/boot-inputs.tar.gz boot
-          tar -C boot/pongo/.work/source --exclude=.git -czf out/pongo-source.tar.gz .
       - uses: actions/upload-artifact@v4
         with:
           name: omarchy-boot-inputs
-          path: |
-            out/boot-inputs.tar.gz
-            out/pongo-source.tar.gz
+          path: out/boot-inputs.tar.gz
           compression-level: 0
           if-no-files-found: error
           retention-days: 2
   loader:
-    needs: pongo
+    needs: artwork
     runs-on: ubuntu-24.04-arm
     container: debian:bookworm
     timeout-minutes: 90
@@ -248,7 +244,7 @@ jobs:
           if-no-files-found: error
           retention-days: 2
   assets:
-    needs: [test, pongo, loader, userspace]
+    needs: [test, artwork, loader, userspace]
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -314,7 +310,7 @@ jobs:
             --base out/base/rootfs.tar.gz --base-receipt out/base/rootfs.tar.gz.json \
             --modules-dir out/components/kernel/lib/modules --loader out/boot/m1n1.bin \
             --kernel out/components/kernel/Image.gz --dtb out/components/kernel/j71b.dtb \
-            --pongo out/boot/pongo.bin --busybox out/components/boot/busybox \
+            --pongo out/components/quiet/pongo.bin --busybox out/components/boot/busybox \
             --dropbear out/components/boot/dropbear --dropbearkey out/components/boot/dropbearkey \
             --cursor-tools out/cursor --bluetooth-tools out/bluetooth --labwc-tools out/labwc \
             --output out/release
@@ -322,7 +318,6 @@ jobs:
           orchard resolve out/release/index.toml
           python -m release.publish --tag "$TAG" --release-dir out/release --output out/publication
           cp out/release/rootfs.json out/release/build-receipt.json out/publication/
-          cp out/downloads/pongo-source.tar.gz out/publication/
           git archive --format=tar.gz -o out/publication/omarchy-linux-source.tar.gz HEAD
           (cd out/publication && sha256sum ./* > ../SHA256SUMS && mv ../SHA256SUMS .)
       - name: Attest public build

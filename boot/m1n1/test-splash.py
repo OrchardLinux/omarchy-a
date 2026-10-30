@@ -14,8 +14,6 @@ start = source.index('    /* Match Pongo\'s visible geometry; publish the comple
 renderer = source[start:source.index('\n#else', start)]
 start = source.index('static inline u32 rgb2pixel_30')
 helpers = source[start:source.index('static inline rgb_t fb_get_pixel', start)]
-assert (SRC / 'omarchy-logo.h').read_bytes() == (
-    HERE / '../pongo/.work/source/src/drivers/framebuffer/omarchy-logo.h').read_bytes()
 program = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -98,4 +96,4 @@ with tempfile.TemporaryDirectory(prefix='m1n1-splash-') as temporary:
                     '-I', str(SRC), str(root / 'test.c'), '-o', str(root / 'test')],
                    check=True)
     subprocess.run([str(root / 'test')], check=True)
-print('PASS: mask matches Pongo; 12 framebuffer cases; bounds, color and single publish')
+print('PASS: 12 framebuffer cases; bounds, color and single publish')

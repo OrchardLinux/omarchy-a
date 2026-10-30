@@ -1,5 +1,5 @@
 Default project license: GPL-2.0-or-later (LICENSE).
 Omarchy shell: David Heinemeier Hansson, MIT (desktop/shell/LICENSE).
 m1n1: boot/m1n1/LICENSE.
-PongoOS and its components: boot/pongo/LICENSE.md.
+PongoOS and its components (pongo.bin, built by OrchardLinux/hardware): boot/pongo/LICENSE.md.
 Omacalc package licenses: embedded usr/share/licenses/omacalc/LICENSE and OFL.txt in desktop/arm64/inputs/omacalc.pkg.tar.zst.

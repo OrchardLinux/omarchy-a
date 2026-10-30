@@ -2,7 +2,7 @@
 
 ## GitHub Actions
 
-`.github/workflows/build.yml` runs unit tests on pull requests and `main`. Version tags (`v*`) and manual dispatches additionally build Pongo/artwork on macOS, m1n1 on Linux ARM64, and the signed Arch Linux ARM userspace on a native ARM64 worker using the same pinned Arch job image and `install-toolchain` recipes as local builds. Source packages build as an unprivileged user; rootfs package assembly runs as root in the disposable job. No nested Podman is used. Shared recipe path variables select actual CI paths instead of container mounts. Native execution is not a security or network sandbox.
+`.github/workflows/build.yml` runs unit tests on pull requests and `main`. Version tags (`v*`) and manual dispatches additionally generate the loader artwork on macOS, build m1n1 on Linux ARM64, and the signed Arch Linux ARM userspace on a native ARM64 worker using the same pinned Arch job image and `install-toolchain` recipes as local builds. Source packages build as an unprivileged user; rootfs package assembly runs as root in the disposable job. No nested Podman is used. Shared recipe path variables select actual CI paths instead of container mounts. Native execution is not a security or network sandbox.
 
 `ci/dependencies` installs a hashed, published CLI/hardware wheel pair and verifies the compiled hardware bundle. Select immutable dependency tags during manual dispatch; tag builds use explicit defaults in the workflow. Hardware code comes from the wheel, not a sibling checkout or an implicit `main` branch.
 
@@ -11,7 +11,7 @@ Assembly runs the same producers, artifact auditor, CLI resolution and publicati
 ## Local setup
 
 Run commands from this repository. Requires uv, `zstd`, and a native ARM64 Podman
-environment for image/component builds. Pongo builds additionally need macOS/Xcode.
+environment for image/component builds.
 
 ## Set up build tools
 
@@ -33,7 +33,8 @@ RAM builds and automatic kernel resolution below use that setting.
 - `desktop/build-sources` and `desktop/build`: desktop applications and payload.
 - `system/build-rootfs`: signed Arch Linux ARM base and package receipt; see [system/j71b/README.md](system/j71b/README.md).
 - Hardware supplies kernel, DTB, module and static BusyBox/Dropbear recipes; see [hardware build instructions](https://github.com/OrchardLinux/hardware/blob/main/BUILD.md). Local assembly automatically resolves the kernel/DTB/modules through Orchard's shared cache. Build the static tools separately; supply explicit kernel artifacts only when overriding that default.
-- `python boot/build-loader`: distro-branded loader. Pongo sources and build instructions are under `boot/pongo/`.
+- `python boot/build-loader`: distro-branded loader (m1n1 with the Omarchy logo).
+- Pongo is not built here. Releases ship hardware's one Pongo, `quiet/pongo.bin` from the hardware component bundle (black screen; the logo appears with m1n1).
 
 Retain each component's receipt. Kernel, modules and DTB must be compatible. Do not change hardware activation or timing as part of presentation changes.
 
@@ -42,7 +43,7 @@ Retain each component's receipt. Kernel, modules and DTB must be compatible. Do 
 The following example uses distro-owned components collected under `out/components/`.
 The omitted kernel/DTB/module inputs come from the same Orchard builder and cache
 as `./orchard build examples/minimal-boot`. Matching inputs reuse the compiled
-bundle without checking out or compiling Linux again. Loader/Pongo branding,
+bundle without checking out or compiling Linux again. Loader branding,
 userspace and assembly remain owned by this repository.
 
 ```sh
@@ -51,7 +52,7 @@ uv run python -m release.j71b.build \
   --base out/components/base/rootfs.tar.gz \
   --base-receipt out/components/base/rootfs.tar.gz.json \
   --loader out/components/m1n1.bin \
-  --pongo out/components/Pongo.bin \
+  --pongo out/components/quiet/pongo.bin \
   --busybox out/components/boot/busybox \
   --dropbear out/components/boot/dropbear \
   --dropbearkey out/components/boot/dropbearkey \
