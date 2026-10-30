@@ -1,54 +1,47 @@
-"""Distro-owned resolution of optional kernel inputs; no builds or devices."""
+"""Which kernels a release uses: every platform, explicit bundles or orchard's cache; no builds or devices."""
 import argparse
 from contextlib import redirect_stderr
 import io
-import itertools
 from pathlib import Path
 import sys
 import tempfile
-from types import ModuleType
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-from release.j71b import build
+from orchard.image import platform
+from release import build
 
 
 class CachedKernelTests(unittest.TestCase):
-    def args(self, supplied=(False, False, False)):
-        return argparse.Namespace(**{
-            name: Path('/explicit') / name if present else None
-            for name, present in zip(('kernel', 'dtbs', 'modules_dir'), supplied)
-        }, loader=Path('/branded/loader'), pongo=Path('/branded/pongo'))
+    def args(self, kernel_dir=None, only=None):
+        return argparse.Namespace(kernel_dir=kernel_dir, platform=only)
 
-    def test_omitted_bundle_uses_generic_builder_and_preserves_branding(self):
-        api = ModuleType('orchard.build')
-        api.prepare_kernel = Mock(return_value=Path('/shared/kernel'))
-        args = self.args()
-        with patch.dict(sys.modules, {'orchard.build': api}):
-            build.resolve_kernel(args)
-        # The J71b release builds for J71b, whatever board a developer chose.
-        api.prepare_kernel.assert_called_once_with(device='j71b')
-        self.assertEqual(args.kernel, Path('/shared/kernel/Image.gz'))
-        self.assertEqual(args.dtbs, Path('/shared/kernel/dtbs'))
-        self.assertEqual(args.modules_dir, Path('/shared/kernel/lib/modules'))
-        self.assertEqual(args.loader, Path('/branded/loader'))
-        self.assertEqual(args.pongo, Path('/branded/pongo'))
+    def test_a_release_covers_every_platform_from_the_cache(self):
+        with patch.object(platform, 'kernel', side_effect=lambda name: Path('/cache') / name) as cached:
+            bundles = build.kernels(self.args())
+        self.assertEqual(sorted(bundles), platform.platforms())
+        self.assertEqual(bundles['apple-16k'], Path('/cache/apple-16k'))
+        self.assertEqual(cached.call_count, len(platform.platforms()))
 
-    def test_explicit_bundle_does_not_import_cached_builder(self):
-        args = self.args((True, True, True))
-        before = vars(args).copy()
-        with patch.dict(sys.modules, {'orchard.build': None}):
-            build.resolve_kernel(args)
-        self.assertEqual(vars(args), before)
+    def test_explicit_bundles_are_not_built(self):
+        with patch.object(platform, 'kernel', side_effect=lambda name: Path('/cache') / name) as cached:
+            bundles = build.kernels(self.args(['apple-16k=/explicit/16k']))
+        self.assertEqual(bundles['apple-16k'], Path('/explicit/16k'))
+        self.assertEqual([call.args for call in cached.call_args_list],
+                         [(name,) for name in platform.platforms() if name != 'apple-16k'])
 
-    def test_partial_bundle_is_rejected_without_importing_builder(self):
-        for supplied in itertools.product((False, True), repeat=3):
-            if not any(supplied) or all(supplied):
-                continue
-            with self.subTest(supplied=supplied), \
-                    patch.dict(sys.modules, {'orchard.build': None}), \
-                    self.assertRaisesRegex(ValueError, 'together'):
-                build.resolve_kernel(self.args(supplied))
+    def test_development_builds_may_take_fewer_platforms(self):
+        with patch.object(platform, 'kernel') as cached:
+            bundles = build.kernels(self.args(['apple-16k=/explicit/16k'], ['apple-16k']))
+        self.assertEqual(bundles, {'apple-16k': Path('/explicit/16k')})
+        cached.assert_not_called()
+
+    def test_unknown_platforms_are_refused_before_any_build(self):
+        for args in (self.args(['apple-64k=/x']), self.args(['/no/platform']), self.args(None, ['apple-64k'])):
+            with self.subTest(args=args), patch.object(platform, 'kernel') as cached, \
+                    self.assertRaisesRegex(ValueError, 'apple-16k'):
+                build.kernels(args)
+            cached.assert_not_called()
 
     def argv(self, root):
         argv = ['build', '--release', 'test']
@@ -63,18 +56,18 @@ class CachedKernelTests(unittest.TestCase):
             argv += ['--' + name, str(path)]
         return argv
 
-    def test_parser_accepts_omitted_bundle_before_running_existing_assembler(self):
+    def test_parser_resolves_kernels_before_running_the_assembler(self):
         with tempfile.TemporaryDirectory() as temporary:
             argv = self.argv(Path(temporary))
             with patch.object(sys, 'argv', argv), \
-                    patch.object(build, 'resolve_kernel') as resolve, \
+                    patch.object(build, 'kernels', return_value={}) as resolve, \
                     patch.object(build, 'build_root', side_effect=RuntimeError('assembler reached')), \
                     self.assertRaisesRegex(RuntimeError, 'assembler reached'):
                 build.main()
             resolve.assert_called_once()
-            self.assertIsNone(resolve.call_args.args[0].kernel)
+            self.assertIsNone(resolve.call_args.args[0].kernel_dir)
 
-    def test_missing_distro_inputs_fail_before_resolving_kernel(self):
+    def test_missing_distro_inputs_fail_before_resolving_kernels(self):
         for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear',
                      'dropbearkey', 'wpa-supplicant', 'wpa-cli', 'iw',
                      'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
@@ -87,8 +80,12 @@ class CachedKernelTests(unittest.TestCase):
                 else:
                     path.unlink()
                 with patch.object(sys, 'argv', argv), \
-                        patch.object(build, 'resolve_kernel') as resolve, \
+                        patch.object(build, 'kernels') as resolve, \
                         redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                     build.main()
                 self.assertEqual(error.exception.code, 2)
                 resolve.assert_not_called()
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -26,23 +26,25 @@ the checkout your `orchard.local.toml` names. Run the Python producers below wit
 ## Produce components
 
 - `desktop/build-sources` and `desktop/build`: desktop applications and payload.
-- `system/build-rootfs`: signed Arch Linux ARM base and package receipt; see [system/j71b/README.md](system/j71b/README.md).
-- Hardware supplies kernel, DTB, module and static BusyBox/Dropbear recipes; see [orchard's build instructions](https://github.com/OrchardLinux/orchard/blob/main/BUILD.md). Local assembly automatically resolves the kernel/DTB/modules through Orchard's shared cache. Build the static tools separately; supply explicit kernel artifacts only when overriding that default.
+- `system/build-rootfs`: signed Arch Linux ARM base and package receipt; see [system/README.md](system/README.md).
+- orchard supplies the kernel, DTBs and modules of every platform, its platform layer, and the static BusyBox/Dropbear recipes; see [orchard's build instructions](https://github.com/OrchardLinux/orchard/blob/main/BUILD.md). Local assembly builds or reuses each platform's kernel through orchard's shared cache. Build the static tools separately; supply explicit kernel bundles only when overriding that default.
 - `python boot/build-loader`: distro-branded loader (m1n1 with the Omarchy logo).
 - Pongo is not built here. Releases ship orchard's one Pongo, `quiet/pongo.bin` from the orchard component bundle (black screen; the logo appears with m1n1).
 
-Retain each component's receipt. Kernel, modules and DTB must be compatible. Do not change hardware activation or timing as part of presentation changes.
+Retain each component's receipt. Do not change hardware activation or timing as part of presentation changes.
 
 ## Assemble
 
 The following example uses distro-owned components collected under `out/components/`.
-The omitted kernel/DTB/module inputs come from the same Orchard builder and cache
-as `orchard build` in orchard's examples. Matching inputs reuse the compiled
-bundle without checking out or compiling Linux again. Loader branding,
+A release covers every platform: one root image, and per platform a recovery
+(`recovery-PLATFORM.bin`) and orchard's platform layer (`platform-PLATFORM.tar.gz`:
+kernel, every board's DTB, modules), which the installer writes into the root.
+The kernels come from the same orchard builder and cache as `orchard build` in
+orchard's examples; matching inputs reuse the compiled bundles. Loader branding,
 userspace and assembly remain owned by this repository.
 
 ```sh
-orchard python -m release.j71b.build \
+orchard python -m release.build \
   --release 0.1.0-orchard.3 \
   --base out/components/base/rootfs.tar.gz \
   --base-receipt out/components/base/rootfs.tar.gz.json \
@@ -51,40 +53,44 @@ orchard python -m release.j71b.build \
   --busybox out/components/boot/busybox \
   --dropbear out/components/boot/dropbear \
   --dropbearkey out/components/boot/dropbearkey \
+  --wpa-supplicant out/components/boot/wpa_supplicant \
+  --wpa-cli out/components/boot/wpa_cli \
+  --iw out/components/boot/iw \
   --cursor-tools out/components/desktop/cursor-tools \
   --bluetooth-tools out/components/desktop/bluetooth-tools \
   --labwc-tools out/components/desktop/labwc-tools \
   --output out/releases/0.1.0-orchard.3
 ```
 
-To use explicit artifacts instead, supply all three of `--kernel FILE`, `--dtbs DIRECTORY`
-and `--modules-dir DIRECTORY`. The recovery carries the DTB of every device that
-shares the kernel; m1n1 boots with the one matching the device. Partial overrides are rejected to avoid mixing
-kernel bundles. That explicit path does not invoke the cached builder and remains
-compatible with CI's published wheel/component inputs. The default cache respects
-`XDG_CACHE_HOME` and `ORCHARD_CACHE_DIR`, just like RAM builds; no cache flag is needed.
+To use a staged kernel bundle instead (as CI does with orchard's published
+component bundles), pass `--kernel-dir PLATFORM=DIRECTORY` per platform; the
+others still come from the cache. `--platform PLATFORM` builds only that
+platform, for development; a release covers every platform. Each recovery carries
+the DTB of every board of its platform; m1n1 boots with the one matching the
+device. The cache respects `XDG_CACHE_HOME` and `ORCHARD_CACHE_DIR`, just like RAM
+builds.
 
-Choose a new version and output directory for each build. Root builds first; recovery embeds its exact stream receipt, and the index is written last. Installed wheel resources supply hardware code and scripts. The installed root carries no Orchard device runtime: it boots directly from its own kernel-install boot entry.
+Choose a new version and output directory for each build. Root builds first; recoveries embed its exact stream receipt, and `release.toml` and the index are written last. The installed root carries no Orchard device runtime: it boots directly from its own kernel-install boot entry.
 
 ## Validate without a device
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests -v
-python -m release.j71b.audit out/releases/0.1.0-orchard.3/j71b-checkm8-pongo.toml
-orchard resolve out/releases/0.1.0-orchard.3/index.toml
+python -m release.audit out/releases/0.1.0-orchard.3/release.toml
+python -m orchard.manifests --verify-local out/releases/0.1.0-orchard.3/index.toml
 ```
 
-The auditor verifies compressed recovery contents, executable endpoints, integrity lists, root/recovery runtime equality, the embedded root receipt, desktop/privilege policy, loader framing, and absence of private session/firmware data.
+The auditor verifies, per platform, the recovery's contents, endpoints and loader framing, orchard's layer against its receipt and SHA256SUMS, and that recovery and layer carry the same modules; for the root, desktop/privilege policy, that it holds no file of any layer, and the absence of private session/firmware data.
 
 Headless finished-artifact checks use Podman without network or device passthrough:
 
 ```sh
-python -m release.j71b.smoke_desktop \
-  --manifest out/releases/0.1.0-orchard.3/j71b-checkm8-pongo.toml \
+python -m release.smoke_desktop \
+  --manifest out/releases/0.1.0-orchard.3/release.toml \
   --output out/validation/desktop \
   --pointer-helper out/components/validation/wlrctl
 python desktop/test-input --artifact-only \
-  --manifest out/releases/0.1.0-orchard.3/j71b-checkm8-pongo.toml \
+  --manifest out/releases/0.1.0-orchard.3/release.toml \
   --output out/validation/input \
   --pointer-helper out/components/validation/wlrctl
 ```

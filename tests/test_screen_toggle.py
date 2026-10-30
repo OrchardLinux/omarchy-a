@@ -4,11 +4,11 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from release.j71b.public_root import desktop_replacements, system_files
+from release.public_root import desktop_replacements, system_files
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-HELPER = PROJECT / 'system/j71b/overlay/usr/libexec/omarchy-screen-toggle'
+HELPER = PROJECT / 'system/overlay/usr/libexec/omarchy-screen-toggle'
 HELPER_NAMESPACE = runpy.run_path(str(HELPER))
 toggle = HELPER_NAMESPACE['toggle']
 panel = HELPER_NAMESPACE['panel']
@@ -82,5 +82,5 @@ class ScreenToggleTests(unittest.TestCase):
         # The power key locks before blanking; omarchy-tablet-power drives the toggle helper.
         self.assertEqual(binding.find('action').attrib,
                          {'name': 'Execute', 'command': 'omarchy-tablet-power power'})
-        self.assertEqual(system_files('test')['usr/libexec/omarchy-screen-toggle'],
+        self.assertEqual(system_files()['usr/libexec/omarchy-screen-toggle'],
                          (HELPER.read_bytes(), 0o755))

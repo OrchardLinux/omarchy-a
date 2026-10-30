@@ -1,9 +1,9 @@
-"""Shared J71b root assembly invariants; no device, ADT or firmware access."""
+"""Shared root assembly invariants; no device, ADT or firmware access."""
 from pathlib import Path
 
-PROJECT = Path(__file__).resolve().parents[2]
-SYSTEM = PROJECT / 'system/j71b/overlay'
-NETWORK_RULE = SYSTEM / 'etc/polkit-1/rules.d/60-j71b-tablet-network.rules'
+PROJECT = Path(__file__).resolve().parents[1]
+SYSTEM = PROJECT / 'system/overlay'
+NETWORK_RULE = SYSTEM / 'etc/polkit-1/rules.d/60-omarchy-tablet-network.rules'
 GROUPS = ('seat', 'video', 'input')
 
 

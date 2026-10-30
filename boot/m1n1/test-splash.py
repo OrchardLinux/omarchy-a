@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Host-test the patched m1n1 draw block and its actual pixel conversion helpers.
 
-Requires .work/j71b/source with patch and generated header. Not a hardware test.
+Requires .work/apple/source with patch and generated header. Not a hardware test.
 """
 from pathlib import Path
 import subprocess
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-SRC = HERE / '.work/j71b/source/src'
+SRC = HERE / '.work/apple/source/src'
 source = (SRC / 'fb.c').read_text()
 start = source.index('    /* Match Pongo\'s visible geometry; publish the complete frame only once. */')
 renderer = source[start:source.index('\n#else', start)]

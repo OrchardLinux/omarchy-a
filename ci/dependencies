@@ -16,13 +16,22 @@ python3 -m venv .venv
 if [[ "${1:-}" == --tools-only ]]; then exit 0; fi
 [[ $# == 0 ]] || { echo 'Usage: ci/dependencies [--tools-only]' >&2; exit 2; }
 mkdir -p out/downloads
+# One component bundle per platform: its kernel, modules and DTBs, and the shared tools.
+platforms=$(.venv/bin/python -c 'from orchard.image.platform import platforms; print(*platforms())')
 base="https://github.com/OrchardLinux/orchard/releases/download/$HARDWARE_TAG"
 if [[ -n "${HARDWARE_ARTIFACT_DIR:-}" ]]; then
-  cp "$HARDWARE_ARTIFACT_DIR/j71b-components.tar.gz" "$HARDWARE_ARTIFACT_DIR/SHA256SUMS" out/downloads/
+  cp "$HARDWARE_ARTIFACT_DIR/SHA256SUMS" out/downloads/
 else
-  curl -fL --retry 3 "$base/j71b-components.tar.gz" -o out/downloads/j71b-components.tar.gz
   curl -fL --retry 3 "$base/SHA256SUMS" -o out/downloads/SHA256SUMS
 fi
-grep -Eq ' (\./)?j71b-components.tar.gz$' out/downloads/SHA256SUMS
-(cd out/downloads && grep -E ' (\./)?j71b-components.tar.gz$' SHA256SUMS | sha256sum --check --strict)
-tar -xzf out/downloads/j71b-components.tar.gz -C out
+for platform in $platforms; do
+  bundle="$platform-components.tar.gz"
+  if [[ -n "${HARDWARE_ARTIFACT_DIR:-}" ]]; then
+    cp "$HARDWARE_ARTIFACT_DIR/$bundle" out/downloads/
+  else
+    curl -fL --retry 3 "$base/$bundle" -o "out/downloads/$bundle"
+  fi
+  (cd out/downloads && grep -E " (\./)?$bundle\$" SHA256SUMS | sha256sum --check --strict)
+  mkdir -p "out/platforms/$platform"
+  tar -xzf "out/downloads/$bundle" -C "out/platforms/$platform"
+done

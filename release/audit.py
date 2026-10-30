@@ -8,11 +8,10 @@ import struct
 import tarfile
 
 from orchard.image.assemble import INITRAMFS_MAGIC
-from orchard.hardware import firmware_path
 from release.manifests import read_release
 
+from .common import PROJECT
 from .public_root import sha
-from .runtime import PROJECT
 from .recovery_audit import audit_runtime
 
 
@@ -47,31 +46,86 @@ def audit_recovery(image):
             'compressed_bytes': size, 'initramfs_sha256': parts['initramfs'][0]['sha256']}
 
 
+def private_firmware():
+    """Where any described board's private firmware lands; none of it may be public."""
+    from orchard import hardware
+    return {row['destination'] for profile in hardware.profiles()
+            for row in json.loads(hardware.firmware_path(profile).read_text())['outputs']}
+
+
+def asset(manifest, item, role):
+    relative = PurePosixPath(item['file'])
+    if relative.is_absolute() or '..' in relative.parts:
+        raise ValueError('Asset escapes release directory')
+    path = manifest.parent / relative
+    if path.is_symlink() or path.stat().st_size != item['bytes'] or sha(path) != item['sha256']:
+        raise ValueError('Asset integrity mismatch: ' + role)
+    return path
+
+
+def audit_layer(path, platform, row, private):
+    """orchard's platform layer: root-owned files under usr/ that say which platform and kernel they are."""
+    hashes, expanded = {}, 0
+    with tarfile.open(path, 'r:gz') as archive:
+        for member in archive:
+            name = member.name
+            if (not member.isfile() or not name.startswith('usr/') or '..' in PurePosixPath(name).parts or
+                    name in hashes or member.uid or member.gid):
+                raise ValueError(f'Unexpected {platform} layer member: {name}')
+            if name.removeprefix('usr/') in private:
+                raise ValueError('Private firmware found in platform layer')
+            data = archive.extractfile(member).read()
+            hashes[name] = hashlib.sha256(data).hexdigest()
+            expanded += len(data)
+            if name == 'usr/lib/orchard/platform.json':
+                description = json.loads(data)
+            if name == 'usr/lib/orchard/platform.SHA256SUMS':
+                sums = data.decode()
+    if (len(hashes), expanded) != (row['members'], row['expanded_bytes']):
+        raise ValueError(f'The {platform} layer differs from its receipt')
+    if (description['platform'], description['kernel_release']) != (platform, row['kernel_release']):
+        raise ValueError(f'The {platform} layer describes another platform or kernel')
+    release = description['kernel_release']
+    if f'usr/lib/modules/{release}/vmlinuz' not in hashes:
+        raise ValueError(f'The {platform} layer has no kernel')
+    for line in sums.splitlines():
+        expected, name = line.split('  ', 1)
+        if hashes.get(name.lstrip('/')) != expected:
+            raise ValueError(f'The {platform} layer differs from its SHA256SUMS: {name}')
+    return {'hashes': hashes, 'boards': description['boards'], 'kernel_release': release}
+
+
 def audit(manifest):
     record = read_release(manifest)
-    if record.get('schema') != 1 or record.get('protocol') != 1 or record.get('profile') != 'j71b':
+    if record.get('schema') != 2 or record.get('protocol') != 1:
         raise ValueError('Incompatible release manifest')
-    paths = {}
-    for role, item in record['assets'].items():
-        relative = PurePosixPath(item['file'])
-        if relative.is_absolute() or '..' in relative.parts:
-            raise ValueError('Asset escapes release directory')
-        path = manifest.parent / relative
-        if path.is_symlink() or path.stat().st_size != item['bytes'] or sha(path) != item['sha256']:
-            raise ValueError('Asset integrity mismatch: ' + role)
-        paths[role] = path
-    recovery = audit_recovery(paths['recovery'])
-    # The public manifest leaves the kernel release out; the root's build receipt has it.
-    root = {**record['assets']['root'],
-            'kernel_release': json.loads((manifest.parent / 'rootfs.json').read_text())['kernel_release']}
-    runtime = audit_runtime(paths['recovery'], root, record['release'])
-    recovery['runtime_members_verified'] = runtime['members']
+    private = private_firmware()
+    root_path = asset(manifest, record['root'], 'root')
+    asset(manifest, record['pongo'], 'pongo')
+    platforms, layers = {}, {}
+    for name, files in sorted(record['platforms'].items()):
+        layer = audit_layer(asset(manifest, files['layer'], name + ' layer'), name, files['layer'], private)
+        if sorted(layer['boards']) != sorted(files['boards']):
+            raise ValueError(f'The manifest and the {name} layer list different boards')
+        image = asset(manifest, files['boot'], name + ' recovery')
+        recovery = audit_recovery(image)
+        if recovery['dtbs'] != len(set(layer['boards'].values())):
+            raise ValueError(f'The {name} recovery does not start every board of its platform')
+        runtime = audit_runtime(image, layer['kernel_release'], record['release'], private)
+        # The recovery runs the kernel the installed entry boots: the same modules.
+        base = f'usr/lib/modules/{layer["kernel_release"]}/'
+        for path, digest in layer['hashes'].items():
+            if (path.startswith(base) and path != base + 'vmlinuz' and not path.startswith(base + 'dtb/') and
+                    runtime['hashes'].get(path) != digest):
+                raise ValueError(f'The {name} recovery and layer have different modules: {path}')
+        recovery['runtime_members_verified'] = runtime['members']
+        platforms[name] = {'boards': sorted(layer['boards']), 'kernel_release': layer['kernel_release'],
+                           'layer_files': len(layer['hashes']), 'recovery': recovery}
+        layers[name] = layer['hashes']
     hashes, links, modes, owners, groups, sizes = {}, {}, {}, {}, {}, {}
     names, ancestors, directories = set(), set(), set()
-    desktop = public = privileges = cursor = bluetooth = labwc = None
-    recipe = json.loads(firmware_path('j71b').read_text())
-    private = {item['destination'] for item in recipe['outputs']}
-    with subprocess.Popen(['zstd', '-d', '-q', '-c', str(paths['root'])], stdout=subprocess.PIPE) as decoder:
+    desktop = privileges = cursor = bluetooth = labwc = None
+    with subprocess.Popen(['zstd', '-d', '-q', '-c', str(root_path)], stdout=subprocess.PIPE) as decoder:
         with tarfile.open(fileobj=decoder.stdout, mode='r|') as archive:
             for member in archive:
                 name = member.name
@@ -98,8 +152,6 @@ def audit(manifest):
                         labwc = json.loads(data)
                     if name == 'etc/omarchy/package-privileges.json':
                         privileges = json.loads(data)
-                    if name == 'etc/orchard/public.SHA256SUMS':
-                        public = data.decode()
                 elif member.isdir():
                     directories.add(name)
                 else:
@@ -118,17 +170,16 @@ def audit(manifest):
             target_path = PurePosixPath(target)
             if target_path.is_absolute() or '..' in target_path.parts or str(target_path) not in hashes:
                 raise ValueError('Hardlink is not to a regular in-root member: ' + name)
-    if not desktop or not public:
-        raise ValueError('Missing desktop/runtime integrity manifest')
+    if not desktop:
+        raise ValueError('Missing desktop integrity manifest')
     for name, expected in desktop.items():
         if hashes.get(name) != expected:
             raise ValueError('Desktop content mismatch: ' + name)
-    if public != runtime['public']:
-        raise ValueError('Root/recovery public runtime manifests differ')
-    for line in public.splitlines():
-        expected, name = line.split('  ', 1)
-        if hashes.get(name.lstrip('/')) != expected or runtime['hashes'].get(name.lstrip('/')) != expected:
-            raise ValueError('Public runtime mismatch: ' + name)
+    for name, layer in layers.items():
+        # The installer refuses to write a layer file the root already has.
+        clash = sorted((names - directories) & layer.keys())
+        if clash:
+            raise ValueError(f'The root has files of the {name} layer: ' + ', '.join(clash[:5]))
     verify_tablet_sudo(hashes, modes, owners, groups)
     if not privileges or privileges.get('usr/bin/sudo', {}).get('mode') != 0o4755:
         raise ValueError('Missing package-defined sudo permissions')
@@ -156,7 +207,7 @@ def audit(manifest):
         raise ValueError('Invalid root/session contract')
     return {'passed': True, 'hardware_validated': False, 'release': record['release'],
             'members': len(names), 'desktop_files_verified': len(desktop),
-            'root_sha256': record['assets']['root']['sha256'], 'recovery': recovery,
+            'root_sha256': record['root']['sha256'], 'platforms': platforms,
             'privileged_entries_verified': len(privileges)}
 
 

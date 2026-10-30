@@ -19,7 +19,8 @@ with tempfile.TemporaryDirectory(prefix='omarchy-loader-') as temporary:
         subprocess.run([sys.executable, str(here / 'generate-logo.py'),
                         '--size', '480', '--output', str(header)], check=True)
     subprocess.run([str(HARDWARE / 'boot/m1n1/build'),
-                    'j71b', '--output', str(args.output),
-                    '--extra-patch', str(here / 'm1n1/patches/j71b/0002-omarchy-splash.patch'),
+                    # One m1n1 starts every Apple device; the splash is the only Omarchy part.
+                    'apple', '--output', str(args.output),
+                    '--extra-patch', str(here / 'm1n1/patches/0002-omarchy-splash.patch'),
                     '--include-header', str(header), '--extra-cflags', '-DOMARCHY_SPLASH',
                     *(['--resume'] if args.resume else [])], check=True)

@@ -111,7 +111,7 @@ The install script checks the partition table against the plan before its first 
 
 ## Implementation references
 
-- [Release assembly](../release/j71b/build.py) and [manifest generation](../release/manifests.py).
+- [Release assembly](../release/build.py) and [manifest generation](../release/manifests.py).
 - [Image assembly and validation instructions](../BUILD.md).
 - [Host orchestration](https://github.com/OrchardLinux/orchard/blob/main/src/orchard/service.py) and the [install script](https://github.com/OrchardLinux/orchard/blob/main/src/orchard/install_device.py).
 - [Recovery runtime](https://github.com/OrchardLinux/orchard/tree/main/runtime/recovery), [recovery image producer](https://github.com/OrchardLinux/orchard/tree/main/src/orchard/image) and the [boot contract](https://github.com/OrchardLinux/orchard/blob/main/docs/boot-contract.md).

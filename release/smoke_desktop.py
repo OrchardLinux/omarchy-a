@@ -28,7 +28,7 @@ def main():
     recipe = Path(__file__).with_name('smoke-desktop-in-container').resolve()
     argv = ['podman', 'run', '--rm', '--network', 'none', '--userns', 'keep-id:uid=0,gid=0',
             '--cap-add', 'SYS_ADMIN', '--cap-add', 'SYS_PTRACE', '--security-opt', 'seccomp=unconfined',
-            '-e', 'OMA_ROOT_FILENAME=' + record['assets']['root']['file'],
+            '-e', 'OMA_ROOT_FILENAME=' + record['root']['file'],
             '-v', str(manifest.parent) + ':/release:ro', '-v', str(recipe) + ':/validate.sh:ro',
             '-v', str(output) + ':/evidence:rw', args.image, 'sh', '/validate.sh']
     if args.pointer_helper:

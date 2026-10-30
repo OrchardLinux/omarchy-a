@@ -9,8 +9,7 @@ from pathlib import Path, PurePosixPath
 import tarfile
 import tempfile
 
-from .common import group_membership, SYSTEM, NETWORK_RULE
-from .runtime import PROJECT, files as runtime_files
+from .common import group_membership, PROJECT, SYSTEM, NETWORK_RULE
 from release.package_permissions import privileged_entries, apply as apply_package_permissions
 
 
@@ -115,39 +114,20 @@ def desktop_additions():
     return {name: ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644)}
 
 
-def system_files(kernel_release):
+def system_files():
     additions = {}
     for path in sorted(SYSTEM.rglob('*')):
         if path.is_file() and not path.is_symlink():
             name = path.relative_to(SYSTEM).as_posix()
-            data = path.read_bytes().replace(b'@KERNEL_RELEASE@', kernel_release.encode())
+            data = path.read_bytes()
             mode = 0o440 if name.startswith('etc/sudoers.d/') else (
                 0o755 if name.startswith('usr/libexec/') else 0o644)
             additions[name] = (data, mode)
     return additions
 
 
-def boot_files(kernel, dtbs, kernel_release):
-    """The kernel and every DTB of its platform, where kernel-install finds them.
-
-    One root serves every board of the kernel's platform: the installer writes
-    the board's DTB name to /etc/kernel/devicetree, and kernel-install copies
-    that DTB with the kernel to the boot partition and writes the BLS entry
-    (hardware docs/boot-contract.md). mkinitcpio builds the initrd.
-    """
-    base = f'usr/lib/modules/{kernel_release}/'
-    result = {base + 'vmlinuz': (kernel.read_bytes(), 0o644)}
-    for path in sorted(dtbs.glob('*.dtb')):
-        if path.is_symlink() or not path.is_file():
-            raise ValueError('Unsafe DTB input: ' + path.name)
-        result[base + 'dtb/' + path.name] = (path.read_bytes(), 0o644)
-    if len(result) == 1:
-        raise ValueError('No DTBs in ' + str(dtbs))
-    return result
-
-
-def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, bluetooth_tools=None,
-          labwc_tools=None, *, kernel, dtbs):
+def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=None, labwc_tools=None):
+    """The root image for every platform: no kernel, DTBs or modules (orchard's layer has them)."""
     if outdir.exists():
         raise ValueError('Choose a new release output directory')
     record = json.loads(base_receipt.read_text())
@@ -155,18 +135,15 @@ def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, blueto
         raise ValueError('Base root differs from receipt')
     privileges = privileged_entries(base)
     privileged_digests = {}
-    kernel_release, additions = runtime_files(modules_dir)
-    additions.update(cursor_files(cursor_tools))
+    additions = cursor_files(cursor_tools)
     additions.update(bluetooth_files(bluetooth_tools or PROJECT / 'out/desktop/bluetooth-tools'))
     additions.update(labwc_files(labwc_tools or PROJECT / 'out/desktop/labwc-tools'))
     desktop_extra = desktop_additions()
     additions.update(desktop_extra)
     additions['etc/omarchy/package-privileges.json'] = (json.dumps(privileges, sort_keys=True).encode(), 0o644)
-    additions.update(system_files(kernel_release))
-    additions.update(boot_files(kernel, dtbs, kernel_release))
-    additions['etc/polkit-1/rules.d/60-j71b-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
-    additions['etc/orchard/release.json'] = (json.dumps({
-        'protocol': 1, 'release': release, 'profile': 'j71b', 'kernel_release': kernel_release}).encode(), 0o644)
+    additions.update(system_files())
+    additions['etc/polkit-1/rules.d/60-omarchy-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
+    additions['etc/orchard/release.json'] = (json.dumps({'protocol': 1, 'release': release}).encode(), 0o644)
     if privileges.keys() & additions.keys():
         raise ValueError('Runtime must not override privileged package files')
     qml_path = 'home/tablet/.local/share/omarchy-ipad/shell/shell.qml'
@@ -203,6 +180,8 @@ def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, blueto
                                               if key not in ('path', 'size')}
                         if member.name in additions:
                             continue
+                        if member.name.startswith('usr/lib/modules/'):
+                            raise ValueError('The base root has kernel modules; orchard\'s platform layer provides them')
                         if not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
                             raise ValueError('Special member in base root')
                         if member.name == 'lib' and (not member.issym() or member.linkname != 'usr/lib'):
@@ -257,10 +236,9 @@ def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, blueto
                     'arch-ipad-ui-manifest.json'}
         if not required <= seen or not privileges.keys() <= seen or not replacements.keys() <= seen:
             raise ValueError('Incomplete public root or privileged package metadata')
-        receipt = {'schema': 1, 'kind': 'rootfs', 'profile': 'j71b', 'release': release,
+        receipt = {'schema': 2, 'kind': 'rootfs', 'release': release,
                    'bytes': archive.stat().st_size, 'sha256': sha(archive), 'compression': 'zstd',
-                   'expanded_bytes': expanded, 'members': count, 'kernel_release': kernel_release,
-                   'base_sha256': record['sha256']}
+                   'expanded_bytes': expanded, 'members': count, 'base_sha256': record['sha256']}
         (temporary / 'rootfs.json').write_text(json.dumps(receipt, indent=2) + '\n')
         os.replace(temporary, outdir)
     return receipt
@@ -268,11 +246,11 @@ def build(base, base_receipt, modules_dir, outdir, release, cursor_tools, blueto
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('base', 'base-receipt', 'modules-dir', 'outdir', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
+    for name in ('base', 'base-receipt', 'outdir', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--release', required=True)
     args = parser.parse_args()
-    print(json.dumps(build(args.base, args.base_receipt, args.modules_dir, args.outdir, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools), indent=2))
+    print(json.dumps(build(args.base, args.base_receipt, args.outdir, args.release, args.cursor_tools, args.bluetooth_tools, args.labwc_tools), indent=2))
 
 
 if __name__ == '__main__':

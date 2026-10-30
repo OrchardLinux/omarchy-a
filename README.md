@@ -23,7 +23,7 @@ Run this repository's tests and producers in that orchard's environment:
 
 ```sh
 orchard python -m unittest discover -s tests
-orchard python -m release.j71b.build ...
+orchard python -m release.build ...
 ```
 
 RAM experiments and device bring-up happen in orchard itself, with its
@@ -32,9 +32,12 @@ RAM experiments and device bring-up happen in orchard itself, with its
 
 ## Supported devices
 
-| Device | Identifier | Status |
-| --- | --- | --- |
-| iPad 6 Wi-Fi | `iPad7,5` / J71b | Experimental; no GPU acceleration |
+A release covers every device orchard describes: one root image, and
+orchard's kernel, device trees and modules for each platform. How well a device
+works is orchard's device data, which the installer shows before it changes
+anything. Today the iPad 6 Wi-Fi (`iPad7,5`, J71b) is supported, without GPU
+acceleration; the others are experimental. See orchard's
+[devices](https://github.com/OrchardLinux/orchard/tree/main/devices).
 
 This image uses **tethered boot**: starting Linux after a cold restart requires a host computer running `orchard launch`.
 

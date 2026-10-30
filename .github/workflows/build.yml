@@ -9,7 +9,7 @@ on:
       hardware_tag:
         description: Published orchard release supplying the compiled components
         required: true
-        default: v0.1.10
+        default: v0.2.0
       hardware_run_id:
         description: Optional exact orchard run supplying first-release components
         required: false
@@ -20,7 +20,7 @@ permissions:
   contents: read
   actions: read
 env:
-  HARDWARE_TAG: ${{ inputs.hardware_tag || 'v0.1.10' }}
+  HARDWARE_TAG: ${{ inputs.hardware_tag || 'v0.2.0' }}
   HARDWARE_ARTIFACT_DIR: ${{ inputs.hardware_run_id != '' && 'out/downloads/hardware' || '' }}
 jobs:
   test:
@@ -187,7 +187,7 @@ jobs:
         run: |
           VERSION="preview-$RUN_ID"
           if [[ "$REF_TYPE" == tag ]]; then VERSION="${REF_NAME#v}"; fi
-          bash system/build-rootfs j71b --desktop out/desktop --release "$VERSION" --output out/base
+          bash system/build-rootfs --desktop out/desktop --release "$VERSION" --output out/base
           tar -C out -czf out/omarchy-userspace.tar.gz base cursor bluetooth labwc
       - uses: actions/upload-artifact@v4
         with:
@@ -249,16 +249,22 @@ jobs:
           VERSION="preview-$RUN_ID"
           TAG="v$VERSION"
           if [[ "$REF_TYPE" == tag ]]; then TAG="$REF_NAME"; VERSION="${TAG#v}"; fi
-          python -m release.j71b.build --release "$VERSION" \
+          # Every platform's kernel from orchard's bundles; the shared tools are in each.
+          kernels=()
+          for bundle in out/platforms/*/components; do
+            kernels+=(--kernel-dir "$(basename "$(dirname "$bundle")")=$bundle/kernel")
+          done
+          tools=out/platforms/apple-16k/components
+          python -m release.build --release "$VERSION" "${kernels[@]}" \
             --base out/base/rootfs.tar.gz --base-receipt out/base/rootfs.tar.gz.json \
-            --modules-dir out/components/kernel/lib/modules --loader out/boot/m1n1.bin \
-            --kernel out/components/kernel/Image.gz --dtb out/components/kernel/j71b.dtb \
-            --pongo out/components/quiet/pongo.bin --busybox out/components/boot/busybox \
-            --dropbear out/components/boot/dropbear --dropbearkey out/components/boot/dropbearkey \
+            --loader out/boot/m1n1.bin --pongo "$tools/quiet/pongo.bin" \
+            --busybox "$tools/boot/busybox" --dropbear "$tools/boot/dropbear" \
+            --dropbearkey "$tools/boot/dropbearkey" --wpa-supplicant "$tools/boot/wpa_supplicant" \
+            --wpa-cli "$tools/boot/wpa_cli" --iw "$tools/boot/iw" \
             --cursor-tools out/cursor --bluetooth-tools out/bluetooth --labwc-tools out/labwc \
             --output out/release
-          python -m release.j71b.audit out/release/j71b-checkm8-pongo.toml
-          orchard resolve out/release/index.toml
+          python -m release.audit out/release/release.toml
+          python -m orchard.manifests --verify-local out/release/index.toml
           python -m release.publish --tag "$TAG" --release-dir out/release --output out/publication
           cp out/release/rootfs.json out/release/build-receipt.json out/publication/
           git archive --format=tar.gz -o out/publication/omarchy-linux-source.tar.gz HEAD

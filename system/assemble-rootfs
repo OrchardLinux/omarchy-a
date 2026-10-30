@@ -15,11 +15,11 @@ for value in "$root" "$output" "$desktop" "$release"; do
 done
 [[ $(uname -m) == aarch64 && $EUID == 0 ]] || { echo 'Requires an aarch64 Arch Linux ARM build environment as root' >&2; exit 1; }
 for cmd in pacman useradd usermod systemctl tar python3; do command -v "$cmd" >/dev/null || { echo "Missing $cmd" >&2; exit 1; }; done
-project=$(cd "$(dirname "$0")/../.." && pwd)
+project=$(cd "$(dirname "$0")/.." && pwd)
 root=$(realpath -m -- "$root")
 output=$(realpath -m -- "$output")
 [[ "$root" != / && ! -e "$root" && ! -e "$output" ]] || { echo 'Root and archive must be new paths' >&2; exit 1; }
-mapfile -t requested < <(grep -vE '^\s*(#|$)' "$project/system/j71b/packages.txt")
+mapfile -t requested < <(grep -vE '^\s*(#|$)' "$project/system/packages.txt")
 [[ ${#requested[@]} -gt 0 ]] || exit 1
 printf '%s\n' "${requested[@]}" | grep -qx 'linux-aarch64' && { echo 'Generic kernel is not an input' >&2; exit 1; }
 
@@ -34,7 +34,7 @@ for package in "$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.
   pacman --root "$root" --gpgdir /etc/pacman.d/gnupg --noconfirm -U "$package"
 done
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
-# Native J71b login needs seatd's socket and DRM/input device access; wheel
+# Native login needs seatd's socket and DRM/input device access; wheel
 # makes the account polkit's admin, so prompts take its password.
 usermod --root "$root" --append --groups seat,video,input,wheel tablet
 # The greeter (greetd's own user) draws through seatd and wakes the panel.

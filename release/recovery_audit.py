@@ -5,8 +5,6 @@ import json
 from pathlib import Path, PurePosixPath
 import stat
 
-from orchard.hardware import firmware_path
-
 
 def read_newc(stream):
     total = 0
@@ -44,12 +42,11 @@ def read_newc(stream):
         yield name, mode, data
 
 
-def audit_runtime(image, root_spec, release):
+def audit_runtime(image, kernel_release, release, private):
+    """The recovery's runtime: endpoints, this release, KERNEL_RELEASE's modules, no PRIVATE firmware."""
     receipt = json.loads(Path(str(image) + '.json').read_text())
     part = next(row for row in receipt['components'] if row['name'] == 'initramfs')
     hashes, modes, records = {}, {}, {}
-    firmware = json.loads(firmware_path('j71b').read_text())
-    private = {row['destination'] for row in firmware['outputs']}
     names = set()
     with image.open('rb') as raw:
         raw.seek(part['offset'])
@@ -79,10 +76,10 @@ def audit_runtime(image, root_spec, release):
     if any('omarchy-j71b' in name or 'orchard-j71b' in name or name == 'usr/bin/omarchy-device' for name in names):
         raise ValueError('Old agent namespace remains in recovery')
     # The host checks the root's hash; the recovery only has to belong to this
-    # release and carry the root's kernel modules.
+    # release and run the kernel of its platform's layer.
     config = json.loads(records['etc/orchard/release.json'])
     if (config['release'] != release or config['protocol'] != 1 or
-            config['kernel_release'] != root_spec['kernel_release']):
+            config['kernel_release'] != kernel_release):
         raise ValueError('Recovery does not belong to this release')
     public = records['etc/orchard/public.SHA256SUMS'].decode()
     for line in public.splitlines():
