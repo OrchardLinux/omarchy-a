@@ -40,9 +40,11 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: '[[ "$TAG" =~ ^v[A-Za-z0-9][A-Za-z0-9._-]*$ ]]'
-      # Every build uses orchard main; a release records the exact commit in its receipt.
+      # Tests follow orchard main; builds use the pinned orchard release (ci/dependencies).
       - name: Install orchard main
         run: bash ci/dependencies --tools-only
+        env:
+          ORCHARD_REF: main
       - run: .venv/bin/python -m unittest discover -s tests -v
   # Pongo is not built here: releases ship hardware's one Pongo (quiet/pongo.bin).
   artwork:

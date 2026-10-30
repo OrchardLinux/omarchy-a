@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Install orchard main (or ORCHARD_REF) and a verified public component bundle.
+# Install orchard (main for tests, the pinned release for builds) and its verified component bundles.
 set -euo pipefail
 : "${HARDWARE_TAG:?Set HARDWARE_TAG to the immutable orchard release with the components}"
 [[ "$HARDWARE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
   echo 'The component release tag must be vMAJOR.MINOR.PATCH' >&2; exit 2;
 }
-# The tools are orchard's current main; the release receipt records its commit.
+# A build uses the orchard release it pins whole: its tools (loader, platform
+# layer, defaults, recovery) and its compiled components come from the same
+# tag. Tests set ORCHARD_REF=main. The release receipt records the commit.
+ref=${ORCHARD_REF:-$HARDWARE_TAG}
 if [[ ! -f .orchard/pyproject.toml ]]; then
-  git clone --quiet --depth 1 --branch "${ORCHARD_REF:-main}" https://github.com/OrchardLinux/orchard.git .orchard
+  git clone --quiet --depth 1 --branch "$ref" https://github.com/OrchardLinux/orchard.git .orchard
 fi
 echo "orchard $(git -C .orchard rev-parse HEAD)"
 python3 -m venv .venv
