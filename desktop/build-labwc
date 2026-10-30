@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from orchard_hardware import buildenv
+from orchard import buildenv
 import urllib.request
 
 HERE = Path(__file__).resolve().parent

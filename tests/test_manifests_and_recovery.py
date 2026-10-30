@@ -8,8 +8,8 @@ import stat
 import tempfile
 import unittest
 
-from orchard_hardware import firmware_path
-from orchard_hardware.boot.initramfs.pack import record
+from orchard.hardware import firmware_path
+from orchard.image.initramfs import record
 from release import manifests
 from release.j71b.recovery_audit import read_newc, audit_runtime
 

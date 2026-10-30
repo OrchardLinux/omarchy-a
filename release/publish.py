@@ -2,7 +2,7 @@
 """Stage Omarchy A assets with the shared, integrity-checked publisher."""
 import argparse
 from pathlib import Path
-from orchard_hardware.image.publish import publish as publish_distro
+from orchard.image.publish import publish as publish_distro
 
 
 def publish(directory, tag, output):

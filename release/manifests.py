@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import tomllib
 
-from orchard_hardware.image.integrity import sha
+from orchard.image.integrity import sha
 
 
 def receipt(path):

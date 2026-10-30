@@ -1,3 +1,0 @@
-# Serial shell only: no USB network or SSH in this payload.
-device = "j71b"
-transport = false

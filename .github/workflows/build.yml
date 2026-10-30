@@ -7,18 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       hardware_tag:
-        description: Published hardware components and wheel
+        description: Published orchard release supplying the compiled components
         required: true
         default: v0.1.10
-      cli_tag:
-        description: Published compatible CLI wheel requirements
-        required: true
-        default: v0.1.10
-      cli_run_id:
-        description: Optional exact CLI run for first-release wheel reuse
-        required: false
       hardware_run_id:
-        description: Optional exact hardware run supplying first-release components
+        description: Optional exact orchard run supplying first-release components
         required: false
       reuse_run_id:
         description: Exact prior run supplying unchanged boot and userspace artifacts
@@ -28,8 +21,6 @@ permissions:
   actions: read
 env:
   HARDWARE_TAG: ${{ inputs.hardware_tag || 'v0.1.10' }}
-  CLI_TAG: ${{ inputs.cli_tag || 'v0.1.10' }}
-  CLI_ARTIFACT_DIR: ${{ inputs.cli_run_id != '' && 'out/dependency-wheels' || '' }}
   HARDWARE_ARTIFACT_DIR: ${{ inputs.hardware_run_id != '' && 'out/downloads/hardware' || '' }}
 jobs:
   test:
@@ -41,7 +32,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          submodules: ${{ github.ref_type != 'tag' && github.event_name != 'workflow_dispatch' }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -50,26 +40,9 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: '[[ "$TAG" =~ ^v[A-Za-z0-9][A-Za-z0-9._-]*$ ]]'
-      - name: Reuse the tested first-release wheel pair
-        if: inputs.cli_run_id != ''
-        uses: actions/download-artifact@v4
-        with:
-          name: cli-wheel-pair
-          path: out/dependency-wheels
-          repository: OrchardLinux/cli
-          run-id: ${{ inputs.cli_run_id }}
-          github-token: ${{ github.token }}
-      # Releases test the published wheel pair they ship with. Pushes and pull requests test
-      # the hardware and cli commits this branch pins, which may be newer than any release.
-      - name: Install the published wheel pair
-        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
-        run: bash ci/dependencies --wheels-only
-      - name: Install the pinned hardware and cli submodules
-        if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch'
-        run: |
-          python -m venv .venv
-          .venv/bin/python -m pip install ./hardware ./cli
-          .venv/bin/python -m pip check
+      # Every build uses orchard main; a release records the exact commit in its receipt.
+      - name: Install orchard main
+        run: bash ci/dependencies --tools-only
       - run: .venv/bin/python -m unittest discover -s tests -v
   # Pongo is not built here: releases ship hardware's one Pongo (quiet/pongo.bin).
   artwork:
@@ -140,20 +113,10 @@ jobs:
         with:
           name: omarchy-boot-inputs
           path: out/downloads
-      - name: Reuse the tested first-release wheel pair
-        if: inputs.reuse_run_id == '' && inputs.cli_run_id != ''
-        uses: actions/download-artifact@v4
-        with:
-          name: cli-wheel-pair
-          path: out/dependency-wheels
-          repository: OrchardLinux/cli
-          run-id: ${{ inputs.cli_run_id }}
-          github-token: ${{ github.token }}
       - if: inputs.reuse_run_id == ''
         run: |
-          bash ci/dependencies --wheels-only
-          HW=$(.venv/bin/python -c 'from pathlib import Path; import orchard_hardware; print(Path(orchard_hardware.__file__).parent)')
-          bash "$HW/boot/m1n1/install-toolchain"
+          bash ci/dependencies --tools-only
+          bash .orchard/boot/m1n1/install-toolchain
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
           tar -xzf out/downloads/boot-inputs.tar.gz -C out
@@ -194,23 +157,13 @@ jobs:
         if: inputs.reuse_run_id == ''
         with:
           persist-credentials: false
-      - name: Reuse the tested first-release wheel pair
-        if: inputs.reuse_run_id == '' && inputs.cli_run_id != ''
-        uses: actions/download-artifact@v4
-        with:
-          name: cli-wheel-pair
-          path: out/dependency-wheels
-          repository: OrchardLinux/cli
-          run-id: ${{ inputs.cli_run_id }}
-          github-token: ${{ github.token }}
       - name: Install the same signed-package toolchains as local builds
         if: inputs.reuse_run_id == ''
         run: |
           bash desktop/install-toolchain
           bash desktop/labwc/install-toolchain
           bash system/install-toolchain
-          bash ci/dependencies --wheels-only
-          .venv/bin/python -m pip install -r requirements-build.txt
+          bash ci/dependencies --tools-only
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
           useradd --create-home --uid 2000 builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
@@ -265,15 +218,6 @@ jobs:
           path: out/downloads
           merge-multiple: true
       - run: sudo apt-get update && sudo apt-get install -y zstd
-      - name: Reuse the tested first-release wheel pair
-        if: inputs.cli_run_id != ''
-        uses: actions/download-artifact@v4
-        with:
-          name: cli-wheel-pair
-          path: out/dependency-wheels
-          repository: OrchardLinux/cli
-          run-id: ${{ inputs.cli_run_id }}
-          github-token: ${{ github.token }}
       - name: Await the exact hardware run without rebuilding components
         if: inputs.hardware_run_id != ''
         env:
@@ -281,14 +225,14 @@ jobs:
           HARDWARE_RUN_ID: ${{ inputs.hardware_run_id }}
         run: |
           [[ "$HARDWARE_RUN_ID" =~ ^[0-9]+$ ]]
-          gh run watch "$HARDWARE_RUN_ID" --repo OrchardLinux/hardware --interval 20 --exit-status
+          gh run watch "$HARDWARE_RUN_ID" --repo OrchardLinux/orchard --interval 20 --exit-status
       - name: Reuse verified first-release components
         if: inputs.hardware_run_id != ''
         uses: actions/download-artifact@v4
         with:
-          name: hardware-release-assets
+          name: orchard-release-assets
           path: out/downloads/hardware
-          repository: OrchardLinux/hardware
+          repository: OrchardLinux/orchard
           run-id: ${{ inputs.hardware_run_id }}
           github-token: ${{ github.token }}
       - run: bash ci/dependencies
@@ -305,7 +249,6 @@ jobs:
           VERSION="preview-$RUN_ID"
           TAG="v$VERSION"
           if [[ "$REF_TYPE" == tag ]]; then TAG="$REF_NAME"; VERSION="${TAG#v}"; fi
-          python -m pip install -r requirements-build.txt
           python -m release.j71b.build --release "$VERSION" \
             --base out/base/rootfs.tar.gz --base-receipt out/base/rootfs.tar.gz.json \
             --modules-dir out/components/kernel/lib/modules --loader out/boot/m1n1.bin \

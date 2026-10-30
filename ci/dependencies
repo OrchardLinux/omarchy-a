@@ -1,29 +1,22 @@
 #!/usr/bin/env bash
-# Install a published, hashed wheel pair and verified public component bundle.
+# Install orchard main (or ORCHARD_REF) and a verified public component bundle.
 set -euo pipefail
-: "${HARDWARE_TAG:?Set HARDWARE_TAG to an immutable hardware release}"
-: "${CLI_TAG:?Set CLI_TAG to an immutable CLI release}"
-[[ "$HARDWARE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$CLI_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-  echo 'Hardware and CLI tags must be vMAJOR.MINOR.PATCH' >&2; exit 2;
+: "${HARDWARE_TAG:?Set HARDWARE_TAG to the immutable orchard release with the components}"
+[[ "$HARDWARE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+  echo 'The component release tag must be vMAJOR.MINOR.PATCH' >&2; exit 2;
 }
-python3 -m venv .venv
-if [[ -n "${CLI_ARTIFACT_DIR:-}" ]]; then
-  .venv/bin/python -m pip install --only-binary=:all: "$CLI_ARTIFACT_DIR"/*.whl
-else
-  .venv/bin/python -m pip install --only-binary=:all: -r \
-    "https://github.com/OrchardLinux/cli/releases/download/$CLI_TAG/requirements.txt"
+# The tools are orchard's current main; the release receipt records its commit.
+if [[ ! -f .orchard/pyproject.toml ]]; then
+  git clone --quiet --depth 1 --branch "${ORCHARD_REF:-main}" https://github.com/OrchardLinux/orchard.git .orchard
 fi
-.venv/bin/python - <<'PY'
-import importlib.metadata as m, os
-for package, variable in (('orchard-hardware', 'HARDWARE_TAG'), ('orchard-cli', 'CLI_TAG')):
-    if 'v' + m.version(package) != os.environ[variable]:
-        raise SystemExit('Published wheel pair does not match ' + variable)
-PY
+echo "orchard $(git -C .orchard rev-parse HEAD)"
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ./.orchard
 .venv/bin/python -m pip check
-if [[ "${1:-}" == --wheels-only ]]; then exit 0; fi
-[[ $# == 0 ]] || { echo 'Usage: ci/dependencies [--wheels-only]' >&2; exit 2; }
+if [[ "${1:-}" == --tools-only ]]; then exit 0; fi
+[[ $# == 0 ]] || { echo 'Usage: ci/dependencies [--tools-only]' >&2; exit 2; }
 mkdir -p out/downloads
-base="https://github.com/OrchardLinux/hardware/releases/download/$HARDWARE_TAG"
+base="https://github.com/OrchardLinux/orchard/releases/download/$HARDWARE_TAG"
 if [[ -n "${HARDWARE_ARTIFACT_DIR:-}" ]]; then
   cp "$HARDWARE_ARTIFACT_DIR/j71b-components.tar.gz" "$HARDWARE_ARTIFACT_DIR/SHA256SUMS" out/downloads/
 else
@@ -33,4 +26,3 @@ fi
 grep -Eq ' (\./)?j71b-components.tar.gz$' out/downloads/SHA256SUMS
 (cd out/downloads && grep -E ' (\./)?j71b-components.tar.gz$' SHA256SUMS | sha256sum --check --strict)
 tar -xzf out/downloads/j71b-components.tar.gz -C out
-.venv/bin/python -m pip check
