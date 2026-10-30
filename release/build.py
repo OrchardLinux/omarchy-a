@@ -83,7 +83,7 @@ def main():
                       args.cursor_tools, args.bluetooth_tools, args.labwc_tools)
     platforms = {}
     for name, bundle in bundles.items():
-        layer = platform.build(name, args.output, bundle=bundle)
+        layer = platform.build(name, args.output, bundle=bundle, busybox=args.busybox)
         image = recovery(args, name, bundle, args.output / 'rootfs.json')
         platforms[name] = {'boards': layer.pop('boards'), 'layer': layer,
                            'boot': {'file': image.name, 'bytes': image.stat().st_size, 'sha256': sha(image)}}
