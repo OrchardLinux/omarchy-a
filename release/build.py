@@ -88,6 +88,7 @@ def main():
         platforms[name] = {'boards': layer.pop('boards'), 'layer': layer,
                            'boot': {'file': image.name, 'bytes': image.stat().st_size, 'sha256': sha(image)}}
     shutil.copyfile(args.pongo, args.output / 'pongo.bin')
+    shutil.rmtree(args.output / '.work', ignore_errors=True)  # recovery staging
     revision = hardware.revision()
     published = write_manifests(args.output, args.release, root, platforms, revision)
     # Assembly provenance is separate from the public installation contract.

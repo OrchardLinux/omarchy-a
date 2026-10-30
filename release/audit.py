@@ -115,7 +115,8 @@ def audit(manifest):
         # The recovery runs the kernel the installed entry boots: the same modules.
         base = f'usr/lib/modules/{layer["kernel_release"]}/'
         for path, digest in layer['hashes'].items():
-            if (path.startswith(base) and path != base + 'vmlinuz' and not path.startswith(base + 'dtb/') and
+            if (path.startswith(base) and path not in (base + 'vmlinuz', base + 'initrd') and
+                    not path.startswith(base + 'dtb/') and
                     runtime['hashes'].get(path) != digest):
                 raise ValueError(f'The {name} recovery and layer have different modules: {path}')
         recovery['runtime_members_verified'] = runtime['members']
