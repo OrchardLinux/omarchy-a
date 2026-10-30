@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# omarchy:summary=Open new windows maximized, or not
+# The rule lives in a labwc config that the session merges (labwc -m) before
+# ~/.config/labwc/rc.xml, so updates that replace rc.xml keep it. Off by default.
+set -euo pipefail
+flag=$HOME/.local/state/omarchy/toggles/maximize-windows
+rules=$HOME/.local/state/omarchy/xdg-config/labwc/rc.xml
+mkdir -p "${flag%/*}" "${rules%/*}"
+if [[ -e $flag ]]; then
+  rm -f "$flag" "$rules"
+else
+  cat >"$rules.tmp" <<'XML'
+<?xml version="1.0"?>
+<labwc_config>
+  <windowRules>
+    <windowRule identifier="*"><action name="Maximize" /></windowRule>
+  </windowRules>
+</labwc_config>
+XML
+  mv "$rules.tmp" "$rules"
+  : >"$flag"
+fi
+labwc=${LABWC_PID:-$(pgrep -u "$(id -u)" -x labwc | head -1 || true)}
+[[ -z $labwc ]] || kill -HUP "$labwc"

@@ -26,4 +26,7 @@ export PATH=/usr/local/bin:/usr/bin
 systemctl --user import-environment DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE XDG_CURRENT_DESKTOP
 if [[ -n ${QT_QPA_PLATFORMTHEME:-} ]]; then systemctl --user import-environment QT_QPA_PLATFORMTHEME; fi
 /usr/local/libexec/arch-ipad-first-theme
-exec /usr/bin/labwc
+# labwc -m reads labwc/rc.xml from each XDG config dir, then ~/.config/labwc/rc.xml.
+# Menu toggles keep their rules under ~/.local/state, which a release never replaces.
+export XDG_CONFIG_DIRS="$HOME/.local/state/omarchy/xdg-config:${XDG_CONFIG_DIRS:-/etc/xdg}"
+exec /usr/bin/labwc -m
