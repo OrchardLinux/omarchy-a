@@ -80,7 +80,8 @@ def main():
     from orchard import hardware
     from orchard.image import platform
     root = build_root(args.base, args.base_receipt, args.output, args.release,
-                      args.cursor_tools, args.bluetooth_tools, args.labwc_tools)
+                      args.cursor_tools, args.bluetooth_tools, args.labwc_tools,
+                      tools={'dropbear': args.dropbear, 'dropbearkey': args.dropbearkey, 'busybox': args.busybox})
     platforms = {}
     for name, bundle in bundles.items():
         layer = platform.build(name, args.output, bundle=bundle, busybox=args.busybox)

@@ -1,0 +1,14 @@
+[Unit]
+Description=SSH for the installing host, with this boot session's key
+# Only in a boot the installer handed over to and asked to keep its key:
+# the key never lives on disk, so a later boot has no SSH.
+ConditionPathExists=/run/recovery/authorized_keys
+After=orchard-usb-network.service
+
+[Service]
+Environment=RECOVERY_SSH_DIR=/run/recovery
+ExecStart=/usr/bin/recovery-start-ssh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
