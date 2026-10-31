@@ -28,6 +28,8 @@ upower
 zram-generator
 grim
 wlr-randr
+# Device orientation from the accelerometer (desktop/configuration/rotate-output).
+iio-sensor-proxy
 # The desktop's files app (desktop/configuration/org.kde.dolphin.desktop).
 dolphin
 xdg-desktop-portal

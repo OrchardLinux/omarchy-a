@@ -28,5 +28,8 @@ if [[ -n ${QT_QPA_PLATFORMTHEME:-} ]]; then systemctl --user import-environment 
 /usr/local/libexec/arch-ipad-first-theme
 # labwc -m reads labwc/rc.xml from each XDG config dir, then ~/.config/labwc/rc.xml.
 # Menu toggles keep their rules under ~/.local/state, which a release never replaces.
-export XDG_CONFIG_DIRS="$HOME/.local/state/omarchy/xdg-config:${XDG_CONFIG_DIRS:-/etc/xdg}"
+# Touch follows the panel when it rotates: map the touchscreens to it for this session.
+session_config=$XDG_RUNTIME_DIR/omarchy-xdg-config
+/usr/local/libexec/arch-ipad-touch-output "$session_config/labwc/rc.xml" || true
+export XDG_CONFIG_DIRS="$HOME/.local/state/omarchy/xdg-config:$session_config:${XDG_CONFIG_DIRS:-/etc/xdg}"
 exec /usr/bin/labwc -m

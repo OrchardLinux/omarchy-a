@@ -96,6 +96,8 @@ def main():
         PORT / "fastfetch/about-compact.txt": config / "omarchy/branding/about-compact.txt",
         CONFIG / "first-theme": target / "usr/local/libexec/arch-ipad-first-theme",
         CONFIG / "scale-output": target / "usr/local/libexec/arch-ipad-scale-output",
+        CONFIG / "rotate-output": target / "usr/local/libexec/arch-ipad-rotate-output",
+        CONFIG / "touch-output": target / "usr/local/libexec/arch-ipad-touch-output",
         CONFIG / "login-session": target / "usr/local/libexec/arch-ipad-login-session",
         CONFIG / "org.kde.dolphin.desktop": target / "home/tablet/.local/share/applications/org.kde.dolphin.desktop",
         HERE / "greeter/greetd.toml": target / "etc/greetd/config.toml",
@@ -118,6 +120,8 @@ def main():
     (config / "labwc/autostart").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-first-theme").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-scale-output").chmod(0o755)
+    (target / "usr/local/libexec/arch-ipad-rotate-output").chmod(0o755)
+    (target / "usr/local/libexec/arch-ipad-touch-output").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-login-session").chmod(0o755)
     # Record a content hash for each staged payload file.
     files = sorted(p for p in target.rglob("*") if p.is_file() and not p.is_symlink())

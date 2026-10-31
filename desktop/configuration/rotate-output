@@ -1,0 +1,57 @@
+#!/bin/bash
+# Turn the native panel with the device. The orientation comes from
+# iio-sensor-proxy (the accelerometer's IIO device and its mount-matrix), as
+# for GNOME and KDE; touch follows through labwc's <touch mapToOutput>.
+# An orientation is applied once it has held for half a second, so turning
+# the device past one orientation to the next doesn't rotate twice.
+# While ~/.config/omarchy/rotation-lock exists, the orientation is held.
+set -uo pipefail
+lock=${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/rotation-lock
+settle=${ROTATE_SETTLE:-0.5}
+
+transform() {
+  case $1 in
+    normal) echo normal ;;
+    bottom-up) echo 180 ;;
+    left-up) echo 90 ;;
+    right-up) echo 270 ;;
+    *) return 1 ;;
+  esac
+}
+
+apply() {
+  local t output
+  [[ -e $lock ]] && return
+  t=$(transform "$1") || return
+  output=$(wlr-randr | awk '/^[^[:space:]]/ {print $1; exit}')
+  [[ -n $output ]] && wlr-randr --output "$output" --transform "$t"
+}
+
+orientation() {
+  case $1 in
+    *'orientation changed: '*) echo "${1##*: }" ;;
+    *'Has accelerometer (orientation: '*) value=${1##*orientation: }; echo "${value%)}" ;;
+  esac
+}
+
+pending='' applied=''
+while :; do
+  if [[ -n $pending ]]; then
+    IFS= read -r -t "$settle" line
+    status=$?
+    if ((status == 0)); then
+      next=$(orientation "$line") && [[ -n $next ]] && pending=$next
+      continue
+    fi
+    ((status > 128)) || break   # end of input, not a timeout
+    [[ $pending != "$applied" ]] && apply "$pending" && applied=$pending
+    pending=''
+  else
+    IFS= read -r line || break
+    next=$(orientation "$line") && [[ -n $next ]] && pending=$next
+  fi
+done < <(monitor-sensor --accel)
+if [[ -n $pending && $pending != "$applied" ]]; then
+  apply "$pending"
+fi
+exit 0
