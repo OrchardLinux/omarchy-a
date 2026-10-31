@@ -26,6 +26,10 @@ If a desktop change needs an orchard change, make it on an orchard branch, point
 `orchard.local.toml` at that checkout, and open one PR in each repository. Say in
 each which one it needs and in which order they merge.
 
+Pull requests land as in orchard: we usually rework them to fit the structure
+before merging, on your PR branch and with your authorship, unless you ask us
+not to (see orchard's [CONTRIBUTING](https://github.com/OrchardLinux/orchard/blob/main/CONTRIBUTING.md#how-pull-requests-land)).
+
 ## Test
 
 ```sh
