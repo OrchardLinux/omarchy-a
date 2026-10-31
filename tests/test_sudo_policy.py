@@ -1,8 +1,8 @@
 import hashlib
 import unittest
 
-from release.j71b.audit import verify_tablet_sudo
-from release.j71b.public_root import system_files
+from release.audit import verify_tablet_sudo
+from release.public_root import system_files
 
 POLICY = {'etc/sudoers.d/90-tablet': b'tablet ALL=(ALL:ALL) ALL\n',
           'etc/sudoers.d/omarchy-tzupdate': b'tablet ALL=(root) NOPASSWD: /usr/bin/timedatectl set-timezone *\n'}
@@ -10,7 +10,7 @@ POLICY = {'etc/sudoers.d/90-tablet': b'tablet ALL=(ALL:ALL) ALL\n',
 
 class TabletSudoPolicyTests(unittest.TestCase):
     def test_public_overlay_asks_for_the_password(self):
-        files = system_files('test-kernel')
+        files = system_files()
         for name, data in POLICY.items():
             self.assertEqual(files[name], (data, 0o440))
         self.assertEqual(sorted(n for n in files if n.startswith('etc/sudoers.d/')), sorted(POLICY))

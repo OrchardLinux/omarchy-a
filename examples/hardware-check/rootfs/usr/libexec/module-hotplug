@@ -1,4 +1,0 @@
-#!/bin/sh
-# Kernel uevent helper: load the driver for a device that appears after boot.
-[ -n "${MODALIAS:-}" ] && exec /bin/modprobe -qb "$MODALIAS"
-exit 0

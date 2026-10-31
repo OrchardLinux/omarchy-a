@@ -35,7 +35,7 @@ PongoOS receives the recovery payload over USB. The payload combines m1n1, boot 
 
 Recovery is a small Linux system containing USB connectivity, SSH, storage tools and kernel modules. It brings up internal storage read-only at boot and never writes to it by itself.
 
-The installer writes two partitions next to iPadOS: a boot partition and the Omarchy A root. Every later start goes through the same chain, but m1n1 loads the kernel, initrd and device tree from the boot partition instead of recovery from the host (see the [boot contract](https://github.com/OrchardLinux/hardware/blob/main/docs/boot-contract.md)).
+The installer writes two partitions next to iPadOS: a boot partition and the Omarchy A root. Every later start goes through the same chain, but m1n1 loads the kernel, initrd and device tree from the boot partition instead of recovery from the host (see the [boot contract](https://github.com/OrchardLinux/orchard/blob/main/docs/boot-contract.md)).
 
 ## What a release contains
 
@@ -43,13 +43,14 @@ A release combines the public artifacts for a particular device and boot method:
 
 | Artifact | Purpose |
 | --- | --- |
-| `index.toml` | Maps supported devices and boot methods to installation manifests. |
-| Device installation manifest | Identifies the release, compatibility requirements and required artifacts with their sizes and SHA-256 hashes. |
+| `index.toml` | Pins the release's installation manifest by size and SHA-256. |
+| `release.toml` | Identifies the release, compatibility requirements and every artifact with its size and SHA-256, per platform. |
 | `pongo.bin` | Early boot environment used by the current checkm8/Pongo path. |
-| `recovery.bin` | RAM-bootable payload containing the loader, device tree, kernel, and recovery userspace. |
-| `rootfs.tar.zst` | The persistent Omarchy A filesystem: Arch userspace, desktop, applications, configuration, its kernel, device tree and modules. |
+| `recovery-PLATFORM.bin` | RAM-bootable payload per platform: the loader, every board's device tree, the kernel and recovery userspace. |
+| `platform-PLATFORM.tar.gz` | orchard's platform layer: kernel, initrd, every board's device tree and the modules. |
+| `rootfs.tar.zst` | The persistent Omarchy A filesystem for every device: Arch userspace, desktop, applications and configuration. |
 
-The rootfs carries its own kernel the way a normal Arch system does: `/usr/lib/modules/<version>/vmlinuz` plus the board's DTB, set up for `kernel-install` with mkinitcpio.
+The rootfs carries no kernel. orchard's platform layer for the device's platform goes into it at install time (`/usr/lib/modules/<version>/`), and orchard writes the boot entry from it.
 
 Local manifests can reference files beside them. Hosted releases use explicit HTTPS artifact URLs. The CLI handles acquisition and verification in either case. Hashes establish consistency with the selected metadata, not publisher authenticity on their own.
 
@@ -86,9 +87,9 @@ The CLI uploads the plan, the private firmware bundle and the secrets (root-only
 
 - checks the partition table still matches the plan, then creates the partitions;
 - formats the boot partition (FAT32) and the root (ext4);
-- extracts the rootfs while checking its SHA-256, and adds the firmware;
+- extracts the rootfs while checking its SHA-256, then adds orchard's platform layer and the firmware;
 - sets the password and the PIN, then deletes the secrets;
-- runs `kernel-install` in the new system, which writes the kernel, initrd, DTB and boot entry to the boot partition.
+- writes the kernel, orchard's initrd, the board's DTB and the boot entry to the boot partition.
 
 It never touches APFS or any partition the plan doesn't name. Progress comes back as JSON events.
 
@@ -100,7 +101,7 @@ Put the device in DFU mode and run `orchard launch`. m1n1 reads the boot entries
 
 - **New hardware does not require a new user workflow.** A port supplies its kernel, device tree, firmware recipe and device description; the recovery and the install script are the same for every device.
 - **Desktop changes do not belong in the boot transport.** Omarchy A can evolve its shell, applications, and system policy without touching USB upload or storage safety logic.
-- **The installed system is an ordinary Arch system.** Its kernel updates go through `kernel-install` like on any Linux machine with a boot partition.
+- **The kernel is orchard's, the rest is an ordinary Arch system.** Kernel updates come from orchard as a new platform layer; packages update through pacman.
 - **Private inputs remain separate from public releases.** The same published artifacts can be used while preparing the device-specific firmware locally.
 
 The minimal Alpine-based [example image](https://github.com/OrchardLinux/minimal-linux) exercises the same boundaries without Omarchy A's desktop or systemd policy.
@@ -111,7 +112,7 @@ The install script checks the partition table against the plan before its first 
 
 ## Implementation references
 
-- [Release assembly](../release/j71b/build.py) and [manifest generation](../release/manifests.py).
+- [Release assembly](../release/build.py) and [manifest generation](../release/manifests.py).
 - [Image assembly and validation instructions](../BUILD.md).
-- [Host orchestration](https://github.com/OrchardLinux/cli/blob/main/src/orchard_cli/service.py) and the [install script](https://github.com/OrchardLinux/cli/blob/main/src/orchard_cli/install_device.py).
-- [Recovery runtime](https://github.com/OrchardLinux/hardware/tree/main/runtime/recovery), [recovery image producer](https://github.com/OrchardLinux/hardware/tree/main/image) and the [boot contract](https://github.com/OrchardLinux/hardware/blob/main/docs/boot-contract.md).
+- [Host orchestration](https://github.com/OrchardLinux/orchard/blob/main/src/orchard/service.py) and the [install script](https://github.com/OrchardLinux/orchard/blob/main/src/orchard/install_device.py).
+- [Recovery runtime](https://github.com/OrchardLinux/orchard/tree/main/runtime/recovery), [recovery image producer](https://github.com/OrchardLinux/orchard/tree/main/src/orchard/image) and the [boot contract](https://github.com/OrchardLinux/orchard/blob/main/docs/boot-contract.md).

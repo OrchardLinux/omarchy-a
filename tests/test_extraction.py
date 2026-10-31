@@ -11,10 +11,10 @@ import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
-import orchard_hardware
+from orchard.hardware import ROOT
 
 PROJECT = Path(__file__).resolve().parents[1]
-HARDWARE = Path(orchard_hardware.__file__).parent
+HARDWARE = ROOT
 
 def stream(entries):
     output = io.BytesIO()
@@ -37,7 +37,7 @@ def stream(entries):
 
 class ImageProduction(unittest.TestCase):
     def test_public_producer_bakes_parent_directories_and_desktop_updates(self):
-        from release.j71b import public_root
+        from release import public_root
         from pathlib import PurePosixPath
         replacements = public_root.desktop_replacements()
         files = {name: b'old desktop content' for name in replacements}
@@ -63,27 +63,19 @@ class ImageProduction(unittest.TestCase):
                  patch.object(public_root, 'SYSTEM', root / 'overlay'), \
                  patch.object(public_root, 'cursor_files', return_value={'usr/libexec/omarchy-wtype': (b'wtype', 0o755)}), \
                  patch.object(public_root, 'bluetooth_files', return_value={}), \
-                 patch.object(public_root, 'labwc_files', return_value={}), \
-                 patch.object(public_root, 'runtime_files', return_value=('test', {
-                     'usr/lib/modules/test/modules.dep': (b'', 0o644)})):
-                kernel, dtbs = root / 'Image.gz', root / 'dtbs'
-                kernel.write_bytes(b'kernel image')
-                dtbs.mkdir()
-                for board in ('t8010-j71b', 't8010-j171'):
-                    (dtbs / (board + '.dtb')).write_bytes(b'\xd0\x0d\xfe\xed' + board.encode())
-                public_root.build(base, receipt, root, root / 'release', 'test', root / 'cursor-tools',
-                                  kernel=kernel, dtbs=dtbs)
+                 patch.object(public_root, 'labwc_files', return_value={}):
+                receipt = public_root.build(base, receipt, root / 'release', 'test', root / 'cursor-tools')
+            self.assertNotIn('kernel_release', receipt)
             raw = subprocess.check_output(['zstd', '-dq', '-c', str(root / 'release/rootfs.tar.zst')])
             with tarfile.open(fileobj=io.BytesIO(raw)) as bundle:
                 parent = bundle.getmember('usr/libexec')
                 self.assertTrue(parent.isdir())
                 self.assertEqual((parent.uid, parent.gid, parent.mode), (0, 0, 0o755))
-                self.assertEqual(bundle.extractfile('usr/lib/modules/test/vmlinuz').read(), b'kernel image')
-                # Every board's DTB; the installer names the board in /etc/kernel/devicetree.
-                for board in ('t8010-j71b', 't8010-j171'):
-                    self.assertEqual(bundle.extractfile(f'usr/lib/modules/test/dtb/{board}.dtb').read(),
-                                     b'\xd0\x0d\xfe\xed' + board.encode())
+                # No kernel, DTBs or modules: orchard's platform layer brings them at install.
+                self.assertFalse([n for n in bundle.getnames() if n.startswith('usr/lib/modules')])
                 self.assertNotIn('etc/kernel/devicetree', bundle.getnames())
+                self.assertEqual(json.load(bundle.extractfile('etc/orchard/release.json')),
+                                 {'protocol': 1, 'release': 'test'})
                 manifest = json.load(bundle.extractfile('arch-ipad-ui-manifest.json'))
                 for name, expected in replacements.items():
                     self.assertEqual(bundle.extractfile(name).read(), expected)
@@ -95,6 +87,21 @@ class ImageProduction(unittest.TestCase):
                 names = bundle.getnames()
                 self.assertFalse([n for n in names if 'orchard-j71b' in n or 'omarchy-diagnostics' in n or
                                   n in ('usr/bin/orchard-device', 'usr/libexec/omarchy-dropbear')])
+
+    def test_a_base_with_kernel_modules_is_refused(self):
+        from release import public_root
+        data = stream([('usr/lib/modules/6.1-generic/modules.dep', 'file', b'')])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base, receipt = root / 'base.gz', root / 'base.json'
+            base.write_bytes(data)
+            receipt.write_text(json.dumps({'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}))
+            with patch.object(public_root, 'privileged_entries', return_value={}), \
+                 patch.object(public_root, 'cursor_files', return_value={}), \
+                 patch.object(public_root, 'bluetooth_files', return_value={}), \
+                 patch.object(public_root, 'labwc_files', return_value={}), \
+                 self.assertRaisesRegex(ValueError, 'platform layer provides them'):
+                public_root.build(base, receipt, root / 'release', 'test', root / 'cursor-tools')
 
     @unittest.skipUnless(__import__('shutil').which('node'), 'node is required for desktop model validation')
     def test_battery_startup_and_bluetooth_name_fallback_models(self):
@@ -121,7 +128,7 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
                         str(PROJECT / 'desktop/shell/shell/plugins/panels/bluetooth/Model.js')], check=True)
 
     def test_cursor_component_is_content_verified_before_packaging(self):
-        from release.j71b.public_root import cursor_files
+        from release.public_root import cursor_files
         pin = json.loads((PROJECT / 'desktop/cursor/wtype.json').read_text())
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -150,8 +157,8 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
 
     def test_recovery_framing_preserves_the_compressed_initramfs(self):
         import struct
-        from orchard_hardware.boot.assemble import INITRAMFS_MAGIC
-        from release.j71b.audit import audit_recovery
+        from orchard.image.assemble import INITRAMFS_MAGIC
+        from release.audit import audit_recovery
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fdt = b'\xd0\x0d\xfe\xed'
@@ -161,7 +168,7 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
                 (root / name).write_bytes(data)
             (root / 'profile.json').write_text(json.dumps({'bootargs': 'chosen.bootargs=test\n'}))
             image = root / 'recovery.bin'
-            argv = [sys.executable, '-m', 'orchard_hardware.boot.assemble', '--manifest', str(root / 'profile.json'),
+            argv = [sys.executable, '-m', 'orchard.image.assemble', '--manifest', str(root / 'profile.json'),
                     '--output', str(image)]
             for name in inputs:
                 argv.extend(['--' + name.rstrip('2'), str(root / name)])

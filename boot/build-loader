@@ -5,11 +5,12 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import orchard_hardware
+from orchard.hardware import ROOT as HARDWARE
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--output', required=True, type=Path)
 parser.add_argument('--resume', action='store_true')
+parser.add_argument('--work-dir', type=Path, help="m1n1's build tree (default: the recipe's own)")
 parser.add_argument('--logo-header', type=Path, help='pre-generated matching artwork header (CI)')
 args = parser.parse_args()
 here = Path(__file__).resolve().parent
@@ -18,8 +19,13 @@ with tempfile.TemporaryDirectory(prefix='omarchy-loader-') as temporary:
     if not args.logo_header:
         subprocess.run([sys.executable, str(here / 'generate-logo.py'),
                         '--size', '480', '--output', str(header)], check=True)
-    subprocess.run([str(Path(orchard_hardware.__file__).parent / 'boot/m1n1/build'),
-                    'j71b', '--output', str(args.output),
-                    '--extra-patch', str(here / 'm1n1/patches/j71b/0002-omarchy-splash.patch'),
+    subprocess.run([str(HARDWARE / 'boot/m1n1/build'),
+                    # One m1n1 starts every Apple device; the splash is the only Omarchy part.
+                    'apple', '--output', str(args.output),
+                    '--extra-patch', str(here / 'm1n1/patches/0002-omarchy-splash.patch'),
                     '--include-header', str(header), '--extra-cflags', '-DOMARCHY_SPLASH',
+                    *(['--work-dir', str(args.work_dir)] if args.work_dir else []),
                     *(['--resume'] if args.resume else [])], check=True)
+    # The same picture as orchard's boot splash, for orchard launch.
+    subprocess.run([sys.executable, str(here / 'splash.py'), str(header),
+                    str(args.output.with_name('splash'))], check=True)

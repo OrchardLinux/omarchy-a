@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from orchard_hardware import buildenv
+from orchard import buildenv
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 

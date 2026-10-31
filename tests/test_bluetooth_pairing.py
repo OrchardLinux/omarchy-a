@@ -10,10 +10,10 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 import zipfile
 
-from release.j71b import public_root, audit
+from release import public_root, audit
 
 PROJECT = Path(__file__).resolve().parents[1]
-policy = runpy.run_path(str(PROJECT / 'system/j71b/overlay/usr/lib/omarchy-bluetooth/policy.py'))
+policy = runpy.run_path(str(PROJECT / 'system/overlay/usr/lib/omarchy-bluetooth/policy.py'))
 PromptBroker, Rejected = policy['PromptBroker'], policy['Rejected']
 
 
@@ -90,7 +90,7 @@ class PairingPackagingTests(unittest.TestCase):
         self.assertIn('home/tablet/.local/share/omarchy-ipad/bin/omarchy-bluetooth-device', replacements)
         self.assertIn('home/tablet/.local/share/omarchy-ipad/shell/plugins/panels/bluetooth/Panel.qml', replacements)
         self.assertIn('home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml', public_root.desktop_additions())
-        files = public_root.system_files('test')
+        files = public_root.system_files()
         self.assertEqual(files['usr/libexec/omarchy-bluetooth-pair'][1], 0o755)
         self.assertEqual(files['usr/lib/omarchy-bluetooth/policy.py'][1], 0o644)
 

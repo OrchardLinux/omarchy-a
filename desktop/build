@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from orchard_hardware.buildenv import native
+from orchard.buildenv import native
 
 HERE = Path(__file__).resolve().parent
 INPUTS = HERE / 'arm64/inputs'

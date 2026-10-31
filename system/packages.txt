@@ -1,0 +1,42 @@
+# Arch Linux ARM userspace only. NEVER install linux-aarch64 in the iPad root.
+# Baseline; exact dependency snapshot comes from an empty pacman DB preview.
+base
+archlinuxarm-keyring
+pacman
+sudo
+# The installer hashes the lock-screen PIN with it; the PIN check uses it too.
+openssl
+python
+labwc
+quickshell
+qt6-imageformats
+foot
+ttf-dejavu
+ttf-jetbrains-mono-nerd
+ttf-nerd-fonts-symbols
+firefox
+fastfetch
+starship
+seatd
+# Boot login: the touch PIN greeter (desktop/greeter) on VT1.
+greetd
+networkmanager
+iw
+bluez
+bluez-utils
+upower
+zram-generator
+grim
+wlr-randr
+# The desktop's files app (desktop/configuration/org.kde.dolphin.desktop).
+dolphin
+xdg-desktop-portal
+xdg-desktop-portal-wlr
+pipewire
+pipewire-pulse
+wireplumber
+socat
+jq
+pango
+cairo
+wayland

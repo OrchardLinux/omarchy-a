@@ -4,8 +4,6 @@ umask 077
 
 here=$(cd "$(dirname "$0")" && pwd)
 project=$(cd "$here/.." && pwd)
-device=${1:-}
-[[ $# -gt 0 ]] && shift
 output='' desktop='' release=''
 while (($#)); do
   case "$1" in
@@ -15,10 +13,9 @@ while (($#)); do
     *) echo "Unknown argument: $1" >&2; exit 2;;
   esac
 done
-if [[ ! "$device" =~ ^[a-z0-9][a-z0-9_-]*$ || -z "$output" || -z "$release" ||
-      ! -x "$here/$device/build-rootfs" || ! -d "$desktop/payload" ||
+if [[ -z "$output" || -z "$release" || ! -d "$desktop/payload" ||
       ! -d "$desktop/packages" || -e "$output" ]]; then
-  echo 'Usage: ./system/build-rootfs DEVICE --output DIRECTORY --desktop DIRECTORY --release NAME' >&2
+  echo 'Usage: ./system/build-rootfs --output DIRECTORY --desktop DIRECTORY --release NAME' >&2
   exit 2
 fi
 podman=$(command -v podman || true)
@@ -33,8 +30,8 @@ output=$(absolute "$output")
 desktop=$(absolute "$desktop")
 "$project/desktop/build" --verify "$desktop"
 
-mkdir -p "$here/.work/$device"
-stage=$(mktemp -d "$here/.work/$device/result.XXXXXX")
+mkdir -p "$here/.work/rootfs"
+stage=$(mktemp -d "$here/.work/rootfs/result.XXXXXX")
 volume=
 native_work=
 cleanup() {
@@ -46,20 +43,20 @@ cleanup() {
 }
 trap cleanup EXIT
 if [[ ${ORCHARD_BUILD_NATIVE:-0} == 1 ]]; then
-  native_work=$(mktemp -d "$here/.work/$device/native.XXXXXX")
-  "$here/$device/build-rootfs" --root "$native_work/root" \
+  native_work=$(mktemp -d "$here/.work/rootfs/native.XXXXXX")
+  "$here/assemble-rootfs" --root "$native_work/root" \
     --output "$native_work/rootfs.tar.gz" --desktop "$desktop" --release "$release"
   cp "$native_work/rootfs.tar.gz" "$native_work/rootfs.tar.gz.json" "$native_work/packages.lock" "$stage/"
 else
   "$podman" build -f "$here/Containerfile" -t localhost/omarchy-a-arch-builder:latest "$here"
-  volume_name="omarchy-a-rootfs-$device-${stage##*/}-$$"
+  volume_name="omarchy-a-rootfs-${stage##*/}-$$"
   "$podman" volume create "$volume_name" >/dev/null
   volume=$volume_name
   "$podman" run --rm \
     -v "$volume:/work:rw" \
     -v "$here:/repo/system:ro" -v "$desktop:/inputs/desktop:ro" \
     localhost/omarchy-a-arch-builder:latest \
-    "/repo/system/$device/build-rootfs" \
+    /repo/system/assemble-rootfs \
       --root /work/root --output /work/rootfs.tar.gz \
       --desktop /inputs/desktop --release "$release"
   "$podman" run --rm --network none -v "$volume:/work:ro" \

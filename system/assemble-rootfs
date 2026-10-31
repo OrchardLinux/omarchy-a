@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root= output= desktop= release=
+while (($#)); do
+  case "$1" in
+    --root) root=$2; shift 2;;
+    --output) output=$2; shift 2;;
+    --desktop) desktop=$2; shift 2;;
+    --release) release=$2; shift 2;;
+    *) echo "Unknown argument: $1" >&2; exit 2;;
+  esac
+done
+for value in "$root" "$output" "$desktop" "$release"; do
+  [[ -n "$value" ]] || { echo 'Missing required build input' >&2; exit 2; }
+done
+[[ $(uname -m) == aarch64 && $EUID == 0 ]] || { echo 'Requires an aarch64 Arch Linux ARM build environment as root' >&2; exit 1; }
+for cmd in pacman useradd usermod systemctl tar python3; do command -v "$cmd" >/dev/null || { echo "Missing $cmd" >&2; exit 1; }; done
+project=$(cd "$(dirname "$0")/.." && pwd)
+root=$(realpath -m -- "$root")
+output=$(realpath -m -- "$output")
+[[ "$root" != / && ! -e "$root" && ! -e "$output" ]] || { echo 'Root and archive must be new paths' >&2; exit 1; }
+mapfile -t requested < <(grep -vE '^\s*(#|$)' "$project/system/packages.txt")
+[[ ${#requested[@]} -gt 0 ]] || exit 1
+printf '%s\n' "${requested[@]}" | grep -qx 'linux-aarch64' && { echo 'Generic kernel is not an input' >&2; exit 1; }
+
+# Install signed packages into a clean target; no mounts or VM root are needed.
+# The caller's umask 077 would make pacman's own state (/var/lib/pacman,
+# /var/cache/pacman) root-only, breaking downloads as DownloadUser and queries
+# as tablet. Image contents need distribution modes.
+umask 022
+mkdir -p "$root/var/lib/pacman" "$root/var/cache/pacman/pkg" "$root/etc"
+pacman --root "$root" --gpgdir /etc/pacman.d/gnupg -Sy --noconfirm "${requested[@]}"
+for package in "$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.pkg.tar.zst"; do
+  pacman --root "$root" --gpgdir /etc/pacman.d/gnupg --noconfirm -U "$package"
+done
+useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
+# Native login needs seatd's socket and DRM/input device access; wheel
+# makes the account polkit's admin, so prompts take its password.
+usermod --root "$root" --append --groups seat,video,input,wheel tablet
+# The greeter (greetd's own user) draws through seatd and wakes the panel.
+usermod --root "$root" --append --groups seat,video,input greeter
+# Normalize only copied desktop ownership. Recursive chown of the installed
+# package tree clears setuid/setgid bits and file capabilities (including sudo).
+cp -a --no-preserve=ownership "$desktop/payload/." "$root/"
+chown -R 1000:1000 "$root/home/tablet"
+install -d "$root/etc/systemd/system"
+for unit in sleep suspend hibernate hybrid-sleep suspend-then-hibernate; do
+  ln -s /dev/null "$root/etc/systemd/system/$unit.target"
+done
+systemctl --root="$root" enable greetd.service NetworkManager.service bluetooth.service seatd.service apple-aop.service
+: > "$root/etc/machine-id"
+# Without a static name, NetworkManager adopts the network's reverse DNS
+# name and BlueZ advertises "archlinux" to accessories.
+printf 'omarchy-ipad\n' > "$root/etc/hostname"
+chmod 644 "$root/etc/hostname"
+rm -f "$root/var/lib/dbus/machine-id" "$root/etc/ssh"/ssh_host_*
+rm -rf -- "$root/etc/pacman.d/gnupg"
+install -d "$root/etc/ipadlinux"
+printf '%s\n' "$release" > "$root/etc/ipadlinux/release"
+mkdir -p "$(dirname "$output")"
+pacman --root "$root" -Q > "$(dirname "$output")/packages.lock"
+tar --hard-dereference --numeric-owner --one-file-system -C "$root" \
+  --exclude='./dev/*' --exclude='./proc/*' --exclude='./sys/*' \
+  --exclude='./run/*' --exclude='./tmp/*' --exclude='./var/cache/pacman/pkg/*' \
+  -cf - . | gzip -1 > "$output"
+python3 - "$output" "$release" <<'PY'
+import hashlib,json,pathlib,sys
+archive,release=pathlib.Path(sys.argv[1]),sys.argv[2]
+h=hashlib.sha256()
+with archive.open('rb') as stream:
+ for block in iter(lambda:stream.read(1024*1024),b''):h.update(block)
+lock=archive.parent/'packages.lock'
+metadata={'release':release,'bytes':archive.stat().st_size,'sha256':h.hexdigest(),
+          'packages_lock_sha256':hashlib.sha256(lock.read_bytes()).hexdigest()}
+archive.with_suffix(archive.suffix+'.json').write_text(json.dumps(metadata,indent=2)+'\n')
+print('Clean rootfs:',archive,'SHA-256',h.hexdigest())
+PY
