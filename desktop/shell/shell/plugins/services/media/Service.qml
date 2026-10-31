@@ -555,12 +555,6 @@ Item {
       return root.runAction("play", true) ? "ok" : "unhandled"
     }
 
-    // The volume keys for compositors without global shortcuts (labwc):
-    // raise, lower or mute-toggle, with the OSD.
-    function volume(action: string): string {
-      return root.handleVolumeKey(action) ? "ok" : "unhandled"
-    }
-
     function pause(): string {
       return root.runAction("pause", true) ? "ok" : "unhandled"
     }

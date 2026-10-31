@@ -1,16 +1,18 @@
 #!/bin/bash
-# The volume keys: the shell's media service steps the default output by 5%
-# and shows its OSD; without a running shell, wpctl does the step alone.
+# The volume keys: step the default output by 5% (at most 100%), then show the
+# shell's volume OSD, as the media service draws it on Hyprland.
 set -u
-action=${1:-}
-case $action in
-  raise) step='5%+' ;;
-  lower) step='5%-' ;;
-  mute-toggle) step= ;;
+# labwc runs key bindings without the session's OMARCHY_PATH (labwc-autostart's).
+export OMARCHY_PATH=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
+case ${1:-} in
+  raise) wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+ ;;
+  lower) wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%- ;;
+  mute-toggle) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
   *) echo 'Usage: omarchy-volume raise|lower|mute-toggle' >&2; exit 2 ;;
-esac
-[[ $(omarchy-shell -q media volume "$action" 2>/dev/null) == ok ]] && exit 0
-if [[ -z $step ]]; then
-  exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
-fi
-exec wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ "$step"
+esac || exit 1
+state=$(wpctl get-volume @DEFAULT_AUDIO_SINK@) || exit 0   # "Volume: 0.45 [MUTED]"
+percent=$(awk '{ printf "%d", $2 * 100 + 0.5 }' <<< "$state")
+icon=volume-high
+[[ $state == *MUTED* || $percent == 0 ]] && icon=volume-muted
+omarchy-shell -q shell summon omarchy.osd \
+  "{\"icon\":\"$icon\",\"message\":\"\",\"value\":\"$percent\",\"progressText\":\"$percent%\",\"max\":\"100\",\"duration\":\"\"}"
