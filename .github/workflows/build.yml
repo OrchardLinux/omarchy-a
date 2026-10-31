@@ -267,6 +267,9 @@ jobs:
             --output out/release
           python -m release.audit out/release/release.toml
           python -m orchard.manifests --verify-local out/release/index.toml
+          # The installer: install.sh and orchard-install.pyz with orchard's launch loaders.
+          python -m orchard.installer release out/release \
+            --pongo "$tools/quiet/pongo.bin" --m1n1 "$tools/quiet/m1n1.bin"
           python -m release.publish --tag "$TAG" --release-dir out/release --output out/publication
           cp out/release/rootfs.json out/release/build-receipt.json out/publication/
           git archive --format=tar.gz -o out/publication/omarchy-linux-source.tar.gz HEAD

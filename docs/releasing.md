@@ -38,7 +38,7 @@ https://github.com/OrchardLinux/omarchy-a/releases/latest/download/index.toml
 
 Only that entry point follows latest. Its manifest and image references point to specific release tags, preventing cross-release mixing.
 
-Publish the [orchard release](https://github.com/OrchardLinux/orchard/blob/main/docs/releases.md) with the [shared launcher](https://github.com/OrchardLinux/orchard/blob/main/boot/quiet/README.md) before announcing the bootstrap. The launcher catalogue must include this release's exact root receipt and compatible kernel/runtime inputs; a wheel alone does not enable `orchard launch`. `install.sh` lives in this repository; project packages do not need PyPI publication.
+Every release carries its installer: `install.sh` and `orchard-install.pyz` (orchard's core with this release's index, device data and launch loaders), made by `orchard.installer` from the orchard release CI pins and rewritten by `release.publish` for the release's URLs. The README's command runs the latest release's `install.sh`; the repository's `install.sh` only forwards to it, for older instructions. Publish the pinned [orchard release](https://github.com/OrchardLinux/orchard/blob/main/docs/releases.md) first: its tag provides the components and the loaders. Change the README's install command only once a release with `install.sh` is published.
 
 Before announcing a release:
 
@@ -49,6 +49,6 @@ Before announcing a release:
 
 ## Updates
 
-Users rerun the README bootstrap to update the CLI and its hardware dependency. No bootstrap edit is needed for a new package version.
+The installer leaves the user's `orchard` (`install`, `launch`, `devices`, `update`); a later installer replaces it only with a newer core, and `orchard update` installs the latest orchard release's core.
 
-The CLI fetches the registered distro index on every resolution, so a new latest Omarchy A release is discovered automatically. Cached images are verified and reused by hash. This updates available installation data; upgrading an existing desktop installation is a separate, currently unimplemented workflow.
+Running the README command again installs the latest release. Cached images are verified and reused by hash. This updates available installation data; upgrading an existing desktop installation is a separate, currently unimplemented workflow.

@@ -76,6 +76,8 @@ def main():
            '--cursor-tools', cursor, '--bluetooth-tools', bluetooth, '--labwc-tools', labwc,
            '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
+    # install.sh and orchard-install.pyz, with orchard's launch loaders from its cache.
+    python('-m', 'orchard.installer', 'release', args.output)
 
 
 if __name__ == '__main__':

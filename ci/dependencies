@@ -14,7 +14,8 @@ if [[ ! -f .orchard/pyproject.toml ]]; then
 fi
 echo "orchard $(git -C .orchard rev-parse HEAD)"
 python3 -m venv .venv
-.venv/bin/python -m pip install -e ./.orchard
+# validate: the JSON schemas, which release CI checks every manifest against.
+.venv/bin/python -m pip install -e './.orchard[validate]'
 .venv/bin/python -m pip check
 if [[ "${1:-}" == --tools-only ]]; then exit 0; fi
 [[ $# == 0 ]] || { echo 'Usage: ci/dependencies [--tools-only]' >&2; exit 2; }
