@@ -59,6 +59,7 @@ class GreeterStagingTests(unittest.TestCase):
             self.assertFalse((target / 'etc/systemd/system/getty@tty1.service.d').exists())
             self.assertFalse((target / 'home/tablet/.bash_profile').exists())
             self.assertTrue((target / 'usr/local/libexec/arch-ipad-rotate-output').stat().st_mode & 0o111)
+            self.assertTrue((target / 'usr/local/libexec/arch-ipad-touch-output').stat().st_mode & 0o111)
 
 
 if __name__ == '__main__':

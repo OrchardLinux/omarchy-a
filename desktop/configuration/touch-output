@@ -1,0 +1,35 @@
+#!/bin/bash
+# Map each touchscreen to the connected panel, so that touch follows the
+# panel when it rotates. Writes a labwc rc.xml fragment to $1, read through
+# XDG_CONFIG_DIRS: one <touch> entry per touchscreen, named, because named
+# entries take precedence over the default one in ~/.config/labwc/rc.xml.
+# The panel's DRM connector name (card0-NAME) is its wlroots output name.
+set -euo pipefail
+out=$1
+sys=${SYSFS_ROOT:-/sys}
+
+panel=''
+for status in "$sys"/class/drm/card*-*/status; do
+  [[ -r $status && $(<"$status") == connected ]] || continue
+  connector=${status%/status}
+  connector=${connector##*/}
+  panel=${connector#card*-}
+  break
+done
+[[ -n $panel ]] || exit 0
+
+xml() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
+}
+
+entries=''
+for device in "$sys"/class/input/input*; do
+  # Direct input devices (INPUT_PROP_DIRECT): touchscreens.
+  [[ -r $device/properties && -r $device/name ]] || continue
+  (( 16#$(<"$device/properties") & 2 )) || continue
+  entries+="  <touch deviceName=\"$(xml "$(<"$device/name")")\" mapToOutput=\"$(xml "$panel")\" mouseEmulation=\"no\" />"$'\n'
+done
+[[ -n $entries ]] || exit 0
+
+mkdir -p "$(dirname "$out")"
+printf '<?xml version="1.0"?>\n<labwc_config>\n%s</labwc_config>\n' "$entries" > "$out"
