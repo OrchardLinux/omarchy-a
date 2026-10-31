@@ -19,12 +19,19 @@ orchard = "../orchard-installer"
 device = "j71b"
 ```
 
-Run this repository's tests and producers in that orchard's environment:
+`distro.toml` makes this checkout an orchard distribution:
 
 ```sh
+orchard build        # every component that changed, then a release in out/releases/dev-DATE-TIME
+orchard run          # build, then start that release's recovery on the attached iPad, from RAM
+orchard install      # install the last build
 orchard python -m unittest discover -s tests
-orchard python -m release.build ...
 ```
+
+`orchard build` runs `tools/build.py`, which keeps each component (desktop,
+Labwc, base, loader, …) in `out/components/` and rebuilds it only when its files
+change; orchard brings Pongo, the recovery tools and the kernels.
+[BUILD.md](BUILD.md) describes the steps one by one.
 
 RAM experiments and device bring-up happen in orchard itself, with its
 [examples](https://github.com/OrchardLinux/orchard/tree/main/examples) and

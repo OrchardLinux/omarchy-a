@@ -8,6 +8,19 @@
 
 Assembly runs the same producers, artifact auditor, CLI resolution and publication staging as local builds. Version tags create **draft** releases; manual builds only retain workflow artifacts for seven days. Nothing automatically announces a release or operates a device. Follow the [release order](https://github.com/OrchardLinux/orchard/blob/main/docs/ci.md), then qualify fresh installation and cold-restart launch on hardware.
 
+## With orchard
+
+```sh
+orchard build [--version VERSION]
+```
+
+builds a release into `out/releases/VERSION` (default `dev-DATE-TIME`) through
+`tools/build.py`, the entry `distro.toml` names: each component below is kept in
+`out/components/NAME/KEY/`, keyed by its files, and rebuilt only when they
+change; the release is assembled and audited every time. `orchard run` then boots
+its recovery on the attached device without installing, and `orchard install`
+installs it. The rest of this page is what that entry runs, step by step.
+
 ## Local setup
 
 Run commands from this repository. Requires uv, `zstd`, and a native ARM64 Podman
