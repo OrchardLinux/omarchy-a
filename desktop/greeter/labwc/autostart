@@ -5,3 +5,11 @@
 /usr/local/libexec/arch-ipad-scale-output > "$XDG_RUNTIME_DIR/greeter-display.log" 2>&1 || true
 # No cursor on the touch greeter: the desktop's startup HideCursor chord.
 /usr/libexec/omarchy-wtype -M alt -M logo h -m logo -m alt > "$XDG_RUNTIME_DIR/greeter-cursor.log" 2>&1 || true
+# The splash orchard's initrd painted stays in the framebuffer behind the
+# compositor and reappears between greeter and desktop: clear it now that
+# the greeter owns the screen (greeter is in group video).
+fb=/sys/class/graphics/fb0
+if [ -w /dev/fb0 ] && [ -r "$fb/stride" ]; then
+    size=$(cat "$fb/virtual_size")
+    head -c $(($(cat "$fb/stride") * ${size#*,})) /dev/zero > /dev/fb0 2>/dev/null || true
+fi
