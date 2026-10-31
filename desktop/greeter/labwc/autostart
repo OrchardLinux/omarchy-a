@@ -3,3 +3,5 @@
 # The same logical scale as the desktop (and its lock screen): the native
 # panel at scale 2, before the greeter maps.
 /usr/local/libexec/arch-ipad-scale-output > "$XDG_RUNTIME_DIR/greeter-display.log" 2>&1 || true
+# No cursor on the touch greeter: the desktop's startup HideCursor chord.
+/usr/libexec/omarchy-wtype -M alt -M logo h -m logo -m alt > "$XDG_RUNTIME_DIR/greeter-cursor.log" 2>&1 || true
