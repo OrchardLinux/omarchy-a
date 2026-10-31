@@ -82,7 +82,16 @@ done_file=$(mktemp)
 pending_file=$(mktemp)
 pending_video_file=$(mktemp)
 rm -f "$done_file"
-trap 'rm -f "$selection_file" "$done_file" "$pending_file" "$pending_video_file"' EXIT
+request_open=false
+cleanup() {
+  if [[ $request_open == true && ! -e $done_file ]]; then
+    omarchy-picker-process cancel "$done_file" >/dev/null 2>&1 || true
+  fi
+  rm -f "$selection_file" "$done_file" "$pending_file" "$pending_video_file"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 image_dirs_env=""
 for dir in "${image_dirs[@]}"; do
@@ -378,6 +387,11 @@ if [[ $print_rows == true ]]; then
   exit 0
 fi
 
+if [[ -z $rows ]]; then
+  echo "No images could be loaded" >&2
+  exit 1
+fi
+
 # Image rows can contain newlines and tabs, which don't survive positional
 # shell IPC arguments. Base64-encode for transit; the ImagePicker plugin
 # Qt.atob()s on the other side.
@@ -388,7 +402,8 @@ if [[ $preload == true ]]; then
   exit 0
 fi
 
-if ! open_result=$(omarchy-shell image-selector open \
+request_open=true
+if ! open_result=$(timeout -k 1 10 omarchy-shell image-selector open \
      "" \
      "$rows_b64" \
      "$selected_list_image" \
@@ -405,9 +420,26 @@ if [[ $open_result != "ok" ]]; then
   exit 1
 fi
 
+# An accepted shell IPC request only starts the detached picker helper. Check
+# that this request reaches (and remains owned by) the actual picker process.
+# User selection has no deadline; only a missing/unresponsive request does.
+last_active=$SECONDS
 while [[ ! -e $done_file ]]; do
-  sleep 0.01
+  status=$(omarchy-picker-process status "$done_file" 2>/dev/null) || status=inactive
+  [[ ! -e $done_file ]] || break
+  if [[ $status == active ]]; then
+    last_active=$SECONDS
+  elif (( SECONDS - last_active >= 10 )); then
+    echo "Image selector did not open or stopped responding" >&2
+    exit 1
+  fi
+  sleep 1
 done
+
+if [[ -s $done_file ]]; then
+  echo "Image selector failed; see omarchy-picker.log" >&2
+  exit 1
+fi
 
 if [[ -s $selection_file ]]; then
   if [[ $print_name == true ]]; then

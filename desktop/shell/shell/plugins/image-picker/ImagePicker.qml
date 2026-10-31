@@ -185,14 +185,14 @@ Item {
   function releaseNextDoneFile() {
     if (releaseProc.running || doneFilesToRelease.length === 0) return
 
-    var path = doneFilesToRelease.shift()
-    releaseProc.command = ["bash", "-c", ": > " + Util.shellQuote(path)]
+    var request = doneFilesToRelease.shift()
+    releaseProc.command = ["bash", "-c", "test -e " + Util.shellQuote(request.selection) + " && : > " + Util.shellQuote(request.done)]
     releaseProc.running = true
   }
 
   function finishDoneFile(path) {
     if (!path) return
-    doneFilesToRelease.push(path)
+    doneFilesToRelease.push({done: path, selection: selectionFile})
     releaseNextDoneFile()
   }
 
@@ -219,7 +219,7 @@ Item {
     selectionFile = ""
     doneFile = ""
 
-    applyProc.command = ["bash", "-c", "printf '%s\\n' " + Util.shellQuote(path) + " > " + Util.shellQuote(activeSelectionFile) + "; : > " + Util.shellQuote(activeDoneFile)]
+    applyProc.command = ["bash", "-c", "test -e " + Util.shellQuote(activeSelectionFile) + " && { printf '%s\\n' " + Util.shellQuote(path) + " > " + Util.shellQuote(activeSelectionFile) + "; : > " + Util.shellQuote(activeDoneFile) + "; }"]
     applyProc.running = true
   }
 
@@ -236,24 +236,28 @@ Item {
   }
 
   function closeSelector(nextDoneFile) {
+    // A departed caller must not dismiss a newer request using this host.
+    if (nextDoneFile && nextDoneFile !== doneFile) return false
     requestSerial += 1
     themeOpenPending = false
 
     if (requestActive)
       finishDoneFile(doneFile)
 
-    if (nextDoneFile && nextDoneFile !== doneFile)
-      finishDoneFile(nextDoneFile)
-
     requestActive = false
     selectionFile = ""
     doneFile = ""
     filterText = ""
     root.opened = false
+    return true
   }
 
   function loadRows(rows, reveal) {
     var newImages = ImagePickerModel.loadRows(rows)
+    if (newImages.length === 0 && reveal !== false) {
+      cancel()
+      return
+    }
 
     root.loadedImageRows = rows
     var nextIndex = root.indexForSelectedImage(newImages)
