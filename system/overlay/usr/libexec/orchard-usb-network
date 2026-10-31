@@ -1,7 +1,6 @@
 #!/bin/sh
-# Give usb0 the device's address unless the recovery already did.
+# usb0 is orchard's USB gadget; give it the address unless it has it already.
 set -eu
-mkdir -p /run/recovery
 ip -4 address show dev usb0 | grep -q 'inet ' && exit 0
 ip address add 172.16.42.1/30 dev usb0
 ip link set usb0 up

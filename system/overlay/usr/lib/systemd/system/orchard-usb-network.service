@@ -1,7 +1,5 @@
 [Unit]
-Description=USB network for the host computer (172.16.42.1, DHCP hands out .2)
-# orchard's USB gadget provides usb0; after the installer's handover the
-# recovery has already configured it.
+Description=USB network for the computer: 172.16.42.1 here, DHCP hands out .2
 BindsTo=sys-subsystem-net-devices-usb0.device
 After=sys-subsystem-net-devices-usb0.device
 

@@ -1,15 +1,12 @@
 [Unit]
-Description=SSH for the installing host, with this boot session's key
-# Only in a boot the installer handed over to and asked to keep its key:
-# the key never lives on disk, so a later boot has no SSH.
-ConditionPathExists=/run/recovery/authorized_keys
-After=orchard-usb-network.service
+Description=SSH on every interface; keys only (the installer imports the computer's)
+After=network.target
 
 [Service]
-Environment=RECOVERY_SSH_DIR=/run/recovery
-# dropbear reads root's authorized_keys: bind the session key there, in RAM.
-ExecStartPre=/bin/sh -c 'install -d -m 700 /root/.ssh && touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && { mountpoint -q /root/.ssh/authorized_keys || mount --bind /run/recovery/authorized_keys /root/.ssh/authorized_keys; }'
-ExecStart=/usr/bin/recovery-start-ssh
+# -R: host keys generated on first boot into /etc/dropbear and kept.
+# -s -g: no password logins. -W: a 4 MiB window keeps the USB link full.
+ExecStartPre=/usr/bin/install -d -m 700 /etc/dropbear
+ExecStart=/usr/bin/dropbear -F -E -R -s -g -W 4194304 -P /run/dropbear.pid
 Restart=on-failure
 
 [Install]

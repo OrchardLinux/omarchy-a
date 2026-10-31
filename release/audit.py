@@ -244,7 +244,7 @@ def verify_bluetooth(record, hashes, modes, owners, groups):
 
 
 def verify_reachable(hashes, links):
-    """Every boot is reachable over USB: a serial console login and session SSH."""
+    """Every boot is reachable: a serial console login, SSH and the USB network."""
     wants = 'etc/systemd/system/'
     required_links = {wants + 'getty.target.wants/serial-getty@ttyGS0.service': '/usr/lib/systemd/system/serial-getty@.service',
                       wants + 'multi-user.target.wants/orchard-ssh.service': '/usr/lib/systemd/system/orchard-ssh.service',
@@ -253,7 +253,7 @@ def verify_reachable(hashes, links):
     for name, target in required_links.items():
         if links.get(name) != (True, target):
             raise ValueError('The installed system would not be reachable over USB: ' + name)
-    for name in ('usr/bin/dropbear', 'usr/bin/dropbearkey', 'usr/bin/recovery-start-ssh',
+    for name in ('usr/bin/dropbear', 'usr/lib/orchard/busybox', 'etc/orchard/udhcpd.conf',
                  'usr/lib/systemd/system/orchard-ssh.service', 'usr/lib/systemd/system/orchard-usb-network.service'):
         if name not in hashes:
             raise ValueError('The installed system would not be reachable over USB: ' + name)

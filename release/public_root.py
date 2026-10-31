@@ -126,21 +126,15 @@ def system_files():
     return additions
 
 
-def session_ssh_files(tools):
-    """orchard's static dropbear, BusyBox (udhcpd) and the recovery's SSH start script.
+def access_files(tools):
+    """orchard's static dropbear (SSH) and BusyBox (DHCP on usb0) for the system's own services.
 
-    The installer's handover keeps this boot's SSH key in /run/recovery; the
-    installed system serves it like minimal-linux, and has no SSH otherwise.
-    TOOLS: {'dropbear', 'dropbearkey', 'busybox'} paths.
+    TOOLS: {'dropbear', 'dropbearkey', 'busybox'} paths from orchard's build cache.
     """
-    from orchard import hardware
-    start = hardware.ROOT / 'boot/initramfs/recovery'
-    # Arch's /usr/sbin is a link to /usr/bin; the start script's /usr/sbin paths resolve.
+    # Arch's /usr/sbin is a link to /usr/bin.
     return {'usr/bin/dropbear': (Path(tools['dropbear']).read_bytes(), 0o755),
             'usr/bin/dropbearkey': (Path(tools['dropbearkey']).read_bytes(), 0o755),
-            'usr/lib/orchard/busybox': (Path(tools['busybox']).read_bytes(), 0o755),
-            'usr/bin/recovery-start-ssh': ((start / 'start-ssh').read_bytes(), 0o755),
-            'etc/orchard/udhcpd.conf': ((start / 'udhcpd.conf').read_bytes(), 0o644)}
+            'usr/lib/orchard/busybox': (Path(tools['busybox']).read_bytes(), 0o755)}
 
 
 def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=None, labwc_tools=None, tools=None):
@@ -160,7 +154,7 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
     additions['etc/omarchy/package-privileges.json'] = (json.dumps(privileges, sort_keys=True).encode(), 0o644)
     additions.update(system_files())
     if tools:
-        additions.update(session_ssh_files(tools))
+        additions.update(access_files(tools))
     additions['etc/polkit-1/rules.d/60-omarchy-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
     additions['etc/orchard/release.json'] = (json.dumps({'protocol': 1, 'release': release}).encode(), 0o644)
     if privileges.keys() & additions.keys():
