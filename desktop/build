@@ -30,6 +30,14 @@ def sha(path):
     return h.hexdigest()
 
 
+def recipe_sha(directory):
+    """One digest over a package recipe directory (PKGBUILD and patches), as build-sources records it."""
+    digest = hashlib.sha256()
+    for path in sorted(directory.iterdir()):
+        digest.update(path.name.encode() + b'\0' + sha(path).encode() + b'\n')
+    return digest.hexdigest()
+
+
 def source_metadata(built):
     pins = json.loads((HERE / 'sources.json').read_text())
     if built['architecture'] != 'aarch64' or built['source_sha256'] != {
@@ -38,9 +46,10 @@ def source_metadata(built):
     if any(built['source_urls'][name] not in entry['urls'] for name, entry in pins.items()):
         raise ValueError('Source-build URL differs')
     if (built['patch_sha256'] != sha(HERE / 'keyboard/wvkbd-0.20.patch') or
-            built['pkgbuild_sha256'] != sha(HERE / 'packages/omafox/PKGBUILD')):
+            built['pkgbuild_sha256'] != sha(HERE / 'packages/omafox/PKGBUILD') or
+            built.get('wlroots_recipe_sha256') != recipe_sha(HERE / 'packages/wlroots0.20')):
         raise ValueError('Source-build recipe differs')
-    if set(built['files']) != {'wvkbd-mobintl', 'omafox.pkg.tar.xz'}:
+    if set(built['files']) != {'wvkbd-mobintl', 'omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz'}:
         raise ValueError('Source-build files differ')
     return built['files']
 
@@ -57,6 +66,8 @@ def verify(directory):
     packages = directory / 'packages'
     if sha(packages / 'omafox.pkg.tar.xz') != built_files['omafox.pkg.tar.xz']:
         raise ValueError('Source-built Omafox package differs')
+    if sha(packages / 'wlroots0.20.pkg.tar.xz') != built_files['wlroots0.20.pkg.tar.xz']:
+        raise ValueError('Source-built wlroots package differs')
     if sha(packages / 'omacalc.pkg.tar.zst') != pins['omacalc_package']:
         raise ValueError('Signed Omacalc package differs')
     payload = directory / 'payload'
@@ -133,6 +144,7 @@ def build(output):
         packages = result_dir / 'packages'
         packages.mkdir()
         shutil.copyfile(sources / 'omafox.pkg.tar.xz', packages / 'omafox.pkg.tar.xz')
+        shutil.copyfile(sources / 'wlroots0.20.pkg.tar.xz', packages / 'wlroots0.20.pkg.tar.xz')
         shutil.copyfile(FILES['omacalc_package'], packages / 'omacalc.pkg.tar.zst')
         meta = {'architecture': 'aarch64', 'omarchy_commit': commit,
                 'inputs': {name: pins[name] for name in FILES}, 'source_build': built,

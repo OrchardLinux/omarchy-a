@@ -6,4 +6,9 @@ printf 'Server = https://fl.us.mirror.archlinuxarm.org/$arch/$repo\n' > /etc/pac
 pacman-key --init
 pacman-key --populate archlinuxarm
 pacman -Sy --noconfirm --needed base-devel wayland libxkbcommon pango scdoc pkgconf patch python python-pip git curl tar gzip
+# wlroots0.20 (packages/wlroots0.20): Arch's makedepends and the libraries it links
+# (systemd is in the base).
+pacman -S --noconfirm --needed meson ninja glslang vulkan-headers xorg-xwayland wayland-protocols \
+  libdisplay-info libdrm libglvnd libinput lcms2 libliftoff pixman seatd vulkan-icd-loader mesa hwdata \
+  xcb-util-errors xcb-util-renderutil xcb-util-wm
 pacman -Sc --noconfirm

@@ -13,5 +13,12 @@
       "https://github.com/cover/omafox/archive/refs/tags/v1.1.0.tar.gz"
     ],
     "sha256": "b610174e19edf2940127761f2883a14e5ba8644bc42c75ead8148305c7caa4f9"
+  },
+  "wlroots": {
+    "version": "0.20.2",
+    "urls": [
+      "https://gitlab.freedesktop.org/wlroots/wlroots/-/releases/0.20.2/downloads/wlroots-0.20.2.tar.gz"
+    ],
+    "sha256": "80c567d2ed4efb2cfa6b077f22c7a710d9c78ba4e185a75e8694001114af0733"
   }
 }

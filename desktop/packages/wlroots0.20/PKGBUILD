@@ -1,0 +1,37 @@
+# Maintainer: Robin Candau <antiz@archlinux.org>
+# omarchy-a: Arch's wlroots0.20 with fast rotated pixman compositing, until
+# wlroots has it (see the patch). pkgrel above Arch Linux ARM's rebuilds.
+
+pkgname=wlroots0.20
+_pkgname=wlroots
+pkgver=0.20.2
+pkgrel=1.5
+pkgdesc="Modular Wayland compositor library"
+url="https://gitlab.freedesktop.org/wlroots/wlroots"
+license=('MIT')
+arch=('x86_64' 'aarch64')
+depends=('glibc' 'libdisplay-info.so' 'libdrm' 'libglvnd' 'libinput' 'liblcms2.so' 'libliftoff.so' 'libpixman-1.so'
+         'libseat.so' 'libudev.so' 'libvulkan.so' 'libwayland-client.so' 'libwayland-server.so' 'libxcb' 'libxkbcommon.so'
+         'wayland-protocols' 'opengl-driver' 'xcb-util-errors' 'xcb-util-renderutil' 'xcb-util-wm')
+makedepends=('glslang' 'meson' 'ninja' 'systemd' 'vulkan-headers' 'xorg-xwayland')
+optdepends=('xorg-xwayland: Xwayland support'
+            'vulkan-validation-layers: validation layers for the experimental vulkan renderer backend')
+provides=("libwlroots-${pkgver%.*}.so")
+source=("${_pkgname}-${pkgver}.tar.gz::${url}/-/releases/${pkgver}/downloads/${_pkgname}-${pkgver}.tar.gz"
+        '0001-render-pixman-rotate-first-then-blend-for-90-degree.patch')
+sha256sums=('80c567d2ed4efb2cfa6b077f22c7a710d9c78ba4e185a75e8694001114af0733'
+            '234879eb7b870b361bab5197409ef30201a09d9f5ab6c3b5715fde9f5ff796b8')
+
+prepare() {
+	patch -d "${_pkgname}-${pkgver}" -p1 < 0001-render-pixman-rotate-first-then-blend-for-90-degree.patch
+}
+
+build() {
+	arch-meson "${_pkgname}-${pkgver}" build
+	ninja -C build
+}
+
+package() {
+	DESTDIR="${pkgdir}" ninja -C build install
+	install -Dm 644 "${_pkgname}-${pkgver}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

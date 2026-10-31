@@ -30,7 +30,8 @@ printf '%s\n' "${requested[@]}" | grep -qx 'linux-aarch64' && { echo 'Generic ke
 umask 022
 mkdir -p "$root/var/lib/pacman" "$root/var/cache/pacman/pkg" "$root/etc"
 pacman --root "$root" --gpgdir /etc/pacman.d/gnupg -Sy --noconfirm "${requested[@]}"
-for package in "$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.pkg.tar.zst"; do
+# wlroots0.20 replaces Arch's build of the same version: fast rotated pixman compositing.
+for package in "$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.pkg.tar.zst" "$desktop/packages/wlroots0.20.pkg.tar.xz"; do
   pacman --root "$root" --gpgdir /etc/pacman.d/gnupg --noconfirm -U "$package"
 done
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet

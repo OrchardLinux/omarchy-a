@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the keyboard and Omafox package from pinned source archives."""
+"""Build the keyboard, the Omafox package and the patched wlroots package from pinned source archives."""
 import argparse
 import hashlib
 import json
@@ -21,6 +21,14 @@ def sha(path):
     with path.open('rb') as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(chunk)
+    return digest.hexdigest()
+
+
+def recipe_sha(directory):
+    """One digest over a package recipe directory (PKGBUILD and patches)."""
+    digest = hashlib.sha256()
+    for path in sorted(directory.iterdir()):
+        digest.update(path.name.encode() + b'\0' + sha(path).encode() + b'\n')
     return digest.hexdigest()
 
 
@@ -54,6 +62,9 @@ def main():
     pkgbuild = HERE / 'packages/omafox/PKGBUILD'
     if pins['omafox']['sha256'] not in pkgbuild.read_text():
         parser.error('Omafox PKGBUILD and source pin differ')
+    wlroots = HERE / 'packages/wlroots0.20/PKGBUILD'
+    if pins['wlroots']['sha256'] not in wlroots.read_text():
+        parser.error('wlroots PKGBUILD and source pin differ')
     (HERE / '.work').mkdir(exist_ok=True)
     try:
         with tempfile.TemporaryDirectory(prefix='sources-', dir=HERE / '.work') as temporary:
@@ -63,6 +74,7 @@ def main():
             fetched = {
                 'wvkbd': fetch(pins['wvkbd'], sources / 'wvkbd-v0.20.tar.gz'),
                 'omafox': fetch(pins['omafox'], sources / 'omafox-1.1.0.tar.gz'),
+                'wlroots': fetch(pins['wlroots'], sources / 'wlroots-0.20.2.tar.gz'),
             }
             print('Preparing AArch64 desktop builder...', flush=True)
             buildenv.build(IMAGE, HERE / 'Containerfile', HERE)
@@ -91,15 +103,25 @@ package="$build/result/omafox-1.1.0-1-aarch64.pkg.tar.xz"
 test -s "$package"
 bsdtar -xOf "$package" .PKGINFO | grep -x 'arch = aarch64' >/dev/null
 cp "$package" "$ORCHARD_WORK/result/omafox.pkg.tar.xz"
+mkdir -p "$build/wlroots"
+cp "$ORCHARD_RECIPE"/packages/wlroots0.20/* "$build/wlroots/"
+cp "$ORCHARD_WORK/sources/wlroots-0.20.2.tar.gz" "$build/wlroots/"
+cd "$build/wlroots"
+PKGDEST="$build/result" makepkg --noconfirm --nodeps
+package=$(ls "$build"/result/wlroots0.20-0.20.2-*-aarch64.pkg.tar.*)
+test -s "$package"
+bsdtar -xOf "$package" .PKGINFO | grep -x 'arch = aarch64' >/dev/null
+cp "$package" "$ORCHARD_WORK/result/wlroots0.20.pkg.tar.xz"
 '''
             buildenv.run(IMAGE, ['bash', '-euc', script],
                          [(work, '/work', False), (HERE, '/recipe', True)])
             built = work / 'result'
-            files = {name: sha(built / name) for name in ('wvkbd-mobintl', 'omafox.pkg.tar.xz')}
+            files = {name: sha(built / name) for name in ('wvkbd-mobintl', 'omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz')}
             meta = {'architecture': 'aarch64', 'source_urls': fetched,
                     'source_sha256': {name: pins[name]['sha256'] for name in pins},
                     'patch_sha256': sha(HERE / 'keyboard/wvkbd-0.20.patch'),
-                    'pkgbuild_sha256': sha(pkgbuild), 'files': files}
+                    'pkgbuild_sha256': sha(pkgbuild), 'wlroots_recipe_sha256': recipe_sha(HERE / 'packages/wlroots0.20'),
+                    'files': files}
             (built / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')
             output.parent.mkdir(parents=True, exist_ok=True)
             os.replace(built, output)

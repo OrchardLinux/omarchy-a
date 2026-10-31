@@ -1,0 +1,124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Henrik Klee <henrik@goat-code.com>
+Date: Sun, 1 Nov 2026 05:36:37 +0800
+Subject: [PATCH] render/pixman: rotate first, then blend, for 90-degree output
+ transforms
+
+pixman has fast paths for rotating with PIXMAN_OP_SRC but blends a rotated
+source with its generic per-pixel fetch. On a rotated output every
+translucent surface took that path: on an iPad 6 (A10, pixman renderer)
+landscape spent half the CPU time in it and lagged visibly.
+
+For a rotation by a multiple of 90 degrees without scaling, use nearest
+filtering (bilinear gives the same pixels there), rotate the visible part
+into a scratch image with SRC and blend that unrotated with OVER: both are
+fast paths. Landscape is then as responsive as portrait.
+
+Assisted-by: LLM
+---
+ render/pixman/pass.c | 75 +++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 68 insertions(+), 7 deletions(-)
+
+diff --git a/render/pixman/pass.c b/render/pixman/pass.c
+index af738bb..253fa14 100644
+--- a/render/pixman/pass.c
++++ b/render/pixman/pass.c
+@@ -36,6 +36,51 @@ static pixman_op_t get_pixman_blending(enum wlr_render_blend_mode mode) {
+ 	abort();
+ }
+ 
++/*
++ * Blend a texture that is rotated by a multiple of 90 degrees without
++ * scaling. pixman has fast paths for rotating with PIXMAN_OP_SRC, but blends
++ * a rotated source with its generic per-pixel fetch. So rotate the visible
++ * part into a scratch image with SRC first, then blend that unrotated.
++ * Returns false when the caller should composite directly.
++ */
++static bool composite_rotated_over(pixman_op_t op, pixman_image_t *src,
++		pixman_image_t *mask, pixman_image_t *dst, const struct wlr_box *dst_box,
++		const pixman_region32_t *clip, enum wlr_scale_filter_mode filter_mode) {
++	if (op != PIXMAN_OP_OVER || filter_mode != WLR_SCALE_FILTER_NEAREST) {
++		return false;
++	}
++
++	pixman_box32_t area = {
++		.x1 = dst_box->x,
++		.y1 = dst_box->y,
++		.x2 = dst_box->x + dst_box->width,
++		.y2 = dst_box->y + dst_box->height,
++	};
++	if (clip != NULL) {
++		const pixman_box32_t *extents = pixman_region32_extents((pixman_region32_t *)clip);
++		area.x1 = area.x1 > extents->x1 ? area.x1 : extents->x1;
++		area.y1 = area.y1 > extents->y1 ? area.y1 : extents->y1;
++		area.x2 = area.x2 < extents->x2 ? area.x2 : extents->x2;
++		area.y2 = area.y2 < extents->y2 ? area.y2 : extents->y2;
++	}
++	int width = area.x2 - area.x1, height = area.y2 - area.y1;
++	if (width <= 0 || height <= 0) {
++		return true;
++	}
++
++	pixman_image_t *scratch = pixman_image_create_bits(pixman_image_get_format(src),
++		width, height, NULL, 0);
++	if (scratch == NULL) {
++		return false;
++	}
++	pixman_image_composite32(PIXMAN_OP_SRC, src, NULL, scratch,
++		area.x1 - dst_box->x, area.y1 - dst_box->y, 0, 0, 0, 0, width, height);
++	pixman_image_composite32(op, scratch, mask, dst,
++		0, 0, 0, 0, area.x1, area.y1, width, height);
++	pixman_image_unref(scratch);
++	return true;
++}
++
+ static void render_pass_add_texture(struct wlr_render_pass *wlr_pass,
+ 		const struct wlr_render_texture_options *options) {
+ 	struct wlr_pixman_render_pass *pass = get_render_pass(wlr_pass);
+@@ -157,7 +202,20 @@ static void render_pass_add_texture(struct wlr_render_pass *wlr_pass,
+ 
+ 		pixman_image_set_transform(texture->image, &transform);
+ 
+-		switch (options->filter_mode) {
++		/*
++		 * A rotation or flip by a multiple of 90 degrees without scaling puts
++		 * every destination pixel exactly on one source pixel: bilinear
++		 * filtering then gives the nearest result, at the cost of pixman's
++		 * generic filtered fetch. Nearest lets pixman use its rotation fast
++		 * paths, which keeps rotated outputs close to unrotated ones.
++		 */
++		enum wlr_scale_filter_mode filter_mode = options->filter_mode;
++		if (src_box_transformed.width == dst_box.width &&
++				src_box_transformed.height == dst_box.height) {
++			filter_mode = WLR_SCALE_FILTER_NEAREST;
++		}
++
++		switch (filter_mode) {
+ 		case WLR_SCALE_FILTER_BILINEAR:
+ 			pixman_image_set_repeat(texture->image, PIXMAN_REPEAT_PAD);
+ 			pixman_image_set_filter(texture->image, PIXMAN_FILTER_BILINEAR, NULL, 0);
+@@ -172,12 +230,15 @@ static void render_pass_add_texture(struct wlr_render_pass *wlr_pass,
+ 		// width,height part of source crop is done here by the width and height we pass:
+ 		// because of the scaling, cropping at the end by dst_box.{width,height} is
+ 		// equivalent to if we cropped at the start by src_box.{width,height}.
+-		pixman_image_composite32(op, texture->image, mask, buffer->image,
+-			0, 0, // source x,y
+-			0, 0, // mask x,y
+-			dst_box.x, dst_box.y, // dest x,y
+-			dst_box.width, dst_box.height // composite width,height
+-		);
++		if (!composite_rotated_over(op, texture->image, mask, buffer->image,
++				&dst_box, options->clip, filter_mode)) {
++			pixman_image_composite32(op, texture->image, mask, buffer->image,
++				0, 0, // source x,y
++				0, 0, // mask x,y
++				dst_box.x, dst_box.y, // dest x,y
++				dst_box.width, dst_box.height // composite width,height
++			);
++		}
+ 
+ 		pixman_image_set_transform(texture->image, NULL);
+ 	} else {
+-- 
+2.54.0 (Apple Git-157)
+
