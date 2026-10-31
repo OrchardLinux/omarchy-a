@@ -1,0 +1,32 @@
+#!/bin/bash
+# Turn the native panel with the device. The orientation comes from
+# iio-sensor-proxy (the accelerometer's IIO device and its mount-matrix), as
+# for GNOME and KDE; touch follows through labwc's <touch mapToOutput>.
+# While ~/.config/omarchy/rotation-lock exists, the orientation is held.
+set -uo pipefail
+lock=${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/rotation-lock
+
+transform() {
+  case $1 in
+    normal) echo normal ;;
+    bottom-up) echo 180 ;;
+    left-up) echo 90 ;;
+    right-up) echo 270 ;;
+    *) return 1 ;;
+  esac
+}
+
+apply() {
+  local t output
+  [[ -e $lock ]] && return
+  t=$(transform "$1") || return
+  output=$(wlr-randr | awk '/^[^[:space:]]/ {print $1; exit}')
+  [[ -n $output ]] && wlr-randr --output "$output" --transform "$t"
+}
+
+monitor-sensor --accel | while IFS= read -r line; do
+  case $line in
+    *'orientation changed: '*) apply "${line##*: }" ;;
+    *'Has accelerometer (orientation: '*) value=${line##*orientation: }; apply "${value%)}" ;;
+  esac
+done

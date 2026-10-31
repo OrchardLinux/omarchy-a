@@ -5,6 +5,8 @@
 # Hardware output timing and mode come from the kernel bundle.
 # On the verified native portrait panel, set logical scale before mapping UI.
 /usr/local/libexec/arch-ipad-scale-output > "$XDG_RUNTIME_DIR/arch-ipad-display.log" 2>&1 || true
+# Turn the panel with the device (iio-sensor-proxy); a no-op without an accelerometer.
+/usr/local/libexec/arch-ipad-rotate-output > "$XDG_RUNTIME_DIR/arch-ipad-rotation.log" 2>&1 &
 # Let user services launched after the compositor see its actual Wayland socket.
 systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE > "$XDG_RUNTIME_DIR/arch-ipad-user-env.log" 2>&1
 # Keep the theme-coloured keyboard resident but hidden until the user taps Show.
@@ -12,4 +14,3 @@ export OMARCHY_PATH=/home/tablet/.local/share/omarchy-ipad
 printf '0\n' > "$XDG_RUNTIME_DIR/omarchy-keyboard-visible"
 "$OMARCHY_PATH/bin/omarchy-keyboard" run > "$XDG_RUNTIME_DIR/omarchy-keyboard.log" 2>&1 &
 qs -p "$OMARCHY_PATH/shell/shell.qml" > "$XDG_RUNTIME_DIR/omarchy-shell.log" 2>&1 &
-/usr/libexec/apple-aop-session-start > "$XDG_RUNTIME_DIR/apple-aop-session.log" 2>&1 &
