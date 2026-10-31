@@ -24,8 +24,11 @@ def write(output, version, root, platforms, orchard):
                 'name = "Omarchy A"\nversion = ' + json.dumps(version) + '\n'
                 'boot_method = "checkm8-pongo"\nmin_orchard = "0.2.0"\nprotocol = 1\n')
     document += table('orchard', orchard)
-    # The tablet user gets the password and the lock-screen PIN at install.
-    document += table('install', {'default_root': '/omarchy', 'account': True})
+    # The tablet user gets the password and the lock-screen PIN at install. No
+    # ready file yet: the installed system has no SSH for the installer to wait over.
+    document += table('install', {'default_root': '/omarchy'})
+    document += table('install.account', {'user': 'tablet', 'password': True, 'pin': True,
+                                          'passwordless_sudo': False})
     row = receipt(output / 'rootfs.tar.zst')
     row.update({key: root[key] for key in ('compression', 'expanded_bytes', 'members')})
     document += table('root', row)
