@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Files (Flea touch preview)
-Comment=Flea file manager with experimental tablet controls
-Exec=/usr/local/bin/flea
-Icon=system-file-manager
-Categories=System;FileTools;FileManager;
-Terminal=false
