@@ -54,42 +54,33 @@ Contributions for additional devices are welcome. See [CONTRIBUTING.md](CONTRIBU
 
 ## Install
 
-Use a computer running **Linux or macOS** with Python 3.9+ (including venv/pip), curl, libusb, and OpenSSH installed, a USB data cable, and a supported iPad running iPadOS 16 or later. Allow several GB of free host storage for firmware downloads and extraction.
+Use a computer running **Linux or macOS** with curl, libusb and OpenSSH installed, a USB data cable, and a supported iPad running iPadOS 16 or later. Allow several GB of free host storage for firmware downloads and extraction. You need no Python or other tools: the installer brings its own.
 
 ### 1. Back up your iPad
 
 Storage changes can permanently erase data. Back up before continuing.
 
-### 2. Set up the host tools
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/OrchardLinux/omarchy-a/main/install.sh | bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-This sets up the [host-side CLI](https://github.com/OrchardLinux/cli) and its dependencies, including palera1n, which is also used by Resize APFS. It only changes the host computer.
-
-On Linux, reconnect the device after setup so USB permissions take effect. Rerun the same bootstrap command to update the CLI; available Omarchy A releases are fetched automatically.
-
-### 3. Make room for Linux
+### 2. Make room for Linux
 
 The installer needs at least 9 GiB that iPadOS doesn't use: free space, or an earlier Linux install to replace. It never resizes iPadOS itself. Skip this step if you already have that.
 
-1. Download and extract [Resize APFS](https://github.com/OrchardLinux/resize-apfs/releases/latest).
+1. Download and extract [Resize APFS](https://github.com/OrchardLinux/resize-apfs/releases/latest). It uses [palera1n](https://github.com/palera1n/palera1n/releases); the installer below puts palera1n into `~/.local/bin` if you don't have it yet, and stops without changing the iPad when there isn't enough room.
 2. Run `./resize-apfs boot` from its extracted folder and follow the prompts.
 3. Once iPadOS starts, unlock the iPad and open **Resize APFS** when its icon appears.
 4. Choose **Adjust size** and reserve space for Linux.
 5. Wait for **Completed and verified** before restarting. Do not interrupt the operation; see the [resize safety instructions](https://github.com/OrchardLinux/resize-apfs#while-resizing) if status becomes unavailable.
 
-### 4. Install Omarchy A
+### 3. Install Omarchy A
 
-Connect only the target iPad. Enter DFU: hold Home + Power for about 8 seconds, release Power, then keep holding Home for about 10 seconds. The screen should remain black.
+Connect only the target iPad. Enter DFU: hold Home + Power for about 8 seconds, release Power, then keep holding Home for about 10 seconds. The screen should remain black. Then run:
 
 ```sh
-orchard install omarchy-a
+curl -fsSL https://github.com/OrchardLinux/omarchy-a/releases/latest/download/install.sh | sh
 ```
 
-Choose where Omarchy A goes, then set a password (for `sudo` and system changes) and a 6-digit PIN (for the lock screen). The CLI downloads and verifies the release, boots recovery, writes a boot partition and the system next to iPadOS, adds the device's firmware, and starts Omarchy A, all in one DFU boot. Keep USB connected until it says Omarchy A is starting.
+The installer of the latest release downloads its own Python and checks it, then the release. Choose where Omarchy A goes, then set a password (for `sudo` and system changes) and a 6-digit PIN (for the lock screen). It boots recovery, writes a boot partition and the system next to iPadOS, adds the device's firmware, and starts Omarchy A, all in one DFU boot. Keep USB connected until it says Omarchy A is starting. On Linux, it installs USB permissions with `sudo`; reconnect the device if it asks.
+
+It also leaves `orchard` in `~/.local/bin` for starting Omarchy A again (below); add that directory to your `PATH` if it isn't. `orchard update` updates it.
 
 ### Coming from the previous installer
 
