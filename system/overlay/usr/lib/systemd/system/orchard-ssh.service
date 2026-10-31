@@ -7,6 +7,8 @@ After=orchard-usb-network.service
 
 [Service]
 Environment=RECOVERY_SSH_DIR=/run/recovery
+# dropbear reads root's authorized_keys: bind the session key there, in RAM.
+ExecStartPre=/bin/sh -c 'install -d -m 700 /root/.ssh && touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && { mountpoint -q /root/.ssh/authorized_keys || mount --bind /run/recovery/authorized_keys /root/.ssh/authorized_keys; }'
 ExecStart=/usr/bin/recovery-start-ssh
 Restart=on-failure
 

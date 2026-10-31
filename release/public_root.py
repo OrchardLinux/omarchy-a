@@ -242,8 +242,12 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                     member = tarfile.TarInfo(name)
                     member.mode, member.size = mode, len(data)
                     add(member, data)
-                for unit in ('omarchy-pacman-init.service', 'orchard-usb-network.service', 'orchard-ssh.service'):
-                    member = tarfile.TarInfo('etc/systemd/system/multi-user.target.wants/' + unit)
+                # A login on orchard's USB serial console as well, like minimal-linux.
+                wants = [('multi-user.target.wants/' + unit, unit) for unit in
+                         ('omarchy-pacman-init.service', 'orchard-usb-network.service', 'orchard-ssh.service')]
+                wants.append(('getty.target.wants/serial-getty@ttyGS0.service', 'serial-getty@.service'))
+                for link, unit in wants:
+                    member = tarfile.TarInfo('etc/systemd/system/' + link)
                     member.type, member.linkname, member.mode = tarfile.SYMTYPE, '/usr/lib/systemd/system/' + unit, 0o777
                     if member.name not in seen:
                         add_parents(member.name)
