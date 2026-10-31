@@ -11,6 +11,7 @@
       "centerEnd": [],
       "right": [
         { "id": "ipadlinux.keyboard" },
+        { "id": "omarchy.audio" },
         { "id": "omarchy.bluetooth" },
         { "id": "omarchy.network" },
         { "id": "omarchy.monitor" },

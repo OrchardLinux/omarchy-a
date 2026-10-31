@@ -1,0 +1,16 @@
+#!/bin/bash
+# The volume keys: the shell's media service steps the default output by 5%
+# and shows its OSD; without a running shell, wpctl does the step alone.
+set -u
+action=${1:-}
+case $action in
+  raise) step='5%+' ;;
+  lower) step='5%-' ;;
+  mute-toggle) step= ;;
+  *) echo 'Usage: omarchy-volume raise|lower|mute-toggle' >&2; exit 2 ;;
+esac
+[[ $(omarchy-shell -q media volume "$action" 2>/dev/null) == ok ]] && exit 0
+if [[ -z $step ]]; then
+  exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+fi
+exec wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ "$step"

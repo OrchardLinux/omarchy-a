@@ -18,12 +18,16 @@
     <keybind key="A-W-h">
       <action name="HideCursor" />
     </keybind>
-    <!-- Physical gpio-keys: VOLUMEUP/VOLUMEDOWN adjust the panel, not audio. -->
+    <!-- Physical gpio-keys: volume, in 5% steps with the shell's OSD.
+         Brightness is in the Control Center. -->
     <keybind key="XF86AudioRaiseVolume">
-      <action name="Execute" command="omarchy-brightness-display --no-osd +5%" />
+      <action name="Execute" command="omarchy-volume raise" />
     </keybind>
     <keybind key="XF86AudioLowerVolume">
-      <action name="Execute" command="omarchy-brightness-display --no-osd -5%" />
+      <action name="Execute" command="omarchy-volume lower" />
+    </keybind>
+    <keybind key="XF86AudioMute">
+      <action name="Execute" command="omarchy-volume mute-toggle" />
     </keybind>
     <!-- Lock before blanking; suspend is intentionally deferred until supported. -->
     <keybind key="XF86PowerOff" onRelease="yes" allowWhenLocked="yes">
