@@ -1,0 +1,30 @@
+#!/bin/bash
+# The volume keys: step the default output in 5% steps (at most 100%), then show
+# the shell's volume OSD, as the media service draws it on Hyprland.
+set -u
+# labwc runs key bindings without the session's OMARCHY_PATH (labwc-autostart's).
+export OMARCHY_PATH=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
+# The volume in whole percent, from "Volume: 0.45 [MUTED]".
+percent() { awk '{ printf "%d", $2 * 100 + 0.5 }' <<< "$1"; }
+state=$(wpctl get-volume @DEFAULT_AUDIO_SINK@) || exit 1
+percent=$(percent "$state")
+# Steps land on multiples of 5%: 12% goes up to 15% and down to 10%.
+case ${1:-} in
+  raise) percent=$(( percent / 5 * 5 + 5 )) ;;
+  lower) percent=$(( (percent + 4) / 5 * 5 - 5 )) ;;
+  mute-toggle) ;;
+  *) echo 'Usage: omarchy-volume raise|lower|mute-toggle' >&2; exit 2 ;;
+esac
+(( percent > 100 )) && percent=100
+(( percent < 0 )) && percent=0
+if [[ $1 == mute-toggle ]]; then
+  wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+else
+  wpctl set-volume @DEFAULT_AUDIO_SINK@ "$percent%"
+fi || exit 1
+state=$(wpctl get-volume @DEFAULT_AUDIO_SINK@) || exit 0
+percent=$(percent "$state")
+icon=volume-high
+[[ $state == *MUTED* || $percent == 0 ]] && icon=volume-muted
+omarchy-shell -q shell summon omarchy.osd \
+  "{\"icon\":\"$icon\",\"message\":\"\",\"value\":\"$percent\",\"progressText\":\"$percent%\",\"max\":\"100\",\"duration\":\"\"}"
