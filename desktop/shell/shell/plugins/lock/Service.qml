@@ -262,6 +262,13 @@ Item {
     idleBlankTimer.restart()
   }
 
+  // Taps and keys on the lock screen. On the tablet they never turn a dark
+  // panel back on (Home and Power do); while it is lit they count as activity.
+  function runInputWake() {
+    if (Quickshell.env("OMARCHY_TOUCH_MODE") !== "1") { runWake(); return }
+    if (!inputWakeCheck.running) inputWakeCheck.running = true
+  }
+
   function runWake() {
     root.displaysBlank = false
     root.monitorDpmsKnown = false
@@ -560,7 +567,7 @@ Item {
         onPasswordTextEdited: function(password) { root.enteredPassword = password }
         onSubmitPassword: function(password) { root.submitPassword(password) }
         onClearFailureRequested: root.failureMessage = ""
-        onWakeRequested: root.runWake()
+        onWakeRequested: root.runInputWake()
       }
 
     }
@@ -791,6 +798,12 @@ Item {
       root.strandedLock = exitCode === 0 && !root.currentlyLocked()
       root.recoverStrandedLock()
     }
+  }
+
+  Process {
+    id: inputWakeCheck
+    command: ["omarchy-tablet-power", "input"]
+    onExited: function(exitCode) { if (exitCode === 0) root.runWake() }
   }
 
   Process {

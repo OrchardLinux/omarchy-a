@@ -62,8 +62,12 @@ def lock_and_blank():
 
 def main():
     action = sys.argv[1] if len(sys.argv) == 2 else ''
+    if action == 'input':
+        # Touch and keys on the lock screen: only Home and Power turn the panel
+        # back on (as on iOS); the lock may count input only while it is lit.
+        sys.exit(0 if brightness() > 0 else 3)
     if action not in ('power', 'home', 'idle', 'wake', 'blank-locked'):
-        raise ValueError('expected power, home, idle, wake or blank-locked')
+        raise ValueError('expected input, power, home, idle, wake or blank-locked')
     # Serialize physical buttons, idle transitions, and lock-screen wake requests.
     fd = os.open(RUNTIME / 'omarchy-tablet-power.lock', os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as lock:

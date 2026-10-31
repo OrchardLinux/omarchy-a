@@ -19,12 +19,19 @@ orchard = "../orchard-installer"
 device = "j71b"
 ```
 
-Run this repository's tests and producers in that orchard's environment:
+`distro.toml` makes this checkout an orchard distribution:
 
 ```sh
+orchard build        # every component that changed, then a release in out/releases/dev-DATE-TIME
+orchard run          # build, then start that release's recovery on the attached iPad, from RAM
+orchard install      # install the last build
 orchard python -m unittest discover -s tests
-orchard python -m release.j71b.build ...
 ```
+
+`orchard build` runs `tools/build.py`, which keeps each component (desktop,
+Labwc, base, loader, …) in `out/components/` and rebuilds it only when its files
+change; orchard brings Pongo, the recovery tools and the kernels.
+[BUILD.md](BUILD.md) describes the steps one by one.
 
 RAM experiments and device bring-up happen in orchard itself, with its
 [examples](https://github.com/OrchardLinux/orchard/tree/main/examples) and
@@ -32,9 +39,12 @@ RAM experiments and device bring-up happen in orchard itself, with its
 
 ## Supported devices
 
-| Device | Identifier | Status |
-| --- | --- | --- |
-| iPad 6 Wi-Fi | `iPad7,5` / J71b | Experimental; no GPU acceleration |
+A release covers every device orchard describes: one root image, and
+orchard's kernel, device trees and modules for each platform. How well a device
+works is orchard's device data, which the installer shows before it changes
+anything. Today the iPad 6 Wi-Fi (`iPad7,5`, J71b) is supported, without GPU
+acceleration; the others are experimental. See orchard's
+[devices](https://github.com/OrchardLinux/orchard/tree/main/devices).
 
 This image uses **tethered boot**: starting Linux after a cold restart requires a host computer running `orchard launch`.
 
@@ -93,19 +103,11 @@ Connect the iPad in DFU mode and run:
 orchard launch
 ```
 
-The bootloader reads the boot entries from the iPad's boot partition and starts the one you choose (or the only one). It works from any computer with Orchard installed: nothing is downloaded, formatted or reinstalled. See the [CLI launch instructions](https://github.com/OrchardLinux/cli#launch-an-installed-system).
+The bootloader reads the boot entries from the iPad's boot partition and starts the one you choose (or the only one). It works from any computer with Orchard installed: nothing is downloaded, formatted or reinstalled. See [orchard](https://github.com/OrchardLinux/orchard#install-a-system).
 
 ## More than an installer
 
-The same CLI supports hardware work before and after installation:
-
-```sh
-orchard devices       # Inspect connected devices
-orchard status        # Query the running system
-orchard diagnostics   # Collect device diagnostics
-```
-
-Recovery boot, device-tree capture, firmware preparation, installation, and handoff are available separately for bring-up and debugging. See the [CLI documentation](https://github.com/OrchardLinux/cli#documentation) for commands and workflows.
+Hardware work before and after installation (recovery boot, device-tree capture, firmware preparation, RAM experiments, bringing up a new device) happens with [orchard](https://github.com/OrchardLinux/orchard) from a checkout; see its [device bring-up guide](https://github.com/OrchardLinux/orchard/blob/main/docs/device-bring-up.md).
 
 ## How it works
 

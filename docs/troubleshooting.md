@@ -32,14 +32,15 @@ nmcli connection add type ethernet con-name orchard-usb ifname '*' match.driver 
 
 ## Inspect the running system
 
-While diagnostic SSH remains available for this boot:
+Omarchy A is reachable over USB in every boot. With SSH logins allowed during
+the install (the default), sign in from that computer:
 
 ```sh
-orchard status
-orchard diagnostics
+ssh tablet@172.16.42.1
 ```
 
-These commands require the credentials established for the current device and boot. See the [orchard documentation](https://github.com/OrchardLinux/orchard#develop) for detailed workflows.
+Without SSH, log in as `tablet` on the USB serial console, e.g. on macOS
+`screen /dev/cu.usbmodem* 115200`, on Linux `screen /dev/ttyACM0 115200`.
 
 ## Installation failed or stopped responding
 

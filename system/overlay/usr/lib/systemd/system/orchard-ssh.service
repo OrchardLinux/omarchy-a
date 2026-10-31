@@ -1,0 +1,13 @@
+[Unit]
+Description=SSH on every interface; keys only (the installer imports the computer's)
+After=network.target
+
+[Service]
+# -R: host keys generated on first boot into /etc/dropbear and kept.
+# -s -g: no password logins. -W: a 4 MiB window keeps the USB link full.
+ExecStartPre=/usr/bin/install -d -m 700 /etc/dropbear
+ExecStart=/usr/bin/dropbear -F -E -R -s -g -W 4194304 -P /run/dropbear.pid
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

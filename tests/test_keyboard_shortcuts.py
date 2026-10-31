@@ -22,7 +22,7 @@ class KeyboardShortcutTests(unittest.TestCase):
         self.assertEqual([key for key, n in counts.items() if n > 1], [])
 
     def test_executed_programs_ship_with_the_image(self):
-        packages = set((PROJECT / 'system/j71b/packages.txt').read_text().split())
+        packages = set((PROJECT / 'system/packages.txt').read_text().split())
         scripts = {p.name for p in (PROJECT / 'desktop/shell/bin').iterdir()}
         for binding in self.bindings:
             action = binding.find('action')

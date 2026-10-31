@@ -1,0 +1,12 @@
+[Unit]
+Description=USB network for the computer: 172.16.42.1 here, DHCP hands out .2
+BindsTo=sys-subsystem-net-devices-usb0.device
+After=sys-subsystem-net-devices-usb0.device
+
+[Service]
+ExecStartPre=/usr/libexec/orchard-usb-network
+ExecStart=/usr/lib/orchard/busybox udhcpd -f /etc/orchard/udhcpd.conf
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
