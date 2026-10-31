@@ -19,7 +19,8 @@ def splash(header):
     mask = bytes(int(value, 16) for value in re.findall(r'0x([0-9a-f]{2})', body))
     pixels = bytearray()
     for bit in range(size * size):
-        pixels += bytes((*(GREEN if mask[bit // 8] & (0x80 >> (bit % 8)) else BLACK), 0))
+        r, g, b = GREEN if mask[bit // 8] & (0x80 >> (bit % 8)) else BLACK
+        pixels += bytes((b, g, r, 0))  # the framebuffer's XRGB8888
     return struct.pack('<4sII', b'OSPL', size, size) + pixels
 
 

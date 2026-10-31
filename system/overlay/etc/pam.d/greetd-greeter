@@ -1,0 +1,6 @@
+#%PAM-1.0
+# The greeter itself (user greeter) needs no password; the PIN is checked in
+# /etc/pam.d/greetd, which the installer writes.
+auth     required pam_permit.so
+account  include  system-local-login
+session  include  system-local-login
