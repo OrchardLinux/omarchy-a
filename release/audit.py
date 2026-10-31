@@ -182,6 +182,7 @@ def audit(manifest):
         if clash:
             raise ValueError(f'The root has files of the {name} layer: ' + ', '.join(clash[:5]))
     verify_tablet_sudo(hashes, modes, owners, groups)
+    verify_reachable(hashes, links)
     if not privileges or privileges.get('usr/bin/sudo', {}).get('mode') != 0o4755:
         raise ValueError('Missing package-defined sudo permissions')
     for name, expected in privileges.items():
@@ -240,6 +241,22 @@ def verify_bluetooth(record, hashes, modes, owners, groups):
                 else 'usr/lib/omarchy-bluetooth/' + name.removeprefix('lib/'))
         if (hashes.get(path), modes.get(path), owners.get(path), groups.get(path)) != (digest, 0o644, 0, 0):
             raise ValueError('Bluetooth dependency content/metadata differs: ' + path)
+
+
+def verify_reachable(hashes, links):
+    """Every boot is reachable over USB: a serial console login and session SSH."""
+    wants = 'etc/systemd/system/'
+    required_links = {wants + 'getty.target.wants/serial-getty@ttyGS0.service': '/usr/lib/systemd/system/serial-getty@.service',
+                      wants + 'multi-user.target.wants/orchard-ssh.service': '/usr/lib/systemd/system/orchard-ssh.service',
+                      wants + 'multi-user.target.wants/orchard-usb-network.service':
+                          '/usr/lib/systemd/system/orchard-usb-network.service'}
+    for name, target in required_links.items():
+        if links.get(name) != (True, target):
+            raise ValueError('The installed system would not be reachable over USB: ' + name)
+    for name in ('usr/bin/dropbear', 'usr/bin/dropbearkey', 'usr/bin/recovery-start-ssh',
+                 'usr/lib/systemd/system/orchard-ssh.service', 'usr/lib/systemd/system/orchard-usb-network.service'):
+        if name not in hashes:
+            raise ValueError('The installed system would not be reachable over USB: ' + name)
 
 
 def verify_tablet_sudo(hashes, modes, owners, groups):
