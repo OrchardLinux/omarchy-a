@@ -10,24 +10,36 @@ SCRIPT = PROJECT / 'desktop/shell/bin/omarchy-volume'
 
 
 class VolumeKeys(unittest.TestCase):
-    def run_keys(self, action):
+    def run_keys(self, action, volume='0.45'):
+        """Run omarchy-volume ACTION at VOLUME; returns (exit code, the calls it made)."""
         with tempfile.TemporaryDirectory() as directory:
-            bin_dir, log = Path(directory), Path(directory) / 'calls'
+            bin_dir, log, level = Path(directory), Path(directory) / 'calls', Path(directory) / 'level'
+            level.write_text(volume)
             (bin_dir / 'omarchy-shell').write_text(f'#!/bin/sh\necho "shell $*" >> {log}\n')
-            (bin_dir / 'wpctl').write_text(f'#!/bin/sh\necho "wpctl $*" >> {log}\n'
-                                           '[ "$1" = get-volume ] && echo "Volume: 0.45"\nexit 0\n')
+            # A fake wpctl that keeps the level: set-volume N% stores N/100.
+            (bin_dir / 'wpctl').write_text(f"""#!/bin/sh
+echo "wpctl $*" >> {log}
+case $1 in
+  get-volume) echo "Volume: $(cat {level})" ;;
+  set-volume) awk -v v="${{3%\\%}}" 'BEGIN {{ printf "%.2f", v / 100 }}' > {level} ;;
+esac
+""")
             for name in ('omarchy-shell', 'wpctl'):
                 (bin_dir / name).chmod(0o755)
             env = {**os.environ, 'PATH': f'{bin_dir}:/usr/bin:/bin'}
             result = subprocess.run(['bash', str(SCRIPT), action], env=env, capture_output=True, text=True)
-            return result.returncode, log.read_text().splitlines()
+            return result.returncode, [line for line in log.read_text().splitlines() if 'get-volume' not in line]
 
-    def test_a_step_then_the_osd_with_the_new_volume(self):
-        code, calls = self.run_keys('raise')
-        self.assertEqual(code, 0)
-        self.assertEqual(calls[0], 'wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+')
-        self.assertTrue(calls[-1].startswith('shell -q shell summon omarchy.osd '))
-        self.assertIn('"progressText":"45%"', calls[-1])
+    def test_steps_land_on_multiples_of_5(self):
+        for action, volume, expected in (('raise', '0.45', '50%'), ('raise', '0.12', '15%'),
+                                         ('lower', '0.12', '10%'), ('lower', '0.45', '40%'),
+                                         ('raise', '0.98', '100%'), ('lower', '0.03', '0%')):
+            with self.subTest(action=action, volume=volume):
+                code, calls = self.run_keys(action, volume)
+                self.assertEqual(code, 0)
+                self.assertEqual(calls[0], f'wpctl set-volume @DEFAULT_AUDIO_SINK@ {expected}')
+                self.assertTrue(calls[-1].startswith('shell -q shell summon omarchy.osd '))
+                self.assertIn(f'"progressText":"{expected}"', calls[-1])
 
     def test_mute_toggles(self):
         code, calls = self.run_keys('mute-toggle')
