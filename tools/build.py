@@ -29,7 +29,7 @@ INPUTS = {
     'labwc': ['desktop/build-labwc', 'desktop/labwc'],
     'base': ['system/build-rootfs', 'system/assemble-rootfs', 'system/Containerfile',
              'system/install-toolchain', 'system/packages.txt'],
-    'loader': ['boot/build-loader', 'boot/generate-logo.py', 'boot/artwork', 'boot/m1n1'],
+    'loader': ['boot/build-loader', 'boot/generate-logo.py', 'boot/splash.py', 'boot/artwork', 'boot/m1n1'],
 }
 
 

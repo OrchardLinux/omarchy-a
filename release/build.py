@@ -81,7 +81,9 @@ def main():
     from orchard.image import platform
     root = build_root(args.base, args.base_receipt, args.output, args.release,
                       args.cursor_tools, args.bluetooth_tools, args.labwc_tools,
-                      tools={'dropbear': args.dropbear, 'dropbearkey': args.dropbearkey, 'busybox': args.busybox})
+                      tools={'dropbear': args.dropbear, 'dropbearkey': args.dropbearkey, 'busybox': args.busybox},
+                      # build-loader writes the splash next to the loader.
+                      splash=args.loader.with_name('splash'))
     platforms = {}
     for name, bundle in bundles.items():
         layer = platform.build(name, args.output, bundle=bundle, busybox=args.busybox)

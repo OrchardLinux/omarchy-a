@@ -183,6 +183,8 @@ def audit(manifest):
             raise ValueError(f'The root has files of the {name} layer: ' + ', '.join(clash[:5]))
     verify_tablet_sudo(hashes, modes, owners, groups)
     verify_reachable(hashes, links)
+    if 'usr/share/orchard/splash' not in hashes:
+        raise ValueError('The root lacks its boot splash for orchard launch')
     if not privileges or privileges.get('usr/bin/sudo', {}).get('mode') != 0o4755:
         raise ValueError('Missing package-defined sudo permissions')
     for name, expected in privileges.items():

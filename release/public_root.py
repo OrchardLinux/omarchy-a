@@ -137,7 +137,8 @@ def access_files(tools):
             'usr/lib/orchard/busybox': (Path(tools['busybox']).read_bytes(), 0o755)}
 
 
-def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=None, labwc_tools=None, tools=None):
+def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=None, labwc_tools=None, tools=None,
+          splash=None):
     """The root image for every platform: no kernel, DTBs or modules (orchard's layer has them)."""
     if outdir.exists():
         raise ValueError('Choose a new release output directory')
@@ -155,6 +156,9 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
     additions.update(system_files())
     if tools:
         additions.update(access_files(tools))
+    if splash:
+        # orchard launch paints it before the kernel (orchard docs/boot-contract.md).
+        additions['usr/share/orchard/splash'] = (Path(splash).read_bytes(), 0o644)
     additions['etc/polkit-1/rules.d/60-omarchy-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
     additions['etc/orchard/release.json'] = (json.dumps({'protocol': 1, 'release': release}).encode(), 0o644)
     if privileges.keys() & additions.keys():

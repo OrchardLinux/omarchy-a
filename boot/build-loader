@@ -26,3 +26,6 @@ with tempfile.TemporaryDirectory(prefix='omarchy-loader-') as temporary:
                     '--include-header', str(header), '--extra-cflags', '-DOMARCHY_SPLASH',
                     *(['--work-dir', str(args.work_dir)] if args.work_dir else []),
                     *(['--resume'] if args.resume else [])], check=True)
+    # The same picture as orchard's boot splash, for orchard launch.
+    subprocess.run([sys.executable, str(here / 'splash.py'), str(header),
+                    str(args.output.with_name('splash'))], check=True)
