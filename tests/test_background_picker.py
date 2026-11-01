@@ -14,6 +14,18 @@ SCRIPTS = PROJECT / 'desktop/shell/bin'
 QML = PROJECT / 'desktop/shell/shell/plugins/image-picker/ImagePicker.qml'
 
 
+def _bash_major():
+    try:
+        out = subprocess.run(['bash', '-c', 'echo ${BASH_VERSINFO[0]}'], capture_output=True, text=True)
+        return int(out.stdout.strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+# The scripts target the image: bash 4+, coreutils timeout, and stubs run by
+# /usr/bin/python3. macOS hosts (bash 3.2, no timeout) skip them.
+@unittest.skipUnless(_bash_major() >= 4 and shutil.which('timeout') and Path('/usr/bin/python3').exists(),
+                     'needs bash 4+, coreutils timeout and /usr/bin/python3, as in the image')
 class PickerScripts(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
