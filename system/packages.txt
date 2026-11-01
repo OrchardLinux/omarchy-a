@@ -10,6 +10,7 @@ python
 labwc
 quickshell
 qt6-imageformats
+# Background picker thumbnails and cache checks (desktop/shell/bin/omarchy-menu-images).
 diffutils
 libvips
 ffmpegthumbnailer
