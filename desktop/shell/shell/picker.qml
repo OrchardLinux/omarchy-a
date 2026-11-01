@@ -33,14 +33,16 @@ ShellRoot {
   ShellIpc {
     target: "picker"
     function ping(): string { return "ok" }
+    function request(doneFile: string): string {
+      return picker.requestActive && picker.doneFile === doneFile ? "active" : "inactive"
+    }
     function open(payload: string): string {
       exitTimer.stop()
       picker.open(payload)
       return "ok"
     }
     function cancel(doneFile: string): string {
-      picker.closeSelector(doneFile)
-      exitTimer.start()
+      if (picker.closeSelector(doneFile)) exitTimer.start()
       return "ok"
     }
   }
