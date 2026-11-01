@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Print the CHANGELOG.md section for a release tag (v1.2.3 -> "## [1.2.3]").
+# Fails when the section is missing or empty, so no release goes out undescribed.
+# Usage: ci/release-notes TAG [CHANGELOG]
+set -euo pipefail
+tag=${1:?usage: ci/release-notes TAG [CHANGELOG]}
+changelog=${2:-CHANGELOG.md}
+version=${tag#v}
+notes=$(awk -v h="## [$version]" 'index($0, "## ") == 1 { p = index($0, h) == 1; next } p' "$changelog" | sed '/[^[:space:]]/,$!d')
+if ! grep -q '[^[:space:]]' <<<"$notes"; then
+  echo "error: $changelog has no notes under '## [$version]'; rename Unreleased before tagging" >&2
+  exit 1
+fi
+printf '%s\n' "$notes"

@@ -33,6 +33,15 @@ jobs:
           [[ "$(gh run view "$RUN_ID" --json conclusion --jq .conclusion)" == success ]]
           source=$(gh run view "$RUN_ID" --json headSha --jq .headSha)
           echo "SOURCE_SHA=$source" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ env.SOURCE_SHA }}
+          path: source
+          sparse-checkout: |
+            CHANGELOG.md
+            ci/release-notes
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.artifact }}
@@ -45,5 +54,8 @@ jobs:
           gh attestation verify assets/SHA256SUMS --repo "$GH_REPO"
       - name: Publish the exact existing assets without rebuilding or overwriting
         run: |
+          { (cd source && ci/release-notes "$TAG")
+            printf '\n---\n\n%s\n' 'Automated build and checksum verification passed. Experimental: physical-device qualification is not claimed.'
+          } > notes.md
           gh release create "$TAG" assets/* --target "$SOURCE_SHA" --latest --title "$TAG" \
-            --notes 'Automated build and checksum verification passed. Experimental: physical-device qualification is not claimed.'
+            --notes-file notes.md

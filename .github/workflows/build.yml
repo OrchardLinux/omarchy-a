@@ -40,6 +40,11 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: '[[ "$TAG" =~ ^v[A-Za-z0-9][A-Za-z0-9._-]*$ ]]'
+      - name: Check release notes
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: ci/release-notes "$TAG" >/dev/null
       # Tests follow orchard main; builds use the pinned orchard release (ci/dependencies).
       - name: Install orchard main
         run: bash ci/dependencies --tools-only
@@ -303,6 +308,14 @@ jobs:
         with:
           name: omarchy-release-assets
           path: assets
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: source
+          sparse-checkout: |
+            CHANGELOG.md
+            ci/release-notes
+          sparse-checkout-cone-mode: false
       - name: Create draft release
         if: github.ref_type == 'tag'
         env:
@@ -310,5 +323,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
+          { (cd source && ci/release-notes "$TAG")
+            printf '\n---\n\n%s\n' 'Experimental image: automatic tablet login and unrestricted passwordless sudo; no local access protection. Automated checks do not qualify hardware. Publish compatible shared-launcher assets before announcing launch support.'
+          } > notes.md
           gh release create "$TAG" assets/* --draft --verify-tag --title "$TAG" \
-            --notes 'Experimental image: automatic tablet login and unrestricted passwordless sudo; no local access protection. Automated checks do not qualify hardware. Publish compatible shared-launcher assets before announcing launch support.'
+            --notes-file notes.md

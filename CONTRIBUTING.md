@@ -30,6 +30,10 @@ Pull requests land as in orchard: we usually rework them to fit the structure
 before merging, on your PR branch and with your authorship, unless you ask us
 not to (see orchard's [CONTRIBUTING](https://github.com/OrchardLinux/orchard/blob/main/CONTRIBUTING.md#how-pull-requests-land)).
 
+If someone using the tablet would notice the change, add a line under
+Unreleased in [CHANGELOG.md](CHANGELOG.md). It becomes the release notes. If
+you don't, we add it when the PR lands.
+
 ## Test
 
 ```sh
