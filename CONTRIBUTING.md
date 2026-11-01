@@ -29,6 +29,9 @@ each which one it needs and in which order they merge.
 Pull requests land as in orchard: we usually rework them to fit the structure
 before merging, on your PR branch and with your authorship, unless you ask us
 not to (see orchard's [CONTRIBUTING](https://github.com/OrchardLinux/orchard/blob/main/CONTRIBUTING.md#how-pull-requests-land)).
+Read the merge comment carefully: merges are often partial, and the comment
+says what changed on your branch, what was left out and which follow-up work
+is open.
 
 If someone using the tablet would notice the change, add a line under
 Unreleased in [CHANGELOG.md](CHANGELOG.md). It becomes the release notes. If
