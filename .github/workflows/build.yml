@@ -20,7 +20,7 @@ permissions:
   contents: read
   actions: read
 env:
-  HARDWARE_TAG: ${{ inputs.hardware_tag || 'v0.2.0' }}
+  HARDWARE_TAG: ${{ inputs.hardware_tag || 'nightly' }}
   HARDWARE_ARTIFACT_DIR: ${{ inputs.hardware_run_id != '' && 'out/downloads/hardware' || '' }}
 jobs:
   orchard:
