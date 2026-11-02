@@ -4,17 +4,22 @@
 orchard runs it as `tools/build.py --version VERSION --output DIRECTORY
 [--platform NAME ... | --platform all]` in this checkout. Components land in out/components/NAME/KEY/, keyed by the
 files they are made from, so a build redoes only what changed: a shell edit
-rebuilds the desktop payload and the root, not Labwc. orchard supplies
-Pongo, the static recovery tools and every platform's kernel from its
-shared cache. The release itself is always assembled anew.
+rebuilds the desktop payload and the root, not Labwc. orchard supplies its
+m1n1, Pongo, the static recovery tools and every platform's kernel
+(python -m orchard.inputs); its producers run as commands from the orchard
+snapshot (ORCHARD_CHECKOUT, which orchard build sets, or --orchard DIR) and
+none of its Python is imported (orchard docs/distribution-contract.md). The
+release itself is always assembled anew.
 """
 import argparse
+import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 
-from orchard.distro import component
-from orchard.build import prepare_shared
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from components import component  # noqa: E402
 
 PROJECT = Path(__file__).resolve().parents[1]
 DESKTOP_IMAGE = ['desktop/Containerfile', 'desktop/install-toolchain']
@@ -41,13 +46,27 @@ def python(*argv):
     run(sys.executable, *argv)
 
 
+def orchard_command(module, *argv):
+    """orchard's producer MODULE as a command from the snapshot (PYTHONPATH=SNAPSHOT/src)."""
+    root = Path(os.environ['ORCHARD_CHECKOUT'])
+    print('+', sys.executable, '-m', module, ' '.join(map(str, argv)), flush=True)
+    subprocess.run([sys.executable, '-m', module, *map(str, argv)], cwd=PROJECT, check=True,
+                   env={**os.environ, 'PYTHONPATH': str(root / 'src')})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--version', required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--platform', action='append', default=[],
                         help='build this platform (repeat), or all; orchard passes the selection')
+    parser.add_argument('--orchard', type=Path, help='the orchard snapshot (default: ORCHARD_CHECKOUT)')
     args = parser.parse_args()
+    orchard = args.orchard or (Path(os.environ['ORCHARD_CHECKOUT']) if os.environ.get('ORCHARD_CHECKOUT') else None)
+    if orchard is None or not (orchard / 'src/orchard').is_dir():
+        parser.error('Name the orchard snapshot: --orchard DIR, or ORCHARD_CHECKOUT (orchard build sets it)')
+    # Every step below, the desktop recipes included, finds orchard here.
+    os.environ['ORCHARD_CHECKOUT'] = str(orchard.resolve())
     if 'all' in args.platform and len(args.platform) > 1:
         parser.error('--platform all builds every platform and combines with no other')
     # The release builder builds every platform when it is given none.
@@ -72,19 +91,22 @@ def main():
     # The Omarchy mark is data for orchard's m1n1, which every distribution boots.
     artwork, _ = component(PROJECT, 'artwork', INPUTS['artwork'],
                            lambda path, work: python('boot/build-artwork', '--output', path), artifact='artwork')
-    shared = prepare_shared()
+    # What orchard supplies finished: kernels, m1n1, Pongo, tools (the nightly's when they match).
+    inputs = PROJECT / 'out/components/.inputs.json'
+    orchard_command('orchard.inputs', '--output', inputs, *selected)
+    shared = json.loads(inputs.read_text())['shared']
     tools = shared['tools']
-    python('-m', 'release.build', '--release', args.version,
+    python('-m', 'release.build', '--release', args.version, '--inputs', inputs,
            '--base', base / 'rootfs.tar.gz', '--base-receipt', base / 'rootfs.tar.gz.json',
-           '--loader', shared['loader'], '--splash', artwork / 'splash', '--logo', artwork / 'logo.bin',
+           '--loader', shared['m1n1'], '--splash', artwork / 'splash', '--logo', artwork / 'logo.bin',
            '--pongo', shared['pongo'],
-           '--busybox', tools / 'busybox', '--dropbear', tools / 'dropbear', '--dropbearkey', tools / 'dropbearkey',
-           '--wpa-supplicant', tools / 'wpa_supplicant', '--wpa-cli', tools / 'wpa_cli', '--iw', tools / 'iw',
+           *(part for name in ('busybox', 'dropbear', 'dropbearkey', 'wpa_supplicant', 'wpa_cli', 'iw')
+             for part in ('--' + name.replace('_', '-'), tools[name])),
            '--cursor-tools', cursor, '--bluetooth-tools', bluetooth, '--labwc-tools', labwc,
            *selected, '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
-    # install.sh and orchard-install.pyz, with orchard's launch loaders from its cache.
-    python('-m', 'orchard.installer', 'release', args.output)
+    # install.sh and orchard-install.pyz, with orchard's launch loaders.
+    orchard_command('orchard.installer', 'release', args.output)
 
 
 if __name__ == '__main__':

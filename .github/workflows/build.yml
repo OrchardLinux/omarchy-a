@@ -145,12 +145,16 @@ jobs:
         if: inputs.reuse_run_id == ''
         run: |
           runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
+            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard" \
             python desktop/build --output out/desktop
           runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
+            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard" \
             python desktop/build-cursor-helper --output out/cursor
           runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
+            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard" \
             python desktop/build-bluetooth-tools --output out/bluetooth
           runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
+            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard" \
             python desktop/build-labwc --output out/labwc
       - name: Build the signed Arch root filesystem
         if: inputs.reuse_run_id == ''
@@ -173,6 +177,8 @@ jobs:
   assets:
     needs: [test, orchard, artwork, userspace]
     env:
+      # orchard's producers run as commands from this snapshot (ci/dependencies clones it).
+      ORCHARD_CHECKOUT: ${{ github.workspace }}/.orchard
       HARDWARE_TAG: ${{ needs.orchard.outputs.tag }}
     runs-on: ubuntu-24.04-arm
     permissions:

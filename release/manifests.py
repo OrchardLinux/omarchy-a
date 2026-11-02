@@ -1,9 +1,16 @@
 """Publish the release's install manifest (every platform) and the index that pins it."""
+import hashlib
 import json
 from pathlib import Path
 import tomllib
 
-from orchard.image.integrity import sha
+
+def sha(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def receipt(path):
@@ -18,7 +25,7 @@ def write(output, version, root, platforms, orchard):
     """release.toml and index.toml in OUTPUT.
 
     PLATFORMS maps each platform to its boards, recovery (`boot`) and
-    orchard layer receipts; ORCHARD is orchard.hardware.revision().
+    orchard layer receipts; ORCHARD is the snapshot's revision ({'commit', 'modified'}).
     """
     document = ('schema = 2\nkind = "orchard.install"\ndistro = "omarchy-a"\n'
                 'name = "Omarchy A"\nversion = ' + json.dumps(version) + '\n'

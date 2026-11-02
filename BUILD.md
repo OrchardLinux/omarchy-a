@@ -34,8 +34,13 @@ orchard --version
 
 `orchard` comes from orchard's launcher on your PATH and runs orchard's newest
 nightly (`ORCHARD_VERSION` pins one); an orchard checkout's own `bin/orchard` runs
-that checkout. Run the Python producers below with `orchard python ...`, which
-uses that orchard's environment.
+that checkout. This build imports none of orchard's Python: it runs orchard's
+producers as commands from an orchard snapshot (orchard
+[docs/distribution-contract.md](https://github.com/OrchardLinux/orchard/blob/main/docs/distribution-contract.md)),
+which `orchard build` names in `ORCHARD_CHECKOUT`. Without orchard, set
+`ORCHARD_CHECKOUT` (or pass `--orchard DIR`) to an orchard checkout or a
+release's `orchard-source.tar.gz` unpacked, and run the steps below with any
+Python 3.11.
 
 ## Produce components
 
@@ -56,10 +61,14 @@ kernel, every board's DTB, modules), which the installer writes into the root.
 The kernels come from the same orchard builder and cache as `orchard build` in
 orchard's examples; matching inputs reuse the compiled bundles. Boot artwork,
 userspace and assembly remain owned by this repository; the m1n1 is orchard's.
+First what orchard supplies finished, as one JSON file (kernel bundles, boards,
+m1n1, Pongo, tools; the nightly's when they match):
 
 ```sh
-orchard python -m release.build \
+PYTHONPATH=$ORCHARD_CHECKOUT/src python -m orchard.inputs --output out/inputs.json
+python -m release.build \
   --release 0.1.0-orchard.3 \
+  --inputs out/inputs.json \
   --base out/components/base/rootfs.tar.gz \
   --base-receipt out/components/base/rootfs.tar.gz.json \
   --loader out/components/quiet/m1n1.bin \
@@ -80,7 +89,8 @@ orchard python -m release.build \
 
 To use a staged kernel bundle instead (as CI does with orchard's published
 component bundles), pass `--kernel-dir PLATFORM=DIRECTORY` per platform; the
-others still come from the cache. `--platform PLATFORM` builds only that
+others still come from `--inputs`, and without `--inputs` the given bundles are
+the release's platforms. `--platform PLATFORM` builds only that
 platform, for development; a release covers every platform. Each recovery carries
 the DTB of every board of its platform; m1n1 boots with the one matching the
 device. The cache respects `XDG_CACHE_HOME` and `ORCHARD_CACHE_DIR`, just like RAM
@@ -93,7 +103,7 @@ Choose a new version and output directory for each build. Root builds first; rec
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests -v
 python -m release.audit out/releases/0.1.0-orchard.3/release.toml
-python -m orchard.manifests --verify-local out/releases/0.1.0-orchard.3/index.toml
+PYTHONPATH=$ORCHARD_CHECKOUT/src python -m orchard.manifests --verify-local out/releases/0.1.0-orchard.3/index.toml
 ```
 
 The auditor verifies, per platform, the recovery's contents, endpoints and loader framing, orchard's layer against its receipt and SHA256SUMS, and that recovery and layer carry the same modules; for the root, desktop/privilege policy, that it holds no file of any layer, and the absence of private session/firmware data.

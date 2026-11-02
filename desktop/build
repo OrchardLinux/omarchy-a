@@ -9,7 +9,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from orchard.buildenv import native
+from snapshot_buildenv import buildenv
+native = buildenv.native
 
 HERE = Path(__file__).resolve().parent
 INPUTS = HERE / 'arm64/inputs'

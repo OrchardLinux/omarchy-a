@@ -1,12 +1,20 @@
 """Hosted metadata binds immutable artifact URLs to the local release bytes."""
 import hashlib
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
+
+import orchard
 
 from release import manifests
 from release.publish import publish
 from test_manifests_and_recovery import ORCHARD, release_files
+
+
+# The publisher is orchard's (python -m orchard.image.publish), run from the orchard under test.
+os.environ.setdefault('ORCHARD_CHECKOUT', str(Path(orchard.__file__).resolve().parents[2]))
 
 
 class HostedPublication(unittest.TestCase):
@@ -37,7 +45,7 @@ class HostedPublication(unittest.TestCase):
             self.assertEqual(doc['platforms']['apple-4k']['boards'], ['n61'])
             self.assertEqual((root / 'local/index.toml').read_bytes(), original)
             self.assertEqual((output / 'rootfs.tar.zst').read_bytes(), b'rootfs.tar.zst')
-            with self.assertRaises(FileExistsError):
+            with self.assertRaises(subprocess.CalledProcessError):
                 publish(root / 'local', 'v1.2.3', output)
 
     def test_corrupt_asset_cannot_be_published(self):
@@ -45,7 +53,7 @@ class HostedPublication(unittest.TestCase):
             root = Path(directory)
             self.bundle(root / 'local')
             (root / 'local/platform-apple-4k.tar.gz').write_bytes(b'corrupt')
-            with self.assertRaises(ValueError):
+            with self.assertRaises(subprocess.CalledProcessError):
                 publish(root / 'local', 'v1', root / 'public')
             self.assertFalse((root / 'public').exists())
 

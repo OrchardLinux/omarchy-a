@@ -7,12 +7,16 @@ import subprocess
 import struct
 import tarfile
 
-from orchard.image.assemble import INITRAMFS_MAGIC, LOGO_MAGIC
+from release import snapshot
 from release.manifests import read_release
 
 from .common import PROJECT
 from .public_root import sha
 from .recovery_audit import audit_runtime
+
+# m1n1's payload framing (orchard docs/ram-development.md, "Assembling by hand").
+INITRAMFS_MAGIC = b'm1n1_initramfs'
+LOGO_MAGIC = b'm1n1_logo_256128'
 
 
 def audit_recovery(image):
@@ -49,11 +53,9 @@ def audit_recovery(image):
             'compressed_bytes': size, 'initramfs_sha256': parts['initramfs'][0]['sha256']}
 
 
-def private_firmware():
-    """Where any described board's private firmware lands; none of it may be public."""
-    from orchard import hardware
-    return {row['destination'] for profile in hardware.profiles()
-            for row in json.loads(hardware.firmware_path(profile).read_text())['outputs']}
+def private_firmware(orchard=None):
+    """Where any board of the orchard snapshot puts its private firmware; none of it may be public."""
+    return snapshot.private_firmware(snapshot.directory(orchard))
 
 
 def asset(manifest, item, role):
@@ -98,11 +100,11 @@ def audit_layer(path, platform, row, private):
     return {'hashes': hashes, 'boards': description['boards'], 'kernel_release': release}
 
 
-def audit(manifest):
+def audit(manifest, orchard=None):
     record = read_release(manifest)
     if record.get('schema') != 2 or record.get('protocol') != 1:
         raise ValueError('Incompatible release manifest')
-    private = private_firmware()
+    private = private_firmware(orchard)
     root_path = asset(manifest, record['root'], 'root')
     asset(manifest, record['pongo'], 'pongo')
     platforms, layers = {}, {}
@@ -282,8 +284,9 @@ def verify_tablet_sudo(hashes, modes, owners, groups):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('manifest', type=Path)
+    parser.add_argument('--orchard', type=Path, help='the orchard snapshot (default: ORCHARD_CHECKOUT)')
     args = parser.parse_args()
-    print(json.dumps(audit(args.manifest), indent=2))
+    print(json.dumps(audit(args.manifest, args.orchard), indent=2))
 
 
 if __name__ == '__main__':
