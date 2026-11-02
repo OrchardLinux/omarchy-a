@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Fastest Arch Linux ARM mirrors from here first (2026-11-02); a failing one hands over to the next.
+# shellcheck disable=SC2016 # pacman expands these repository placeholders.
+printf 'Server = https://%s/$arch/$repo\n' mirrors.tuna.tsinghua.edu.cn/archlinuxarm \
+  mirrors.ustc.edu.cn/archlinuxarm ca.us.mirror.archlinuxarm.org \
+  de3.mirror.archlinuxarm.org > /etc/pacman.d/mirrorlist
+# The base image's kernel and firmware are not needed to build: never download them.
+mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-firmware.*)$')
+(( ${#unneeded[@]} == 0 )) || pacman -Rdd --noconfirm "${unneeded[@]}"
 pacman -Syu --noconfirm --needed meson wlroots0.20 wayland-protocols \
   libsfdo libxml2 glib2 cairo pango librsvg xcb-util-wm xorg-xwayland gettext
 pacman -Sc --noconfirm

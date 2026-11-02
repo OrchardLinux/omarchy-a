@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 sed -i '/^DownloadUser = /d; /^CheckSpace/a DisableSandboxFilesystem\nDisableSandboxSyscalls' /etc/pacman.conf
+# Arch Linux ARM mirrors are slow per connection: ten downloads at a time.
+sed -i 's/^#\?ParallelDownloads.*/ParallelDownloads = 10/' /etc/pacman.conf
+# Fastest Arch Linux ARM mirrors from here first (2026-11-02); a failing one hands over to the next.
 # shellcheck disable=SC2016 # pacman expands these repository placeholders.
-printf 'Server = https://fl.us.mirror.archlinuxarm.org/$arch/$repo\n' > /etc/pacman.d/mirrorlist
+printf 'Server = https://%s/$arch/$repo\n' mirrors.tuna.tsinghua.edu.cn/archlinuxarm \
+  mirrors.ustc.edu.cn/archlinuxarm ca.us.mirror.archlinuxarm.org \
+  de3.mirror.archlinuxarm.org > /etc/pacman.d/mirrorlist
 pacman-key --init
 pacman-key --populate archlinuxarm
+# The base image's kernel and firmware are not needed to build: never download them.
+mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-firmware.*)$')
+(( ${#unneeded[@]} == 0 )) || pacman -Rdd --noconfirm "${unneeded[@]}"
 pacman -Sy --noconfirm --needed arch-install-scripts python
 pacman -Sc --noconfirm
