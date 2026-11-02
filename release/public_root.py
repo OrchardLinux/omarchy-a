@@ -244,6 +244,9 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                 wants = [('multi-user.target.wants/' + unit, unit) for unit in
                          ('omarchy-pacman-init.service', 'orchard-usb-network.service', 'orchard-ssh.service')]
                 wants.append(('getty.target.wants/serial-getty@ttyGS0.service', 'serial-getty@.service'))
+                # BindsTo stops the USB network when usb0 goes; usb0's return starts it again
+                wants.append(('sys-subsystem-net-devices-usb0.device.wants/orchard-usb-network.service',
+                              'orchard-usb-network.service'))
                 for link, unit in wants:
                     member = tarfile.TarInfo('etc/systemd/system/' + link)
                     member.type, member.linkname, member.mode = tarfile.SYMTYPE, '/usr/lib/systemd/system/' + unit, 0o777

@@ -251,6 +251,8 @@ def verify_reachable(hashes, links):
     required_links = {wants + 'getty.target.wants/serial-getty@ttyGS0.service': '/usr/lib/systemd/system/serial-getty@.service',
                       wants + 'multi-user.target.wants/orchard-ssh.service': '/usr/lib/systemd/system/orchard-ssh.service',
                       wants + 'multi-user.target.wants/orchard-usb-network.service':
+                          '/usr/lib/systemd/system/orchard-usb-network.service',
+                      wants + 'sys-subsystem-net-devices-usb0.device.wants/orchard-usb-network.service':
                           '/usr/lib/systemd/system/orchard-usb-network.service'}
     for name, target in required_links.items():
         if links.get(name) != (True, target):

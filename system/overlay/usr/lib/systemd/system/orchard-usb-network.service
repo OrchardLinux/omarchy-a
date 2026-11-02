@@ -9,4 +9,5 @@ ExecStart=/usr/lib/orchard/busybox udhcpd -f /etc/orchard/udhcpd.conf
 Restart=on-failure
 
 [Install]
-WantedBy=multi-user.target
+# usb0 also comes back without a boot: a host's USB reset, the gadget rebound
+WantedBy=multi-user.target sys-subsystem-net-devices-usb0.device
