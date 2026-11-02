@@ -237,13 +237,19 @@ jobs:
             kernels+=(--kernel-dir "$(basename "$(dirname "$bundle")")=$bundle/kernel")
           done
           tools=out/platforms/apple-16k/components
-          python -m release.build --release "$VERSION" "${kernels[@]}" \
+          # What orchard supplies, as the same inputs file a local build gets; with every
+          # component given from the release bundles, nothing is fetched or built.
+          PYTHONPATH="$ORCHARD_CHECKOUT/src" python -m orchard.inputs --output out/inputs.json "${kernels[@]}" \
+            --m1n1 "$tools/quiet/m1n1.bin" --pongo "$tools/quiet/pongo.bin" --tools "$tools/boot"
+          shared() { python -c 'import json, sys; print(json.load(open("out/inputs.json"))["shared"][sys.argv[1]])' "$1"; }
+          tool() { python -c 'import json, sys; print(json.load(open("out/inputs.json"))["shared"]["tools"][sys.argv[1]])' "$1"; }
+          python -m release.build --release "$VERSION" --inputs out/inputs.json \
             --base out/base/rootfs.tar.gz --base-receipt out/base/rootfs.tar.gz.json \
-            --loader "$tools/quiet/m1n1.bin" --splash out/boot/artwork/splash \
-            --logo out/boot/artwork/logo.bin --pongo "$tools/quiet/pongo.bin" \
-            --busybox "$tools/boot/busybox" --dropbear "$tools/boot/dropbear" \
-            --dropbearkey "$tools/boot/dropbearkey" --wpa-supplicant "$tools/boot/wpa_supplicant" \
-            --wpa-cli "$tools/boot/wpa_cli" --iw "$tools/boot/iw" \
+            --loader "$(shared m1n1)" --splash out/boot/artwork/splash \
+            --logo out/boot/artwork/logo.bin --pongo "$(shared pongo)" \
+            --busybox "$(tool busybox)" --dropbear "$(tool dropbear)" \
+            --dropbearkey "$(tool dropbearkey)" --wpa-supplicant "$(tool wpa_supplicant)" \
+            --wpa-cli "$(tool wpa_cli)" --iw "$(tool iw)" \
             --cursor-tools out/cursor --bluetooth-tools out/bluetooth --labwc-tools out/labwc \
             --output out/release
           python -m release.audit out/release/release.toml
