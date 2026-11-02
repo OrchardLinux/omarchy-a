@@ -2,8 +2,16 @@
 # Install orchard (main for tests, the pinned release for builds) and its verified component bundles.
 set -euo pipefail
 : "${HARDWARE_TAG:?Set HARDWARE_TAG to the immutable orchard release with the components}"
-[[ "$HARDWARE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-  echo 'The component release tag must be vMAJOR.MINOR.PATCH' >&2; exit 2;
+# A release (vMAJOR.MINOR.PATCH), a nightly (nightly-YYYYMMDD-COMMIT), or
+# nightly: the newest one, resolved once here so that orchard's tools and its
+# components come from the same nightly for the whole build.
+if [[ "$HARDWARE_TAG" == nightly ]]; then
+  HARDWARE_TAG=$(curl -fsSL --retry 3 https://github.com/OrchardLinux/orchard/releases/download/nightly/latest.json |
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["name"])')
+  echo "nightly is $HARDWARE_TAG"
+fi
+[[ "$HARDWARE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || "$HARDWARE_TAG" =~ ^nightly-[0-9]{8}-[0-9a-f]{12}$ ]] || {
+  echo 'The component release tag must be vMAJOR.MINOR.PATCH, nightly-YYYYMMDD-COMMIT or nightly' >&2; exit 2;
 }
 # A build uses the orchard release it pins whole: its tools (loader, platform
 # layer, defaults, recovery) and its compiled components come from the same
