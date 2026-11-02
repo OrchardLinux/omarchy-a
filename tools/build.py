@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """orchard build's entry (distro.toml): every component of a release, then the release.
 
-orchard runs it as `tools/build.py --version VERSION --output DIRECTORY` in
-this checkout. Components land in out/components/NAME/KEY/, keyed by the
+orchard runs it as `tools/build.py --version VERSION --output DIRECTORY
+[--platform NAME ... | --platform all]` in this checkout. Components land in out/components/NAME/KEY/, keyed by the
 files they are made from, so a build redoes only what changed: a shell edit
 rebuilds the desktop payload and the root, not Labwc. orchard supplies
 Pongo, the static recovery tools and every platform's kernel from its
@@ -46,7 +46,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--version', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--platform', action='append', default=[],
+                        help='build this platform (repeat), or all; orchard passes the selection')
     args = parser.parse_args()
+    if 'all' in args.platform and len(args.platform) > 1:
+        parser.error('--platform all builds every platform and combines with no other')
+    # The release builder builds every platform when it is given none.
+    selected = [part for name in args.platform if name != 'all' for part in ('--platform', name)]
 
     desktop, desktop_key = component(PROJECT, 'desktop', INPUTS['desktop'],
         lambda path, work: python('desktop/build', '--output', path), artifact='desktop')
@@ -75,7 +81,7 @@ def main():
            '--busybox', tools / 'busybox', '--dropbear', tools / 'dropbear', '--dropbearkey', tools / 'dropbearkey',
            '--wpa-supplicant', tools / 'wpa_supplicant', '--wpa-cli', tools / 'wpa_cli', '--iw', tools / 'iw',
            '--cursor-tools', cursor, '--bluetooth-tools', bluetooth, '--labwc-tools', labwc,
-           '--output', args.output)
+           *selected, '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
     # install.sh and orchard-install.pyz, with orchard's launch loaders from its cache.
     python('-m', 'orchard.installer', 'release', args.output)

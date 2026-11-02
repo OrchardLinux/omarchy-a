@@ -1,3 +1,4 @@
 # This checkout is an orchard distribution: orchard build, run and install use it.
 name = "omarchy-a"
 build = "tools/build.py"
+selects-platform = true  # tools/build.py takes --platform NAME ... or --platform all
