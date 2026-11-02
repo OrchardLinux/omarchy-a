@@ -5,6 +5,8 @@
 # An orientation is applied once it has held for half a second, so turning
 # the device past one orientation to the next doesn't rotate twice.
 # While ~/.config/omarchy/rotation-lock exists, the orientation is held.
+# It ends with the compositor (LABWC_PID): autostart backgrounds it and
+# monitor-sensor never ends by itself, so each logout used to leave both behind.
 set -uo pipefail
 lock=${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/rotation-lock
 settle=${ROTATE_SETTLE:-0.5}
@@ -34,10 +36,19 @@ orientation() {
   esac
 }
 
+exec {sensor}< <(exec monitor-sensor --accel)
+sensor_pid=$!
+watcher=''
+if [[ -n ${LABWC_PID:-} ]]; then
+  ( while kill -0 "$LABWC_PID" 2>/dev/null; do sleep 2; done
+    kill "$sensor_pid" 2>/dev/null ) &
+  watcher=$!
+fi
+
 pending='' applied=''
 while :; do
   if [[ -n $pending ]]; then
-    IFS= read -r -t "$settle" line
+    IFS= read -r -t "$settle" -u "$sensor" line
     status=$?
     if ((status == 0)); then
       next=$(orientation "$line") && [[ -n $next ]] && pending=$next
@@ -47,10 +58,11 @@ while :; do
     [[ $pending != "$applied" ]] && apply "$pending" && applied=$pending
     pending=''
   else
-    IFS= read -r line || break
+    IFS= read -r -u "$sensor" line || break
     next=$(orientation "$line") && [[ -n $next ]] && pending=$next
   fi
-done < <(monitor-sensor --accel)
+done
+[[ -n $watcher ]] && kill "$watcher" 2>/dev/null
 if [[ -n $pending && $pending != "$applied" ]]; then
   apply "$pending"
 fi
