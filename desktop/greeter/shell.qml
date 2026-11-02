@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Services.Greetd
 import "plugins/lock" as Lock
@@ -53,6 +54,13 @@ ShellRoot {
             Greetd.launch(["/usr/local/libexec/arch-ipad-login-session"])
         }
     }
+
+    // The PIN screen is on: record it for the installer (omarchy-desktop-ready)
+    Process {
+        id: readiness
+        command: ["/usr/libexec/omarchy-desktop-ready"]
+    }
+    Component.onCompleted: Qt.callLater(function() { readiness.running = true })
 
     PanelWindow {
         anchors { top: true; bottom: true; left: true; right: true }

@@ -25,9 +25,10 @@ def write(output, version, root, platforms, orchard):
                 'boot_method = "checkm8-pongo"\nmin_orchard = "0.2.0"\nprotocol = 1\n')
     document += table('orchard', orchard)
     # The tablet user gets the password and the lock-screen PIN at install. The
-    # installer waits over this boot's SSH for the desktop's ready record.
+    # installer waits over this boot's SSH for the greeter's ready record: the
+    # PIN screen is on.
     document += table('install', {'default_root': '/omarchy',
-                                  'ready': '/run/user/1000/omarchy-desktop-ready.json'})
+                                  'ready': '/run/omarchy-greeter/ready.json'})
     document += table('install.account', {'user': 'tablet', 'password': True, 'pin': True,
                                           'passwordless_sudo': False})
     row = receipt(output / 'rootfs.tar.zst')

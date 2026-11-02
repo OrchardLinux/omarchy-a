@@ -13,4 +13,4 @@ A file under `/etc` overrides orchard's default of the same name under `/usr/lib
 
 The installed system boots directly from its boot entry, which orchard's installer writes with orchard's kernel, initrd and the board's DTB; no recovery hands over to it, and the system needs no kernel-install or initrd generator.
 
-The desktop-ready helper runs only in the tablet's Wayland session and captures a compositor frame to `/dev/null`; no screenshot is retained. The device API checks the report's boot ID, live process and socket.
+The ready helper runs in the greeter's and the tablet's Wayland sessions once their shells are up. The greeter's record, `/run/omarchy-greeter/ready.json` (directory from tmpfiles.d), tells the installer the PIN screen is on; it holds the boot ID, the shell's process and its socket.
