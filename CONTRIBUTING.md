@@ -16,14 +16,14 @@ orchard --version
 ```
 
 Put orchard's launcher on your PATH first (see its README). `orchard` runs orchard's
-`main` here; `orchard.local.toml` (never committed) can name your own orchard
-checkout and your board. See [BUILD.md](BUILD.md) for compiler and container
+newest nightly here; your own orchard checkout runs with its `bin/orchard`, and
+`orchard.local.toml` (never committed) can name your board. See [BUILD.md](BUILD.md) for compiler and container
 dependencies.
 
 ## Work that spans both
 
-If a desktop change needs an orchard change, make it on an orchard branch, point
-`orchard.local.toml` at that checkout, and open one PR in each repository. Say in
+If a desktop change needs an orchard change, make it on an orchard branch, build
+with that checkout's `bin/orchard`, and open one PR in each repository. Say in
 each which one it needs and in which order they merge.
 
 Pull requests land as in orchard: we usually rework them to fit the structure

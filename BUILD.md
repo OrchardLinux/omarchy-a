@@ -32,9 +32,10 @@ environment for image/component builds.
 orchard --version
 ```
 
-`orchard` comes from orchard's launcher on your PATH and runs orchard's `main`, or
-the checkout your `orchard.local.toml` names. Run the Python producers below with
-`orchard python ...`, which uses that checkout's environment.
+`orchard` comes from orchard's launcher on your PATH and runs orchard's newest
+nightly (`ORCHARD_VERSION` pins one); an orchard checkout's own `bin/orchard` runs
+that checkout. Run the Python producers below with `orchard python ...`, which
+uses that orchard's environment.
 
 ## Produce components
 
