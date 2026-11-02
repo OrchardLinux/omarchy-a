@@ -20,7 +20,7 @@ hold your board:
 device = "j71b"
 ```
 
-`distro.toml` makes this checkout an orchard distribution:
+`orchard.toml` (its `[release]` table) makes this checkout an orchard distribution:
 
 ```sh
 orchard build        # every component that changed, then a release in out/releases/dev-DATE-TIME

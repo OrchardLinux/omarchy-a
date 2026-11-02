@@ -1,0 +1,7 @@
+# This checkout is an orchard project: a distribution whose own script builds the release.
+# orchard build, run and install use it (orchard docs/platforms-and-builds.md).
+name = "omarchy-a"
+
+[release]
+build = "tools/build.py"
+selects-platform = true  # tools/build.py takes --platform NAME ... or --platform all

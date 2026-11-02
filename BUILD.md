@@ -15,7 +15,7 @@ orchard build [--version VERSION]
 ```
 
 builds a release into `out/releases/VERSION` (default `dev-DATE-TIME`) through
-`tools/build.py`, the entry `distro.toml` names: each component below is kept in
+`tools/build.py`, the entry `orchard.toml` names: each component below is kept in
 `out/components/NAME/KEY/`, keyed by its files, and rebuilt only when they
 change; the release is assembled and audited every time. `orchard run` then boots
 its recovery on the attached device without installing, and `orchard install`

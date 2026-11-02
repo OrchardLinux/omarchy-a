@@ -1,4 +1,4 @@
-"""This checkout as an orchard distribution: distro.toml and its build entry. No builds."""
+"""This checkout as an orchard distribution: orchard.toml and its build entry. No builds."""
 import importlib.util
 from pathlib import Path
 import unittest
@@ -9,7 +9,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 
 
 class DistributionProject(unittest.TestCase):
-    def test_distro_toml_names_this_distribution_and_its_entry(self):
+    def test_orchard_toml_names_this_distribution_and_its_entry(self):
         settings = distro.settings(PROJECT)
         self.assertEqual(settings['name'], 'omarchy-a')
         self.assertEqual(settings['build'], PROJECT / 'tools/build.py')

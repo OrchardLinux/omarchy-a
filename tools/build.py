@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""orchard build's entry (distro.toml): every component of a release, then the release.
+"""orchard build's entry (orchard.toml [release]): every component of a release, then the release.
 
 orchard runs it as `tools/build.py --version VERSION --output DIRECTORY
 [--platform NAME ... | --platform all]` in this checkout. Components land in out/components/NAME/KEY/, keyed by the
