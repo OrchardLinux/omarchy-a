@@ -43,7 +43,7 @@ def recovery(args, name, bundle, root_receipt):
         raise ValueError(f'The {name} kernel bundle lacks device DTBs: ' + ', '.join(missing))
     output = args.output / f'recovery-{name}.bin'
     command = [sys.executable, '-m', 'orchard.image.recovery', *(f'--dtb={path}' for path in dtbs)]
-    for option in ('base', 'base_receipt', 'loader', 'busybox', 'dropbear', 'dropbearkey',
+    for option in ('base', 'base_receipt', 'loader', 'logo', 'busybox', 'dropbear', 'dropbearkey',
                    'wpa_supplicant', 'wpa_cli', 'iw'):
         command.extend(['--' + option.replace('_', '-'), str(getattr(args, option))])
     command.extend(['--kernel', str(bundle / 'Image.gz'), '--modules-dir', str(bundle / 'lib/modules'),
@@ -54,7 +54,7 @@ def recovery(args, name, bundle, root_receipt):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    for name in ('base', 'base-receipt', 'loader', 'pongo', 'busybox', 'dropbear', 'dropbearkey',
+    for name in ('base', 'base-receipt', 'loader', 'splash', 'logo', 'pongo', 'busybox', 'dropbear', 'dropbearkey',
                  'wpa-supplicant', 'wpa-cli', 'iw', 'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--kernel-dir', action='append', metavar='PLATFORM=DIRECTORY',
@@ -66,7 +66,7 @@ def main():
     if args.output.exists() or args.output.is_symlink():
         parser.error('Choose a new release output directory')
     # Reject missing distro inputs before a cache miss can start a kernel build.
-    for name in ('base', 'base_receipt', 'loader', 'pongo', 'busybox', 'dropbear', 'dropbearkey',
+    for name in ('base', 'base_receipt', 'loader', 'splash', 'logo', 'pongo', 'busybox', 'dropbear', 'dropbearkey',
                  'wpa_supplicant', 'wpa_cli', 'iw'):
         if not getattr(args, name).is_file():
             parser.error(f'Missing input file: {getattr(args, name)}')
@@ -82,8 +82,7 @@ def main():
     root = build_root(args.base, args.base_receipt, args.output, args.release,
                       args.cursor_tools, args.bluetooth_tools, args.labwc_tools,
                       tools={'dropbear': args.dropbear, 'dropbearkey': args.dropbearkey, 'busybox': args.busybox},
-                      # build-loader writes the splash next to the loader.
-                      splash=args.loader.with_name('splash'))
+                      splash=args.splash)
     platforms = {}
     for name, bundle in bundles.items():
         layer = platform.build(name, args.output, bundle=bundle, busybox=args.busybox)

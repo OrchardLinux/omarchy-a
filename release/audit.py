@@ -7,7 +7,7 @@ import subprocess
 import struct
 import tarfile
 
-from orchard.image.assemble import INITRAMFS_MAGIC
+from orchard.image.assemble import INITRAMFS_MAGIC, LOGO_MAGIC
 from release.manifests import read_release
 
 from .common import PROJECT
@@ -34,8 +34,11 @@ def audit_recovery(image):
             end += row['bytes']
     if end != image.stat().st_size or receipt['image_sha256'] != sha(image):
         raise ValueError('Recovery image receipt mismatch')
-    if set(parts) != {'loader', 'bootargs', 'dtb', 'kernel', 'initramfs_header', 'initramfs'}:
+    if set(parts) != {'loader', 'logo', 'bootargs', 'dtb', 'kernel', 'initramfs_header', 'initramfs'}:
         raise ValueError('Missing recovery component')
+    # The Omarchy mark, which orchard's m1n1 draws only directly after itself.
+    if receipt['components'][1]['name'] != 'logo' or not parts['logo'][1].startswith(LOGO_MAGIC):
+        raise ValueError('The recovery logo is not m1n1\'s custom logo payload directly after m1n1')
     header = parts['initramfs_header'][1]
     size = parts['initramfs'][0]['bytes']
     if (receipt.get('initramfs_encoding') != 'm1n1_initramfs' or

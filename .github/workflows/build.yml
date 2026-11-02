@@ -76,66 +76,16 @@ jobs:
           python-version: '3.14'
       - run: brew install imagemagick librsvg
         if: inputs.reuse_run_id == ''
-      - name: Generate the loader artwork
+      - name: Generate the boot artwork, data for orchard's m1n1
         if: inputs.reuse_run_id == ''
         run: |
           python boot/generate-logo.py --size 480 --output out/boot/omarchy-logo.h
+          python boot/build-artwork --logo-header out/boot/omarchy-logo.h --output out/boot/artwork
           tar -C out -czf out/boot-inputs.tar.gz boot
       - uses: actions/upload-artifact@v4
         with:
           name: omarchy-boot-inputs
           path: out/boot-inputs.tar.gz
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 2
-  loader:
-    needs: artwork
-    runs-on: ubuntu-24.04-arm
-    container: debian:bookworm
-    timeout-minutes: 90
-    defaults:
-      run:
-        shell: bash
-    env:
-      ORCHARD_BUILD_NATIVE: '1'
-      ORCHARD_BUILD_ENV_ID: debian-bookworm-arm64-llvm19-rust1.90.0
-      RUSTUP_TOOLCHAIN: '1.90.0'
-    steps:
-      - name: Reuse unchanged successful outputs
-        if: inputs.reuse_run_id != ''
-        uses: actions/download-artifact@v4
-        with:
-          name: omarchy-loader
-          path: out
-          run-id: ${{ inputs.reuse_run_id }}
-          github-token: ${{ github.token }}
-      - run: apt-get update && apt-get install -y git curl ca-certificates python3 python3-venv
-        if: inputs.reuse_run_id == ''
-      - uses: actions/checkout@v4
-        if: inputs.reuse_run_id == ''
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        if: inputs.reuse_run_id == ''
-        with:
-          name: omarchy-boot-inputs
-          path: out/downloads
-      - if: inputs.reuse_run_id == ''
-        run: |
-          bash ci/dependencies --tools-only
-          bash .orchard/boot/m1n1/install-toolchain
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
-          tar -xzf out/downloads/boot-inputs.tar.gz -C out
-      - name: Build branded loader with the shared recipe
-        if: inputs.reuse_run_id == ''
-        run: |
-          python boot/build-loader --logo-header out/boot/omarchy-logo.h --output out/boot/m1n1.bin
-          tar -C out -czf out/distro-boot.tar.gz boot
-      - uses: actions/upload-artifact@v4
-        with:
-          name: omarchy-loader
-          path: out/distro-boot.tar.gz
           compression-level: 0
           if-no-files-found: error
           retention-days: 2
@@ -204,7 +154,7 @@ jobs:
           if-no-files-found: error
           retention-days: 2
   assets:
-    needs: [test, artwork, loader, userspace]
+    needs: [test, artwork, userspace]
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -252,7 +202,7 @@ jobs:
           . .venv/bin/activate
           tar -xzf out/downloads/omarchy-userspace.tar.gz -C out
           python ci/normalize-recovery-tools.py --archive out/base/rootfs.tar.gz --receipt out/base/rootfs.tar.gz.json
-          tar -xzf out/downloads/distro-boot.tar.gz -C out
+          tar -xzf out/downloads/boot-inputs.tar.gz -C out
           VERSION="preview-$RUN_ID"
           TAG="v$VERSION"
           if [[ "$REF_TYPE" == tag ]]; then TAG="$REF_NAME"; VERSION="${TAG#v}"; fi
@@ -264,7 +214,8 @@ jobs:
           tools=out/platforms/apple-16k/components
           python -m release.build --release "$VERSION" "${kernels[@]}" \
             --base out/base/rootfs.tar.gz --base-receipt out/base/rootfs.tar.gz.json \
-            --loader out/boot/m1n1.bin --pongo "$tools/quiet/pongo.bin" \
+            --loader "$tools/quiet/m1n1.bin" --splash out/boot/artwork/splash \
+            --logo out/boot/artwork/logo.bin --pongo "$tools/quiet/pongo.bin" \
             --busybox "$tools/boot/busybox" --dropbear "$tools/boot/dropbear" \
             --dropbearkey "$tools/boot/dropbearkey" --wpa-supplicant "$tools/boot/wpa_supplicant" \
             --wpa-cli "$tools/boot/wpa_cli" --iw "$tools/boot/iw" \

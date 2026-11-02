@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """orchard's boot splash (docs/boot-contract.md) from the m1n1 artwork header.
 
-The same mask, size and colour as m1n1/patches/0002-omarchy-splash.patch
-draws, so install (our m1n1) and orchard launch (the boot entry's splash)
-look alike: drawn 1:1, centred on black.
+m1n1 paints it for an installed boot entry, 1:1 and centred on black; the
+recovery shows the same mark as m1n1's logo (build-artwork, logo.bin).
 """
 import argparse
 from pathlib import Path

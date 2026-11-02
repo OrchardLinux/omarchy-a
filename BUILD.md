@@ -41,7 +41,7 @@ the checkout your `orchard.local.toml` names. Run the Python producers below wit
 - `desktop/build-sources` and `desktop/build`: desktop applications and payload.
 - `system/build-rootfs`: signed Arch Linux ARM base and package receipt; see [system/README.md](system/README.md).
 - orchard supplies the kernel, DTBs and modules of every platform, its platform layer, and the static BusyBox/Dropbear recipes; see [orchard's build instructions](https://github.com/OrchardLinux/orchard/blob/main/BUILD.md). Local assembly builds or reuses each platform's kernel through orchard's shared cache. Build the static tools separately; supply explicit kernel bundles only when overriding that default.
-- `python boot/build-loader`: distro-branded loader (m1n1 with the Omarchy logo).
+- `python boot/build-artwork --output DIR`: the Omarchy mark as data for orchard's m1n1: `splash` (480 px, painted by m1n1 for an installed boot entry) and `logo.bin` (m1n1's custom logo payload, 256 and 128 px, shown by the recovery). No m1n1 is built here; releases boot orchard's, `quiet/m1n1.bin` from the component bundle.
 - Pongo is not built here. Releases ship orchard's one Pongo, `quiet/pongo.bin` from the orchard component bundle (black screen; the logo appears with m1n1).
 
 Retain each component's receipt. Do not change hardware activation or timing as part of presentation changes.
@@ -53,15 +53,17 @@ A release covers every platform: one root image, and per platform a recovery
 (`recovery-PLATFORM.bin`) and orchard's platform layer (`platform-PLATFORM.tar.gz`:
 kernel, every board's DTB, modules), which the installer writes into the root.
 The kernels come from the same orchard builder and cache as `orchard build` in
-orchard's examples; matching inputs reuse the compiled bundles. Loader branding,
-userspace and assembly remain owned by this repository.
+orchard's examples; matching inputs reuse the compiled bundles. Boot artwork,
+userspace and assembly remain owned by this repository; the m1n1 is orchard's.
 
 ```sh
 orchard python -m release.build \
   --release 0.1.0-orchard.3 \
   --base out/components/base/rootfs.tar.gz \
   --base-receipt out/components/base/rootfs.tar.gz.json \
-  --loader out/components/m1n1.bin \
+  --loader out/components/quiet/m1n1.bin \
+  --splash out/components/artwork/splash \
+  --logo out/components/artwork/logo.bin \
   --pongo out/components/quiet/pongo.bin \
   --busybox out/components/boot/busybox \
   --dropbear out/components/boot/dropbear \

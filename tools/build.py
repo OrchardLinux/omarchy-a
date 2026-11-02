@@ -14,8 +14,7 @@ import subprocess
 import sys
 
 from orchard.distro import component
-from orchard.build import prepare_shared, recipe_key
-from orchard.hardware import ROOT as ORCHARD
+from orchard.build import prepare_shared
 
 PROJECT = Path(__file__).resolve().parents[1]
 DESKTOP_IMAGE = ['desktop/Containerfile', 'desktop/install-toolchain']
@@ -29,7 +28,7 @@ INPUTS = {
     'labwc': ['desktop/build-labwc', 'desktop/labwc'],
     'base': ['system/build-rootfs', 'system/assemble-rootfs', 'system/Containerfile',
              'system/install-toolchain', 'system/packages.txt'],
-    'loader': ['boot/build-loader', 'boot/generate-logo.py', 'boot/splash.py', 'boot/artwork', 'boot/m1n1'],
+    'artwork': ['boot/build-artwork', 'boot/generate-logo.py', 'boot/splash.py', 'boot/artwork'],
 }
 
 
@@ -70,14 +69,15 @@ def main():
                         lambda path, work: run('system/build-rootfs', '--output', path, '--desktop', desktop,
                                                '--release', 'base-' + desktop_key[:16]),
                         artifact='base', extra=[desktop_key])
-    loader, _ = component(PROJECT, 'loader', INPUTS['loader'],
-                          lambda path, work: python('boot/build-loader', '--output', path, '--work-dir', work / 'm1n1'),
-                          artifact='m1n1.bin', extra=[recipe_key(ORCHARD, ['boot/m1n1', 'src/orchard/buildenv.py'])])
+    # The Omarchy mark is data for orchard's m1n1, which every distribution boots.
+    artwork, _ = component(PROJECT, 'artwork', INPUTS['artwork'],
+                           lambda path, work: python('boot/build-artwork', '--output', path), artifact='artwork')
     shared = prepare_shared()
     tools = shared['tools']
     python('-m', 'release.build', '--release', args.version,
            '--base', base / 'rootfs.tar.gz', '--base-receipt', base / 'rootfs.tar.gz.json',
-           '--loader', loader, '--pongo', shared['pongo'],
+           '--loader', shared['loader'], '--splash', artwork / 'splash', '--logo', artwork / 'logo.bin',
+           '--pongo', shared['pongo'],
            '--busybox', tools / 'busybox', '--dropbear', tools / 'dropbear', '--dropbearkey', tools / 'dropbearkey',
            '--wpa-supplicant', tools / 'wpa_supplicant', '--wpa-cli', tools / 'wpa_cli', '--iw', tools / 'iw',
            '--cursor-tools', cursor, '--bluetooth-tools', bluetooth, '--labwc-tools', labwc,

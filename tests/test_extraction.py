@@ -157,12 +157,13 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
 
     def test_recovery_framing_preserves_the_compressed_initramfs(self):
         import struct
-        from orchard.image.assemble import INITRAMFS_MAGIC
+        from orchard.image.assemble import INITRAMFS_MAGIC, LOGO_BYTES, LOGO_MAGIC
         from release.audit import audit_recovery
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fdt = b'\xd0\x0d\xfe\xed'
-            inputs = {'loader': b'loader', 'dtb': fdt + b'a', 'dtb2': fdt + b'b', 'kernel': b'kernel',
+            logo = LOGO_MAGIC + bytes(LOGO_BYTES - len(LOGO_MAGIC))
+            inputs = {'loader': b'loader', 'logo': logo, 'dtb': fdt + b'a', 'dtb2': fdt + b'b', 'kernel': b'kernel',
                       'initramfs': gzip.compress(b'070701' + b'\0' * 32)}
             for name, data in inputs.items():
                 (root / name).write_bytes(data)
@@ -173,7 +174,7 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
             for name in inputs:
                 argv.extend(['--' + name.rstrip('2'), str(root / name)])
             subprocess.run(argv, check=True, capture_output=True)
-            expected = (inputs['loader'] + b'chosen.bootargs=test\n' + inputs['dtb'] + inputs['dtb2'] + inputs['kernel'] +
+            expected = (inputs['loader'] + logo + b'chosen.bootargs=test\n' + inputs['dtb'] + inputs['dtb2'] + inputs['kernel'] +
                         INITRAMFS_MAGIC + struct.pack('<I', len(inputs['initramfs'])) + inputs['initramfs'])
             self.assertEqual(image.read_bytes(), expected)
             audit = audit_recovery(image)
