@@ -1,11 +1,12 @@
 # Maintainer: Robin Candau <antiz@archlinux.org>
-# omarchy-a: Arch's wlroots0.20 with fast rotated pixman compositing, until
-# wlroots has it (see the patch). pkgrel above Arch Linux ARM's rebuilds.
+# omarchy-a: Arch's wlroots0.20 with fast rotated pixman compositing and a
+# GLES2 renderer that samples shared-memory buffers in place, until wlroots
+# has them (see the patches). pkgrel above Arch Linux ARM's rebuilds.
 
 pkgname=wlroots0.20
 _pkgname=wlroots
 pkgver=0.20.2
-pkgrel=1.5
+pkgrel=1.6
 pkgdesc="Modular Wayland compositor library"
 url="https://gitlab.freedesktop.org/wlroots/wlroots"
 license=('MIT')
@@ -18,12 +19,15 @@ optdepends=('xorg-xwayland: Xwayland support'
             'vulkan-validation-layers: validation layers for the experimental vulkan renderer backend')
 provides=("libwlroots-${pkgver%.*}.so")
 source=("${_pkgname}-${pkgver}.tar.gz::${url}/-/releases/${pkgver}/downloads/${_pkgname}-${pkgver}.tar.gz"
-        '0001-render-pixman-rotate-first-then-blend-for-90-degree.patch')
+        '0001-render-pixman-rotate-first-then-blend-for-90-degree.patch'
+        '0002-render-gles2-sample-shared-memory-client-buffers-in-place.patch')
 sha256sums=('80c567d2ed4efb2cfa6b077f22c7a710d9c78ba4e185a75e8694001114af0733'
-            '234879eb7b870b361bab5197409ef30201a09d9f5ab6c3b5715fde9f5ff796b8')
+            '234879eb7b870b361bab5197409ef30201a09d9f5ab6c3b5715fde9f5ff796b8'
+            'f1301387337c41e6b2910e2c839d4120888aed883bcdf7ccdd0421699c328529')
 
 prepare() {
 	patch -d "${_pkgname}-${pkgver}" -p1 < 0001-render-pixman-rotate-first-then-blend-for-90-degree.patch
+	patch -d "${_pkgname}-${pkgver}" -p1 < 0002-render-gles2-sample-shared-memory-client-buffers-in-place.patch
 }
 
 build() {

@@ -1,0 +1,233 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Henrik Klee <henrik@goat-code.com>
+Date: Tue, 3 Nov 2026 08:04:44 +0800
+Subject: [PATCH] render/gles2: sample shared-memory client buffers in place
+
+The GLES2 renderer copies every shared-memory buffer into a texture: on
+an iPad 6 (A10, GLES2 on Zink) that copy was 45% of the compositor's CPU
+time while a terminal scrolled, and each full-screen client surface cost
+another 12 MB of GPU memory per buffer. The pixman renderer reads the
+client's memory directly and so used less CPU and memory than the GPU.
+
+When /dev/udmabuf is available and the client's pool is a memfd sealed
+against shrinking (Qt, GTK and foot seal theirs), make the pages that hold
+the buffer a DMA-BUF on first use, import it as an EGLImage and keep both
+with the buffer, as for a client DMA-BUF: the buffer stays locked while a
+texture samples it. Only the buffer's own pages are taken, since udmabuf
+pins what it covers and a pool may be large and sparse. If the import
+fails, the renderer copies, as before.
+
+This is local to the GLES2 renderer's texture path. The buffer stays a
+shared-memory buffer for everything else: screen capture, scanout and the
+pixman and Vulkan renderers see no difference.
+
+Assisted-by: LLM
+---
+ include/render/gles2.h  | 12 +++++
+ render/gles2/renderer.c | 97 +++++++++++++++++++++++++++++++++++++++++
+ render/gles2/texture.c  | 15 ++++++-
+ 3 files changed, 123 insertions(+), 1 deletion(-)
+
+diff --git a/include/render/gles2.h b/include/render/gles2.h
+index 6b852dc..7d64786 100644
+--- a/include/render/gles2.h
++++ b/include/render/gles2.h
+@@ -87,6 +87,11 @@ struct wlr_gles2_renderer {
+ 
+ 	struct wl_list buffers; // wlr_gles2_buffer.link
+ 	struct wl_list textures; // wlr_gles2_texture.link
++
++	// Shared-memory client buffers imported as DMA-BUFs (udmabuf) instead of
++	// copied into textures; see gles2_buffer_get_or_create_from_shm()
++	int udmabuf_dev; // -2: not opened yet, -1: unavailable
++	bool shm_dmabuf_failed; // an import failed: copy from then on
+ };
+ 
+ struct wlr_gles2_render_timer {
+@@ -109,6 +114,10 @@ struct wlr_gles2_buffer {
+ 	GLuint fbo;
+ 	GLuint tex;
+ 
++	// A shared-memory buffer's pages as a DMA-BUF, owned here
++	bool has_udmabuf;
++	int udmabuf_fd;
++
+ 	struct wlr_addon addon;
+ };
+ 
+@@ -159,6 +168,9 @@ struct wlr_gles2_texture *gles2_get_texture(
+ 	struct wlr_texture *wlr_texture);
+ struct wlr_gles2_buffer *gles2_buffer_get_or_create(struct wlr_gles2_renderer *renderer,
+ 	struct wlr_buffer *wlr_buffer);
++struct wlr_gles2_buffer *gles2_buffer_get_or_create_from_shm(
++	struct wlr_gles2_renderer *renderer, struct wlr_buffer *wlr_buffer,
++	const struct wlr_shm_attributes *shm, struct wlr_dmabuf_attributes *dmabuf);
+ 
+ struct wlr_texture *gles2_texture_from_buffer(struct wlr_renderer *wlr_renderer,
+ 	struct wlr_buffer *buffer);
+diff --git a/render/gles2/renderer.c b/render/gles2/renderer.c
+index e362dae..07d083a 100644
+--- a/render/gles2/renderer.c
++++ b/render/gles2/renderer.c
+@@ -1,5 +1,8 @@
+ #include <assert.h>
+ #include <drm_fourcc.h>
++#include <fcntl.h>
++#include <linux/udmabuf.h>
++#include <sys/ioctl.h>
+ #include <GLES2/gl2.h>
+ #include <GLES2/gl2ext.h>
+ #include <stdint.h>
+@@ -69,6 +72,9 @@ static void destroy_buffer(struct wlr_gles2_buffer *buffer) {
+ 
+ 	wlr_egl_restore_context(&prev_ctx);
+ 
++	if (buffer->has_udmabuf) {
++		close(buffer->udmabuf_fd);
++	}
+ 	free(buffer);
+ }
+ 
+@@ -164,6 +170,93 @@ error_buffer:
+ 	return NULL;
+ }
+ 
++/**
++ * A texture of a shared-memory client buffer without copying it: the pages
++ * that hold the buffer become a DMA-BUF (udmabuf) that the GPU samples, kept
++ * with the buffer like a client DMA-BUF. Only this renderer's texture path
++ * uses it; the buffer stays a shared-memory buffer for everything else
++ * (screen capture, scanout, other renderers). Needs /dev/udmabuf and a memfd
++ * the client sealed against shrinking (Qt, GTK and foot seal theirs). Only
++ * the buffer's own pages are taken: a pool may be large and sparse (foot
++ * keeps one to scroll in), and udmabuf pins what it covers.
++ */
++struct wlr_gles2_buffer *gles2_buffer_get_or_create_from_shm(
++		struct wlr_gles2_renderer *renderer, struct wlr_buffer *wlr_buffer,
++		const struct wlr_shm_attributes *shm, struct wlr_dmabuf_attributes *dmabuf) {
++	struct wlr_gles2_buffer *buffer = NULL;
++	struct wlr_addon *addon =
++		wlr_addon_find(&wlr_buffer->addons, renderer, &buffer_addon_impl);
++	if (addon) {
++		buffer = wl_container_of(addon, buffer, addon);
++		if (!buffer->has_udmabuf) {
++			return NULL;
++		}
++	}
++
++	uint64_t page = (uint64_t)sysconf(_SC_PAGESIZE);
++	uint64_t start = (uint64_t)shm->offset & ~(page - 1);
++	*dmabuf = (struct wlr_dmabuf_attributes){
++		.width = shm->width,
++		.height = shm->height,
++		.format = shm->format,
++		.modifier = DRM_FORMAT_MOD_LINEAR,
++		.n_planes = 1,
++		.offset[0] = (uint32_t)((uint64_t)shm->offset - start),
++		.stride[0] = (uint32_t)shm->stride,
++		.fd[0] = buffer ? buffer->udmabuf_fd : -1,
++	};
++	if (buffer) {
++		return buffer;
++	}
++
++	if (renderer->udmabuf_dev == -2) {
++		renderer->udmabuf_dev = open("/dev/udmabuf", O_RDWR | O_CLOEXEC);
++		if (renderer->udmabuf_dev < 0) {
++			wlr_log_errno(WLR_DEBUG, "Cannot open /dev/udmabuf, "
++				"shared-memory buffers are copied");
++		}
++	}
++	if (renderer->udmabuf_dev < 0) {
++		return NULL;
++	}
++
++	uint64_t end = (uint64_t)shm->offset + (uint64_t)shm->stride * shm->height;
++	end = (end + page - 1) & ~(page - 1);
++	struct udmabuf_create create = {
++		.memfd = shm->fd,
++		.flags = UDMABUF_FLAGS_CLOEXEC,
++		.offset = start,
++		.size = end - start,
++	};
++	int fd = ioctl(renderer->udmabuf_dev, UDMABUF_CREATE, &create);
++	if (fd < 0) {
++		return NULL; // not a sealed memfd: copy this one
++	}
++	dmabuf->fd[0] = fd;
++
++	buffer = calloc(1, sizeof(*buffer));
++	if (buffer == NULL) {
++		close(fd);
++		return NULL;
++	}
++	buffer->buffer = wlr_buffer;
++	buffer->renderer = renderer;
++	buffer->image = wlr_egl_create_image_from_dmabuf(renderer->egl,
++		dmabuf, &buffer->external_only);
++	if (buffer->image == EGL_NO_IMAGE_KHR) {
++		free(buffer);
++		close(fd);
++		return NULL;
++	}
++	buffer->has_udmabuf = true;
++	buffer->udmabuf_fd = fd;
++
++	wlr_addon_init(&buffer->addon, &wlr_buffer->addons, renderer,
++		&buffer_addon_impl);
++	wl_list_insert(&renderer->buffers, &buffer->link);
++	return buffer;
++}
++
+ static const struct wlr_drm_format_set *gles2_get_texture_formats(
+ 		struct wlr_renderer *wlr_renderer, uint32_t buffer_caps) {
+ 	struct wlr_gles2_renderer *renderer = gles2_get_renderer(wlr_renderer);
+@@ -234,6 +327,9 @@ static void gles2_destroy(struct wlr_renderer *wlr_renderer) {
+ 	if (renderer->drm_fd >= 0) {
+ 		close(renderer->drm_fd);
+ 	}
++	if (renderer->udmabuf_dev >= 0) {
++		close(renderer->udmabuf_dev);
++	}
+ 
+ 	free(renderer);
+ }
+@@ -534,6 +630,7 @@ struct wlr_renderer *wlr_gles2_renderer_create(struct wlr_egl *egl) {
+ 	renderer->egl = egl;
+ 	renderer->exts_str = exts_str;
+ 	renderer->drm_fd = -1;
++	renderer->udmabuf_dev = -2;
+ 
+ 	wlr_log(WLR_INFO, "Creating GLES2 renderer");
+ 	wlr_log(WLR_INFO, "Using %s", glGetString(GL_VERSION));
+diff --git a/render/gles2/texture.c b/render/gles2/texture.c
+index 9a967eb..5e29e82 100644
+--- a/render/gles2/texture.c
++++ b/render/gles2/texture.c
+@@ -416,9 +416,22 @@ struct wlr_texture *gles2_texture_from_buffer(struct wlr_renderer *wlr_renderer,
+ 	uint32_t format;
+ 	size_t stride;
+ 	struct wlr_dmabuf_attributes dmabuf;
++	struct wlr_shm_attributes shm;
+ 	if (wlr_buffer_get_dmabuf(buffer, &dmabuf)) {
+ 		return gles2_texture_from_dmabuf(renderer, buffer, &dmabuf);
+-	} else if (wlr_buffer_begin_data_ptr_access(buffer,
++	}
++	if (!renderer->shm_dmabuf_failed && wlr_buffer_get_shm(buffer, &shm) &&
++			gles2_buffer_get_or_create_from_shm(renderer, buffer, &shm, &dmabuf)) {
++		struct wlr_texture *tex = gles2_texture_from_dmabuf(renderer, buffer, &dmabuf);
++		if (tex != NULL) {
++			return tex;
++		}
++		// The GPU could not sample the client's memory: copy it
++		wlr_log(WLR_INFO, "Shared-memory buffers do not import as DMA-BUF, "
++			"copying them instead");
++		renderer->shm_dmabuf_failed = true;
++	}
++	if (wlr_buffer_begin_data_ptr_access(buffer,
+ 			WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride)) {
+ 		struct wlr_texture *tex = gles2_texture_from_pixels(wlr_renderer,
+ 			format, stride, buffer->width, buffer->height, data);
+-- 
+2.54.0 (Apple Git-157)
+
