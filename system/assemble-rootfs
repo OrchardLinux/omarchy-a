@@ -29,6 +29,8 @@ printf '%s\n' "${requested[@]}" | grep -qx 'linux-aarch64' && { echo 'Generic ke
 # as tablet. Image contents need distribution modes.
 umask 022
 mkdir -p "$root/var/lib/pacman" "$root/var/cache/pacman/pkg" "$root/etc"
+# The image's mirror order was measured when it was built: measure again.
+"$project/system/rank-mirrors"
 pacman --root "$root" --gpgdir /etc/pacman.d/gnupg -Sy --noconfirm "${requested[@]}"
 # wlroots0.20 replaces Arch's build of the same version: fast rotated pixman compositing.
 for package in "$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.pkg.tar.zst" "$desktop/packages/wlroots0.20.pkg.tar.xz"; do

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Write /etc/pacman.d/mirrorlist with the Arch Linux ARM mirrors that are
+# fastest from here right now, fastest first. Each candidate downloads the
+# first 2 MiB of its extra repository database (at most 8 s, all at once);
+# mirrors that fail or crawl are left out, and pacman hands a failing
+# download to the next one. Without any answer the current list stays.
+# desktop/rank-mirrors is a copy for the desktop builders' build context.
+#
+#   rank-mirrors [MIRRORLIST]     (default /etc/pacman.d/mirrorlist)
+set -uo pipefail
+list=${1:-/etc/pacman.d/mirrorlist}
+keep=${RANK_MIRRORS_KEEP:-5}
+# The official mirrors (archlinuxarm/PKGBUILDs core/pacman-mirrorlist) and
+# two community ones that were fast at times.
+candidates=(
+  mirror.archlinuxarm.org
+  ca.us.mirror.archlinuxarm.org fl.us.mirror.archlinuxarm.org nj.us.mirror.archlinuxarm.org
+  de.mirror.archlinuxarm.org de3.mirror.archlinuxarm.org de4.mirror.archlinuxarm.org
+  dk.mirror.archlinuxarm.org fr.mirror.archlinuxarm.org gr.mirror.archlinuxarm.org
+  hu.mirror.archlinuxarm.org tw.mirror.archlinuxarm.org tw2.mirror.archlinuxarm.org
+  mirrors.tuna.tsinghua.edu.cn/archlinuxarm mirrors.ustc.edu.cn/archlinuxarm
+)
+arch=$(uname -m)
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+
+i=0
+for mirror in "${candidates[@]}"; do
+  # bytes per second, 0 when the download failed or was cut short
+  (speed=$(curl -sfL --max-time 8 --range 0-2097151 -o /dev/null -w '%{speed_download} %{size_download}' \
+             "https://$mirror/$arch/extra/extra.db" 2>/dev/null) || speed='0 0'
+   read -r bps bytes <<<"$speed"
+   [[ ${bytes%.*} -ge 2097152 ]] || bps=0
+   printf '%s %s\n' "${bps%.*}" "$mirror" > "$work/$i") &
+  i=$((i + 1))
+done
+wait
+
+mapfile -t ranked < <(cat "$work"/* | awk '$1 > 0' | sort -rn | head -n "$keep")
+if ((${#ranked[@]} == 0)); then
+  echo "rank-mirrors: no mirror answered, keeping $list" >&2
+  exit 0
+fi
+{
+  echo "# Fastest Arch Linux ARM mirrors from here at $(date -u +%FT%TZ) (system/rank-mirrors)"
+  for line in "${ranked[@]}"; do
+    read -r bps mirror <<<"$line"
+    echo "# $((bps / 1024)) KiB/s"
+    # shellcheck disable=SC2016 # pacman expands these repository placeholders.
+    printf 'Server = https://%s/$arch/$repo\n' "$mirror"
+  done
+} > "$list.ranked"
+mv "$list.ranked" "$list"
+sed -n 's/^Server = https:\/\/\([^/]*\).*/rank-mirrors: \1/p' "$list" | head -n "$keep"

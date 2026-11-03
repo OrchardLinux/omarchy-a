@@ -3,11 +3,10 @@ set -euo pipefail
 sed -i '/^DownloadUser = /d; /^CheckSpace/a DisableSandboxFilesystem\nDisableSandboxSyscalls' /etc/pacman.conf
 # Arch Linux ARM mirrors are slow per connection: ten downloads at a time.
 sed -i 's/^#\?ParallelDownloads.*/ParallelDownloads = 10/' /etc/pacman.conf
-# Fastest Arch Linux ARM mirrors from here first (2026-11-02); a failing one hands over to the next.
-# shellcheck disable=SC2016 # pacman expands these repository placeholders.
-printf 'Server = https://%s/$arch/$repo\n' mirrors.tuna.tsinghua.edu.cn/archlinuxarm \
-  mirrors.ustc.edu.cn/archlinuxarm ca.us.mirror.archlinuxarm.org \
-  de3.mirror.archlinuxarm.org > /etc/pacman.d/mirrorlist
+# The mirrors that are fastest from here now, fastest first; a failing one
+# hands over to the next.
+install -m 755 "$(dirname "$0")/rank-mirrors" /usr/local/bin/rank-mirrors
+rank-mirrors
 pacman-key --init
 pacman-key --populate archlinuxarm
 # The base image's kernel and firmware are not needed to build: never download them.
