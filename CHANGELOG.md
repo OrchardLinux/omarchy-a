@@ -20,6 +20,7 @@ work, with an on-screen display.
 
 ### Desktop
 
+- Fix the System menu’s Shutdown and Reboot actions.
 - Automatic rotation on the iPad 6 through iio-sensor-proxy, using orchard's
   in-kernel accelerometer driver; rotation waits for the device to settle, and
   touch follows the panel. Based on Dalton Alexandre's rotation work.

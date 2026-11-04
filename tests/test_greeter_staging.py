@@ -33,6 +33,9 @@ class GreeterStagingTests(unittest.TestCase):
                     '--omafox-xpi', str(xpi)]
             with patch.object(sys, 'argv', args), patch.object(stage, 'XPI_SHA', hashlib.sha256(xpi.read_bytes()).hexdigest()):
                 stage.main()
+            menu = target / 'home/tablet/.local/share/omarchy-ipad/default/omarchy/omarchy-menu.jsonc'
+            self.assertIn('"system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"systemctl poweroff"}', menu.read_text())
+            self.assertIn('"system.reboot": {"icon":"󰜉","label":"Reboot","action":"systemctl reboot"}', menu.read_text())
             greeter = target / 'usr/share/omarchy-greeter'
             self.assertEqual((greeter / 'plugins/lock/LockView.qml').read_bytes(),
                              (stage.PORT / 'shell/plugins/lock/LockView.qml').read_bytes())
