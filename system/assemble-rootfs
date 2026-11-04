@@ -47,7 +47,8 @@ usermod --root "$root" --append --groups seat,video,input greeter
 cp -a --no-preserve=ownership "$desktop/payload/." "$root/"
 chown -R 1000:1000 "$root/home/tablet"
 install -d "$root/etc/systemd/system"
-for unit in sleep suspend hibernate hybrid-sleep suspend-then-hibernate; do
+# Suspend stays possible; orchard allows it per board. Hibernation never is.
+for unit in hibernate hybrid-sleep suspend-then-hibernate; do
   ln -s /dev/null "$root/etc/systemd/system/$unit.target"
 done
 systemctl --root="$root" enable greetd.service NetworkManager.service bluetooth.service seatd.service systemd-timesyncd.service
