@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Download the packages of a pacman transaction into the package cache, and
+# nothing else: runs `pacman ARGS --downloadonly`. The caller installs
+# afterwards with the same ARGS (without -y), which reads the cache and
+# downloads nothing.
+#
+# Why: an Arch Linux ARM mirror that ranked fast can stall later. pacman
+# hands a file to the next Server line when its download fails or sends
+# nothing for 10 s (so pacman.conf must not set DisableDownloadTimeout), but
+# a mirror that keeps trickling holds a download forever. So here:
+#   - each attempt is bounded: after PACMAN_DOWNLOAD_SECONDS (default 600)
+#     pacman is interrupted like Ctrl-C, which releases its lock and keeps
+#     finished packages and partial (.part) files in the cache;
+#   - after a failed attempt the first Server line of the mirrorlist moves
+#     to the end, so the next attempt starts on the next mirror;
+#   - at most PACMAN_DOWNLOAD_ATTEMPTS (default 4) attempts; each continues
+#     where the last one stopped, so slow progress is never thrown away.
+# Downloads only, never an install: interrupting an install could leave a
+# half-installed root.
+# desktop/pacman-download is a copy for the desktop builders' build context.
+#
+#   pacman-download PACMAN-ARGS...   e.g. pacman-download -Sy --noconfirm --needed python
+set -uo pipefail
+attempts=${PACMAN_DOWNLOAD_ATTEMPTS:-4}
+seconds=${PACMAN_DOWNLOAD_SECONDS:-600}
+mirrorlist=${PACMAN_DOWNLOAD_MIRRORLIST:-/etc/pacman.d/mirrorlist}
+
+first_mirror() {
+  sed -n 's/^Server *= *\(.*\)/\1/p' "$mirrorlist" | head -n 1
+}
+
+for ((attempt = 1; ; attempt++)); do
+  echo "pacman-download: attempt $attempt/$attempts (at most ${seconds}s), first mirror $(first_mirror)"
+  timeout -s INT -k 30 "$seconds" pacman "$@" --downloadonly
+  status=$?
+  ((status == 0)) && exit 0
+  if ((status == 124)); then
+    echo "pacman-download: attempt $attempt ran over ${seconds}s" >&2
+  else
+    echo "pacman-download: attempt $attempt failed (pacman exit $status)" >&2
+  fi
+  if ((attempt >= attempts)); then
+    echo "pacman-download: giving up after $attempts attempts" >&2
+    exit "$status"
+  fi
+  # The first Server line goes last; everything else stays as it was.
+  awk '/^Server *=/ && !moved { first = $0; moved = 1; next } { print } END { if (moved) print first }' \
+    "$mirrorlist" > "$mirrorlist.rotated" && mv "$mirrorlist.rotated" "$mirrorlist"
+  echo "pacman-download: next attempt starts on $(first_mirror)" >&2
+done

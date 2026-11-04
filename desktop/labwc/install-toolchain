@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# The mirrors that are fastest from here now (rank-mirrors comes with the
-# desktop builder this one is built on, or desktop/install-toolchain in CI).
+# The mirrors that are fastest from here now; rank-mirrors and pacman-download
+# come with the desktop builder this one is built on (desktop/install-toolchain,
+# also in CI).
 rank-mirrors
 # The base image's kernel and firmware are not needed to build: never download them.
 mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-firmware.*)$')
 (( ${#unneeded[@]} == 0 )) || pacman -Rdd --noconfirm "${unneeded[@]}"
-pacman -Syu --noconfirm --needed meson wlroots0.20 wayland-protocols \
-  libsfdo libxml2 glib2 cairo pango librsvg xcb-util-wm xorg-xwayland gettext
+packages=(meson wlroots0.20 wayland-protocols libsfdo libxml2 glib2 cairo pango librsvg xcb-util-wm
+  xorg-xwayland gettext)
+pacman-download -Syu --noconfirm --needed "${packages[@]}"
+pacman -Su --noconfirm --needed "${packages[@]}"
 pacman -Sc --noconfirm

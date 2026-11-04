@@ -34,6 +34,11 @@ work, with an on-screen display.
 - The greeter and the lock screen go dark after 30 s without input, the desktop
   after 5 minutes.
 
+### Build
+
+- Package downloads survive a stalling mirror: bounded download attempts move
+  on to the next mirror and keep what was already downloaded.
+
 ## [0.2.0] - 2026-10-31
 
 Built on orchard 0.2.0.

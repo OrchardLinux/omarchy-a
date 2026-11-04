@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Install orchard (main for tests, the pinned release for builds) and its verified component bundles.
 set -euo pipefail
+# Downloads under 10 KiB/s for 60 s count as failed, and --retry starts them again.
+fetch() { curl -fL --retry 3 --speed-limit 10240 --speed-time 60 "$@"; }
 : "${HARDWARE_TAG:?Set HARDWARE_TAG to the immutable orchard release with the components}"
 # A release (vMAJOR.MINOR.PATCH), a nightly (nightly-YYYYMMDD-COMMIT), or
 # nightly: the newest one, resolved once here so that orchard's tools and its
 # components come from the same nightly for the whole build.
 if [[ "$HARDWARE_TAG" == nightly ]]; then
-  HARDWARE_TAG=$(curl -fsSL --retry 3 https://github.com/OrchardLinux/orchard/releases/download/nightly/latest.json |
+  HARDWARE_TAG=$(fetch -sS https://github.com/OrchardLinux/orchard/releases/download/nightly/latest.json |
     python3 -c 'import json, sys; print(json.load(sys.stdin)["name"])')
   echo "nightly is $HARDWARE_TAG"
 fi
@@ -34,14 +36,14 @@ base="https://github.com/OrchardLinux/orchard/releases/download/$HARDWARE_TAG"
 if [[ -n "${HARDWARE_ARTIFACT_DIR:-}" ]]; then
   cp "$HARDWARE_ARTIFACT_DIR/SHA256SUMS" out/downloads/
 else
-  curl -fL --retry 3 "$base/SHA256SUMS" -o out/downloads/SHA256SUMS
+  fetch "$base/SHA256SUMS" -o out/downloads/SHA256SUMS
 fi
 for platform in $platforms; do
   bundle="$platform-components.tar.gz"
   if [[ -n "${HARDWARE_ARTIFACT_DIR:-}" ]]; then
     cp "$HARDWARE_ARTIFACT_DIR/$bundle" out/downloads/
   else
-    curl -fL --retry 3 "$base/$bundle" -o "out/downloads/$bundle"
+    fetch "$base/$bundle" -o "out/downloads/$bundle"
   fi
   (cd out/downloads && grep -E " (\./)?$bundle\$" SHA256SUMS | sha256sum --check --strict)
   mkdir -p "out/platforms/$platform"

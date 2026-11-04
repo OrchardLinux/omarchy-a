@@ -3,19 +3,23 @@ set -euo pipefail
 sed -i '/^DownloadUser = /d; /^CheckSpace/a DisableSandboxFilesystem\nDisableSandboxSyscalls' /etc/pacman.conf
 # Arch Linux ARM mirrors are slow per connection: ten downloads at a time.
 sed -i 's/^#\?ParallelDownloads.*/ParallelDownloads = 10/' /etc/pacman.conf
+# pacman's own stall timeout (nothing for 10 s: next mirror) must stay on.
+sed -i '/^DisableDownloadTimeout/d' /etc/pacman.conf
 # The mirrors that are fastest from here now, fastest first; a failing one
-# hands over to the next.
-install -m 755 "$(dirname "$0")/rank-mirrors" /usr/local/bin/rank-mirrors
+# hands over to the next. pacman-download bounds and retries the downloads.
+install -m 755 "$(dirname "$0")/rank-mirrors" "$(dirname "$0")/pacman-download" /usr/local/bin/
 rank-mirrors
 pacman-key --init
 pacman-key --populate archlinuxarm
 # The base image's kernel and firmware are not needed to build: never download them.
 mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-firmware.*)$')
 (( ${#unneeded[@]} == 0 )) || pacman -Rdd --noconfirm "${unneeded[@]}"
-pacman -Sy --noconfirm --needed base-devel wayland libxkbcommon pango scdoc pkgconf patch python python-pip git curl tar gzip
-# wlroots0.20 (packages/wlroots0.20): Arch's makedepends and the libraries it links
-# (systemd is in the base).
-pacman -S --noconfirm --needed meson ninja glslang vulkan-headers xorg-xwayland wayland-protocols \
-  libdisplay-info libdrm libglvnd libinput lcms2 libliftoff pixman seatd vulkan-icd-loader mesa hwdata \
-  xcb-util-errors xcb-util-renderutil xcb-util-wm
+packages=(base-devel wayland libxkbcommon pango scdoc pkgconf patch python python-pip git curl tar gzip
+  # wlroots0.20 (packages/wlroots0.20): Arch's makedepends and the libraries it links
+  # (systemd is in the base).
+  meson ninja glslang vulkan-headers xorg-xwayland wayland-protocols
+  libdisplay-info libdrm libglvnd libinput lcms2 libliftoff pixman seatd vulkan-icd-loader mesa hwdata
+  xcb-util-errors xcb-util-renderutil xcb-util-wm)
+pacman-download -Sy --noconfirm --needed "${packages[@]}"
+pacman -S --noconfirm --needed "${packages[@]}"
 pacman -Sc --noconfirm
