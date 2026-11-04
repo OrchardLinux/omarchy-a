@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# omarchy:summary=Lock the computer and turn off the display
+# omarchy:group=system
+# omarchy:name=lock
+# omarchy:examples=omarchy system lock
+
+# omarchy-powerd owns the lock and the screen (docs/power-and-lock.md): this input
+# darkens the panel and has it run upstream's `omarchy-shell lock lock`.
+exec /usr/libexec/omarchy-powerctl idle >/dev/null

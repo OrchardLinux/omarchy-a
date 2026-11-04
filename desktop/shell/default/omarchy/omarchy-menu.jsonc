@@ -38,8 +38,8 @@
   "system.suspend": {"icon":"󰒲","label":"Suspend","when":"! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled","action":"systemctl suspend"},
   "system.hibernate": {"icon":"󰤁","label":"Hibernate","when":"omarchy-hibernation-available && ! omarchy-sleep-disabled","action":"systemctl hibernate"},
   "system.logout": {"icon":"󰍃","label":"Logout","action":"omarchy-system logout"},
-  "system.reboot": {"icon":"󰜉","label":"Reboot","action":"systemctl reboot"},
-  "system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"systemctl poweroff"},
+  "system.reboot": {"icon":"󰜉","label":"Reboot","action":"omarchy-system reboot"},
+  "system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system shutdown"},
 
   // Learn
   "learn.keybindings": {"icon":"","label":"Keybindings","action":"omarchy-menu-keybindings"},
