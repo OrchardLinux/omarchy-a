@@ -62,6 +62,26 @@ ShellRoot {
     }
     Component.onCompleted: Qt.callLater(function() { readiness.running = true })
 
+    // No input for 30 s: dark, then sleep, through omarchy-powerd like everything
+    // else. Repeated while idle: it does nothing once dark, and a wake that does
+    // not count as input here cannot leave the panel lit for good.
+    IdleMonitor {
+        id: idle
+        timeout: 30
+        respectInhibitors: false
+    }
+    Process {
+        id: darken
+        command: ["/usr/libexec/omarchy-powerctl", "idle"]
+    }
+    Timer {
+        interval: 30000
+        repeat: true
+        running: idle.isIdle
+        triggeredOnStart: true
+        onTriggered: darken.running = true
+    }
+
     PanelWindow {
         anchors { top: true; bottom: true; left: true; right: true }
         color: "transparent"

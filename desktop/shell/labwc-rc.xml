@@ -20,19 +20,16 @@
     </keybind>
     <!-- Physical gpio-keys: volume, in 5% steps with the shell's OSD.
          Brightness is in the Control Center. -->
-    <keybind key="XF86AudioRaiseVolume">
+    <keybind key="XF86AudioRaiseVolume" allowWhenLocked="yes">
       <action name="Execute" command="omarchy-volume raise" />
     </keybind>
-    <keybind key="XF86AudioLowerVolume">
+    <keybind key="XF86AudioLowerVolume" allowWhenLocked="yes">
       <action name="Execute" command="omarchy-volume lower" />
     </keybind>
-    <keybind key="XF86AudioMute">
+    <keybind key="XF86AudioMute" allowWhenLocked="yes">
       <action name="Execute" command="omarchy-volume mute-toggle" />
     </keybind>
-    <!-- Lock before blanking; suspend is intentionally deferred until supported. -->
-    <keybind key="XF86PowerOff" onRelease="yes" allowWhenLocked="yes">
-      <action name="Execute" command="omarchy-tablet-power power" />
-    </keybind>
+    <!-- Power is omarchy-powerd's: it reads the key itself (docs/power-and-lock.md). -->
     <!-- Modifier-only release bindings preserve ordinary Cmd/Super chords. -->
     <keybind key="Super_L" onRelease="yes">
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />
@@ -40,9 +37,10 @@
     <keybind key="Super_R" onRelease="yes">
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />
     </keybind>
-    <!-- J71b Home emits KEY_HOMEPAGE (172), not navigation KEY_HOME. -->
-    <keybind key="XF86HomePage" onRelease="yes" allowWhenLocked="yes">
-      <action name="Execute" command="omarchy-tablet-power home" />
+    <!-- J71b Home emits KEY_HOMEPAGE (172), not navigation KEY_HOME. Only this home
+         action is the session's, and only unlocked; waking is omarchy-powerd's. -->
+    <keybind key="XF86HomePage" onRelease="yes">
+      <action name="Execute" command="omarchy-shell omarchy.dock apps" />
     </keybind>
     <!-- Keyboard shortcuts for a Bluetooth keyboard, after upstream Omarchy (W = Super).
          labwc has no directional focus, so Super+arrows cycle windows; Super+Shift+arrows

@@ -5,7 +5,7 @@ set -euo pipefail
 
 # The override is for isolated tests, never set by the desktop session.
 base=${IPADLINUX_BACKLIGHT_DIR:-/sys/class/backlight}
-# The one built-in panel backlight, as omarchy-screen-toggle picks it.
+# The one built-in panel backlight.
 device=""
 for candidate in "$base"/*; do
   [[ -d $candidate && -r $candidate/max_brightness ]] || continue
@@ -32,7 +32,7 @@ percent=$((10#${BASH_REMATCH[2]}))
 if [[ -n $sign ]]; then
   read -r current < "$device/brightness"
   [[ $current =~ ^[0-9]+$ ]] || exit 1
-  # 0 means omarchy-screen-toggle turned the panel off. Stepping from there
+  # 0 means omarchy-powerd turned the panel off. Stepping from there
   # would light it at 1-5%, which the next toggle then saves as the level to
   # restore, so the screen looks dead. Only the toggle turns the panel back on.
   if (( current == 0 )); then printf '0\n'; exit 0; fi

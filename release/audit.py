@@ -209,9 +209,13 @@ def audit(manifest, orchard=None):
     verify_labwc(labwc, hashes, modes, owners, groups)
     if 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml' not in desktop:
         raise ValueError('Pairing UI is absent from desktop integrity manifest')
-    for name in ('omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-screen-toggle', 'omarchy-bluetooth-pair'):
+    for name in ('omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-powerd', 'omarchy-powerctl', 'omarchy-bluetooth-pair'):
         if modes.get('usr/libexec/' + name) != 0o755:
             raise ValueError('Required helper is not executable: ' + name)
+    if (links.get('etc/systemd/system/multi-user.target.wants/omarchy-powerd.service') !=
+            (True, '/usr/lib/systemd/system/omarchy-powerd.service') or
+            'usr/lib/systemd/system/omarchy-powerd.service' not in hashes):
+        raise ValueError('Power, lock and sleep have no owner: omarchy-powerd is not enabled')
     if links.get('lib') != (True, 'usr/lib') or owners.get('home/tablet') != 1000 or sizes.get('etc/machine-id') != 0:
         raise ValueError('Invalid root/session contract')
     return {'passed': True, 'hardware_validated': False, 'release': record['release'],

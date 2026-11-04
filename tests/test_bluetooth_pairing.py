@@ -77,7 +77,7 @@ class PairingPackagingTests(unittest.TestCase):
         tree = ET.fromstring((PROJECT / 'desktop/shell/labwc-rc.xml').read_bytes())
         for key, command in (('Super_L', 'omarchy-shell omarchy.dock apps'),
                              ('Super_R', 'omarchy-shell omarchy.dock apps'),
-                             ('XF86HomePage', 'omarchy-tablet-power home')):  # also wakes a locked screen
+                             ('XF86HomePage', 'omarchy-shell omarchy.dock apps')):
             bindings = tree.findall("./keyboard/keybind[@key='%s']" % key)
             self.assertEqual(len(bindings), 1)
             self.assertEqual(bindings[0].get('onRelease'), 'yes')

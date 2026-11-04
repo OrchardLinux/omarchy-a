@@ -802,18 +802,18 @@ Item {
 
   Process {
     id: inputWakeCheck
-    command: ["omarchy-tablet-power", "input"]
+    command: ["/usr/libexec/omarchy-powerctl", "input"]
     onExited: function(exitCode) { if (exitCode === 0) root.runWake() }
   }
 
   Process {
     id: wakeProcess
-    command: ["bash", "-c", Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? "omarchy-tablet-power wake" : "omarchy-system-wake"]
+    command: ["bash", "-c", Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? "/usr/libexec/omarchy-powerctl wake" : "omarchy-system-wake"]
   }
 
   Process {
     id: blankProcess
-    command: ["bash", "-c", Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? "omarchy-tablet-power blank-locked" : "omarchy-brightness-keyboard off; omarchy-brightness-display off"]
+    command: ["bash", "-c", Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? "/usr/libexec/omarchy-powerctl idle" : "omarchy-brightness-keyboard off; omarchy-brightness-display off"]
   }
 
   // Quickshell exposes no DPMS signal, so the panel state is polled while a
@@ -843,7 +843,7 @@ Item {
 
   Timer {
     id: idleBlankTimer
-    interval: Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? 15000 : 5000
+    interval: Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? 30000 : 5000
     repeat: false
     property double armedAt: 0
     onTriggered: {

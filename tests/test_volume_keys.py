@@ -48,7 +48,7 @@ esac
     def test_the_volume_keys_are_bound_to_volume(self):
         rc = (PROJECT / 'desktop/shell/labwc-rc.xml').read_text()
         for key, action in (('XF86AudioRaiseVolume', 'raise'), ('XF86AudioLowerVolume', 'lower')):
-            block = rc[rc.index(f'<keybind key="{key}">'):]
+            block = rc[rc.index(f'<keybind key="{key}" allowWhenLocked="yes">'):]
             self.assertIn(f'omarchy-volume {action}', block[:block.index('</keybind>')])
 
     def test_a_new_output_starts_at_ten_percent(self):

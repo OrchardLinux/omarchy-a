@@ -1,0 +1,653 @@
+#!/usr/bin/python3
+"""The one owner of screen, lock request and sleep. See docs/power-and-lock.md.
+
+Machine is the state machine: no I/O, no clocks, every input defined in every
+state. Daemon around it reads the keys, drives the backlight and talks to
+logind and the session. The state is never inferred from brightness or files.
+"""
+import fcntl
+import grp
+import json
+import os
+from pathlib import Path
+import pwd
+import queue
+import select
+import socket
+import struct
+import subprocess
+import sys
+import threading
+import time
+
+ON, SETTLING, DARK, SUSPENDING = 'ON', 'SETTLING', 'DARK', 'SUSPENDING'
+STATES = (ON, SETTLING, DARK, SUSPENDING)
+EVENTS = ('power', 'home', 'wake', 'idle', 'settle', 'lock-ok', 'lock-failed', 'playing', 'not-playing',
+          'suspend-refused', 'suspend-blocked', 'suspend-busy', 'sleep-signal', 'sleep-ended', 'timeout')
+SETTLE_SECONDS = 10.0
+TICK_SECONDS = 0.05
+# Ticks of this loop: they count the time it ran, on a kernel whatever its clocks do in sleep.
+SUSPEND_TICKS = int(30 / TICK_SECONDS)
+# CLOCK_MONOTONIC stops in a sleep. (getattr: the tests also run where there is no boot time.)
+SLEEP_CLOCK = getattr(time, 'CLOCK_BOOTTIME', time.CLOCK_MONOTONIC)
+LOGIND = 'org.freedesktop.login1'
+
+
+class Machine:
+    """state: see the invariants in docs/power-and-lock.md.
+
+    inflight: a suspend was asked for and has not ended. It survives a wake
+    press (state ON): the panel lights at once, while systemd-suspend finishes.
+    """
+
+    def __init__(self):
+        self.state = ON
+        self.lock_ok = False
+        self.settle_due = False
+        self.inflight = False
+        self.playing = False
+        self.no_suspend = False
+        self.hold_release = False
+
+    def _darken(self):
+        self.lock_ok = self.settle_due = self.no_suspend = self.playing = False
+        self.state = SETTLING
+        return ['dark', 'lock', 'arm-settle']
+
+    def _light(self, *first):
+        self.state = ON
+        self.playing = self.settle_due = False
+        return [*first, 'light', 'woke']
+
+    def _settle_again(self):
+        self.state, self.settle_due = SETTLING, False
+        return ['arm-settle']
+
+    def _begin_suspend(self):
+        self.state, self.inflight = SUSPENDING, True
+        return ['suspend']
+
+    def _external_sleep(self, *first):
+        # Someone else asked logind to sleep: dark and locked first, then let it.
+        actions = list(first)
+        if self.state == ON:
+            self.lock_ok = False
+            actions += ['dark', 'lock']
+        self.state, self.inflight = SUSPENDING, True
+        if self.lock_ok:
+            actions.append('release-inhibitor')
+        else:
+            self.hold_release = True
+        return actions
+
+    def _lock_answer(self, ok):
+        actions = []
+        self.lock_ok = ok
+        if self.hold_release:
+            self.hold_release = False
+            actions.append('release-inhibitor')
+        return actions
+
+    def handle(self, event):
+        """The actions of EVENT, in order; the state afterwards is self.state."""
+        if event not in EVENTS:
+            raise ValueError(event)
+        # A suspend ending or failing is bookkeeping unless it is what SUSPENDING waits for.
+        if event in ('sleep-ended', 'suspend-refused', 'suspend-blocked', 'suspend-busy', 'timeout') \
+                and self.state != SUSPENDING:
+            if self.inflight:
+                self.inflight = False
+                # Pressed dark again while the last sleep was finishing, and settled since.
+                if self.state == SETTLING and self.settle_due and self.lock_ok:
+                    return ['take-inhibitor'] + self._begin_suspend()
+                return ['take-inhibitor']
+            return []
+        return getattr(self, '_' + self.state.lower())(event)
+
+    def _on(self, event):
+        if event in ('power', 'idle'):
+            return self._darken()
+        if event == 'sleep-signal':
+            return [] if self.inflight else self._external_sleep()
+        if event == 'lock-ok':
+            return self._lock_answer(True)
+        if event == 'lock-failed':
+            return self._lock_answer(False)
+        return []  # home and wake: already lit; playing, settle: not relevant while lit
+
+    def _settling(self, event):
+        if event in ('power', 'home', 'wake'):
+            return self._light('cancel-settle')
+        if event == 'settle':
+            self.settle_due = True
+            return self._begin_suspend() if self.lock_ok and not self.inflight else []
+        if event == 'lock-ok':
+            actions = self._lock_answer(True)
+            return actions + (self._begin_suspend() if self.settle_due and not self.inflight else [])
+        if event == 'lock-failed':
+            # Never an unsecured desktop that looks locked.
+            return self._lock_answer(False) + self._light('cancel-settle', 'notify')
+        if event == 'playing':
+            self.state, self.playing = DARK, True
+            return ['cancel-settle']
+        if event == 'sleep-signal':
+            return self._external_sleep('cancel-settle')
+        return []
+
+    def _dark(self, event):
+        if event in ('power', 'home', 'wake'):
+            return self._light()
+        if event == 'lock-ok':
+            return self._lock_answer(True)
+        if event == 'lock-failed':
+            return self._lock_answer(False) + self._light('notify')
+        if event == 'playing':
+            self.playing = True
+            return []
+        if event == 'not-playing':
+            self.playing = False
+            return [] if self.no_suspend else self._settle_again()
+        if event == 'sleep-signal':
+            return self._external_sleep()
+        return []
+
+    def _suspending(self, event):
+        if event in ('power', 'home', 'wake'):
+            # The kernel aborts or ends the sleep for this press (wakeup_count).
+            return self._light('cancel-suspend')
+        if event == 'lock-ok':
+            return self._lock_answer(True)
+        if event == 'lock-failed':
+            return self._lock_answer(False)
+        if event == 'sleep-ended':
+            # Nothing pressed: a charger, an alarm, an aborted attempt. Stay dark.
+            self.inflight = False
+            return ['take-inhibitor'] + self._settle_again()
+        if event in ('suspend-busy', 'timeout'):
+            # It did not happen this time: try again, never dark for no reason.
+            self.inflight = False
+            return ['take-inhibitor'] + self._settle_again()
+        if event == 'suspend-refused':
+            self.inflight, self.no_suspend, self.state = False, True, DARK
+            return ['take-inhibitor']
+        if event == 'suspend-blocked':
+            self.inflight, self.playing, self.state = False, True, DARK
+            return ['take-inhibitor']
+        return []
+
+
+def log(message):
+    print(message, flush=True)
+
+
+def parse_sleep_signal(line):
+    """True or False from a `busctl --json=short monitor` line of PrepareForSleep, else None."""
+    try:
+        message = json.loads(line)
+        if message.get('member') == 'PrepareForSleep':
+            return bool(message['payload']['data'][0])
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def parse_logind_started(line):
+    """Whether a `busctl --json=short monitor` line says logind just took its name."""
+    try:
+        message = json.loads(line)
+        if message.get('member') == 'NameOwnerChanged':
+            name, _, owner = message['payload']['data']
+            return name == LOGIND and bool(owner)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        pass
+    return False
+
+
+def streams_running(dump):
+    """Whether `pw-dump` output has an audio or video playback stream that is running."""
+    try:
+        for item in json.loads(dump):
+            info = item.get('info') or {}
+            media = (info.get('props') or {}).get('media.class', '')
+            if media.startswith('Stream/Output/') and info.get('state') == 'running':
+                return True
+    except (ValueError, AttributeError):
+        pass
+    return False
+
+
+EV_KEY, KEY_POWER, KEY_HOMEPAGE = 1, 116, 172
+INPUT_EVENT = struct.Struct('qqHHi')
+EVIOCSCLOCKID = 0x400445a0
+SOCKET = '/run/omarchy-powerd.sock'
+SHELL_ROOT = '.local/share/omarchy-ipad'
+STATS = Path('/sys/power/suspend_stats')
+WAKEUP_COUNT = Path('/sys/power/wakeup_count')
+BACKLIGHTS = Path('/sys/class/backlight')
+
+
+def key_presses(data):
+    """(event name, kernel seconds) of every key press in evdev bytes."""
+    presses = []
+    for sec, usec, kind, code, value in INPUT_EVENT.iter_unpack(data):
+        if kind == EV_KEY and value == 1 and code in (KEY_POWER, KEY_HOMEPAGE):
+            presses.append(('power' if code == KEY_POWER else 'home', sec + usec / 1e6))
+    return presses
+
+
+def command(*argv, timeout=5, **options):
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, **options)
+
+
+def session_user():
+    """The desktop user on seat0, or None for the greeter (nothing to lock) or no session."""
+    session = command('loginctl', 'show-seat', 'seat0', '-p', 'ActiveSession', '--value').stdout.strip()
+    if not session:
+        return None
+    fields = dict(line.split('=', 1) for line in
+                  command('loginctl', 'show-session', session, '-p', 'Name', '-p', 'Class').stdout.splitlines()
+                  if '=' in line)
+    if fields.get('Class') != 'user' or not fields.get('Name'):
+        return None
+    return pwd.getpwnam(fields['Name'])
+
+
+def as_user(user, *argv, timeout=5):
+    root = f'{user.pw_dir}/{SHELL_ROOT}'
+    env = {'HOME': user.pw_dir, 'USER': user.pw_name, 'XDG_RUNTIME_DIR': f'/run/user/{user.pw_uid}',
+           'OMARCHY_PATH': root, 'PATH': f'{root}/bin:/usr/local/bin:/usr/bin'}
+    return command(*argv, timeout=timeout, env=env, user=user.pw_uid, group=user.pw_gid,
+                   extra_groups=os.getgrouplist(user.pw_name, user.pw_gid), cwd='/')
+
+
+class Daemon:
+    def __init__(self):
+        self.machine = Machine()
+        self.events = queue.Queue()
+        self.wake_read, self.wake_write = os.pipe()
+        os.set_blocking(self.wake_read, False)
+        self.keys = {}
+        self.next_scan = 0.0
+        self.settle_at = None
+        self.saved = None
+        self.counters = None
+        self.sleep_started = None
+        self.ticks = 0
+        self.cancel = threading.Event()
+        self.dark = threading.Event()
+        self.session_jobs = queue.Queue()
+        self.inhibitor = None
+        self.monitor = None
+        self.key_time = None
+        self.stopping = False
+        self.want_inhibitor = False
+        self.next_inhibitor = 0.0
+        self.lit_at = None
+        self.watching_unit = False
+
+    # --- plumbing -----------------------------------------------------------
+    def post(self, event):
+        self.events.put(event)
+        os.write(self.wake_write, b'.')
+
+    def backlight(self):
+        panels = sorted(BACKLIGHTS.iterdir())
+        return panels[0] if len(panels) == 1 else None
+
+    def scan_keys(self):
+        for device in Path('/sys/class/input').glob('event*'):
+            try:
+                name = (device / 'device/name').read_text().strip()
+            except OSError:
+                continue
+            path = f'/dev/input/{device.name}'
+            if name != 'gpio-keys' or path in self.keys.values():
+                continue
+            try:
+                fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+                fcntl.ioctl(fd, EVIOCSCLOCKID, struct.pack('i', time.CLOCK_MONOTONIC))
+            except OSError as error:
+                log(f'cannot read {path}: {error}')
+                continue
+            self.keys[fd] = path
+            log(f'keys: {path}')
+
+    def take_inhibitor(self):
+        """logind refuses while it is still finishing a sleep: keep_inhibitor() tries again."""
+        self.want_inhibitor = True
+        if self.inhibitor is None or self.inhibitor.poll() is not None:
+            self.inhibitor = subprocess.Popen(['systemd-inhibit', '--what=sleep', '--mode=delay',
+                                               '--who=omarchy-powerd', '--why=Lock and darken first',
+                                               'sleep', 'infinity'])
+
+    def keep_inhibitor(self):
+        # logind refuses during a sleep and just after it: not until it ended, then slowly.
+        if (self.want_inhibitor and not self.machine.inflight and self.inhibitor is not None
+                and self.inhibitor.poll() is not None and time.monotonic() >= self.next_inhibitor):
+            self.next_inhibitor = time.monotonic() + 2
+            self.take_inhibitor()
+
+    def release_inhibitor(self):
+        self.want_inhibitor = False
+        if self.inhibitor is not None:
+            self.inhibitor.terminate()
+            self.inhibitor.wait()
+            self.inhibitor = None
+
+    def renew_inhibitor(self):
+        """A logind that started again owes us nothing: ask the new one."""
+        if self.want_inhibitor:
+            self.release_inhibitor()
+            self.take_inhibitor()
+
+    def start_monitor(self):
+        self.monitor = subprocess.Popen(
+            ['busctl', '--json=short', 'monitor', LOGIND,
+             "--match=type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'",
+             f"--match=type='signal',sender='org.freedesktop.DBus',member='NameOwnerChanged',arg0='{LOGIND}'"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+
+    def sleep_counters(self):
+        return tuple(int((STATS / name).read_text()) for name in ('success', 'fail'))
+
+    # --- the machine --------------------------------------------------------
+    def feed(self, event, when=None):
+        before = self.machine.state
+        when = time.monotonic() if when is None else when
+        self.key_time = when
+        actions = self.machine.handle(event)
+        # A lock-screen swipe sends many a wake; keys are always logged, consumed ones too.
+        if actions or before != self.machine.state or event != 'wake':
+            log(f't={when:.6f} {event}: {before} -> {self.machine.state} {" ".join(actions) or "-"}')
+        for action in actions:
+            getattr(self, 'do_' + action.replace('-', '_'))(before)
+        self.dark.set() if self.machine.state in (SETTLING, DARK) else self.dark.clear()
+
+    def do_dark(self, _):
+        panel = self.backlight()
+        if panel:
+            current = int((panel / 'brightness').read_text())
+            if current > 0:
+                self.saved = current
+            (panel / 'brightness').write_text('0\n')
+
+    def do_light(self, origin):
+        panel = self.backlight()
+        if panel:
+            maximum = int((panel / 'max_brightness').read_text())
+            (panel / 'brightness').write_text(f'{min(self.saved or max(1, maximum // 2), maximum)}\n')
+        lit = self.lit_at = time.monotonic()
+        came_from = 'ASLEEP-or-entering' if origin == SUSPENDING else origin
+        log(f'wake from={came_from} press={self.key_time:.6f} lit={lit:.6f} '
+            f'press_to_lit_ms={(lit - self.key_time) * 1000:.1f}')
+
+    def do_lock(self, _):
+        self.session_jobs.put('lock')
+
+    def do_woke(self, _):
+        self.session_jobs.put('woke')
+
+    def do_notify(self, _):
+        self.session_jobs.put('notify')
+
+    def do_arm_settle(self, _):
+        self.settle_at = time.monotonic() + SETTLE_SECONDS
+
+    def do_cancel_settle(self, _):
+        self.settle_at = None
+
+    def do_take_inhibitor(self, _):
+        self.take_inhibitor()
+
+    def do_release_inhibitor(self, _):
+        self.release_inhibitor()
+
+    def do_cancel_suspend(self, _):
+        self.cancel.set()
+
+    def arm_wakeup(self):
+        """From here on the kernel aborts or ends the sleep for any key press."""
+        try:
+            WAKEUP_COUNT.write_text(WAKEUP_COUNT.read_text().strip() + '\n')
+            return True
+        except OSError as error:
+            log(f'wakeup_count: {error}')
+            return False
+
+    def begin_sleep_record(self):
+        self.ticks = 0
+        self.sleep_started = time.clock_gettime(SLEEP_CLOCK)
+        self.counters = self.seen_counters = self.sleep_counters()
+        self.watching_unit = False
+
+    def do_suspend(self, _):
+        self.settle_at = None
+        self.lit_at = None
+        self.cancel.clear()
+        self.begin_sleep_record()
+        self.release_inhibitor()
+        if not self.arm_wakeup():
+            self.post('suspend-busy')
+            return
+        threading.Thread(target=self.request_suspend, daemon=True).start()
+
+    # --- workers: never in the event loop -----------------------------------
+    def block_inhibited(self):
+        result = command('busctl', 'get-property', 'org.freedesktop.login1', '/org/freedesktop/login1',
+                         'org.freedesktop.login1.Manager', 'BlockInhibited')
+        return 'sleep' in result.stdout
+
+    def request_suspend(self):
+        try:
+            answer = command('busctl', 'call', 'org.freedesktop.login1', '/org/freedesktop/login1',
+                             'org.freedesktop.login1.Manager', 'CanSuspend').stdout.strip()
+            if answer != 's "yes"':
+                log(f'no suspend: CanSuspend {answer}')
+                self.post('suspend-refused')
+            elif self.block_inhibited():
+                self.post('suspend-blocked')
+            elif self.cancel.is_set():
+                self.post('timeout')  # pressed before it was asked for: nothing will end it
+            elif command('systemctl', 'suspend', timeout=10).returncode:
+                log('systemctl suspend failed')
+                self.post('suspend-busy')
+        except (OSError, subprocess.SubprocessError) as error:
+            log(f'suspend request: {error}')
+            self.post('suspend-busy')
+
+    def session_worker(self):
+        while True:
+            job = self.session_jobs.get()
+            try:
+                user = session_user()
+                if job == 'lock':
+                    self.post('lock-ok' if user is None or self.lock_session(user) else 'lock-failed')
+                elif user is not None and job == 'woke':
+                    as_user(user, 'omarchy-shell', '-q', 'lock', 'woke')
+                elif user is not None and job == 'notify':
+                    as_user(user, 'notify-send', 'Unable to lock', 'The screen stays on.')
+            except (OSError, KeyError, ValueError, subprocess.SubprocessError) as error:
+                log(f'session {job}: {error}')
+                if job == 'lock':
+                    self.post('lock-failed')
+
+    def lock_session(self, user):
+        if as_user(user, 'omarchy-shell', 'lock', 'lock').stdout.strip() != 'ok':
+            return False
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            if json.loads(as_user(user, 'omarchy-shell', 'lock', 'status').stdout or '{}').get('secure'):
+                return True
+            time.sleep(0.1)
+        return False
+
+    def playback_worker(self):
+        while not self.stopping:
+            self.dark.wait(1)
+            if not self.dark.is_set():
+                continue
+            try:
+                user = session_user()
+                playing = self.block_inhibited() or (
+                    user is not None and streams_running(as_user(user, 'pw-dump', timeout=2).stdout))
+            except (OSError, KeyError, ValueError, subprocess.SubprocessError) as error:
+                # No answer is not "nothing is playing".
+                log(f'playback check: {error}')
+                time.sleep(1)
+                continue
+            if playing != self.machine.playing:
+                self.post('playing' if playing else 'not-playing')
+            time.sleep(1)
+
+    # --- control socket -----------------------------------------------------
+    def control(self, server):
+        connection, _ = server.accept()
+        with connection:
+            connection.settimeout(0.2)
+            try:
+                request = connection.recv(64).decode().strip()
+                if request == 'input':
+                    connection.sendall(b'lit\n' if self.machine.state == ON else b'dark\n')
+                elif request == 'status':
+                    connection.sendall(self.machine.state.encode() + b'\n')
+                elif request in ('idle', 'wake'):
+                    self.feed(request)
+                    connection.sendall(b'ok\n')
+                else:
+                    connection.sendall(b'unknown\n')
+            except (OSError, UnicodeDecodeError) as error:
+                log(f'control: {error}')
+
+    def open_socket(self):
+        Path(SOCKET).unlink(missing_ok=True)
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(SOCKET)
+        os.chown(SOCKET, 0, grp.getgrnam('video').gr_gid)  # the tablet user and the greeter
+        os.chmod(SOCKET, 0o660)
+        server.listen(8)
+        return server
+
+    # --- event loop ---------------------------------------------------------
+    def timeout(self):
+        now = time.monotonic()
+        if now >= self.next_scan and not self.keys:
+            self.scan_keys()
+            self.next_scan = now + 5
+        if self.machine.inflight:
+            return TICK_SECONDS
+        return min(1.0, max(0.0, self.settle_at - now)) if self.settle_at is not None else 1.0
+
+    def watch_kernel(self):
+        """A kernel attempt ending is not the sleep ending: systemd-sleep may try again."""
+        if not self.machine.inflight:
+            return
+        now = self.sleep_counters()
+        if now == self.seen_counters:
+            return
+        if now[1] != self.seen_counters[1]:
+            log(f'kernel attempt failed: suspend_stats {now}')
+            self.arm_wakeup()  # the failed attempt used it up
+        self.seen_counters = now
+        if not self.watching_unit:
+            self.watching_unit = True
+            threading.Thread(target=self.wait_for_unit, daemon=True).start()
+
+    def wait_for_unit(self):
+        while not self.stopping:
+            try:
+                state = command('systemctl', 'show', '-p', 'ActiveState', '--value',
+                                'systemd-suspend.service').stdout.strip()
+                if state in ('inactive', 'failed'):
+                    self.post('sleep-over')
+                    return
+            except (OSError, subprocess.SubprocessError) as error:
+                log(f'watching systemd-suspend: {error}')
+            time.sleep(0.1)
+
+    def sleep_finished(self):
+        """systemd-suspend finished, or logind says so: every attempt of this sleep is over."""
+        if not self.machine.inflight:
+            return
+        now = self.sleep_counters()
+        result = 'slept' if now[0] != self.counters[0] else 'aborted' if now != self.counters else 'not-entered'
+        try:
+            irq = Path('/sys/power/pm_wakeup_irq').read_text().strip()
+        except OSError:
+            irq = 'none'
+        log(f'sleep-ended result={result} seconds={time.clock_gettime(SLEEP_CLOCK) - self.sleep_started:.3f} wakeup_irq={irq}')
+        self.feed('sleep-ended')
+
+    def run(self):
+        panel = self.backlight()
+        if panel and int((panel / 'brightness').read_text()) == 0:
+            # State ON after a restart: never dark without an owner.
+            self.key_time = time.monotonic()
+            self.do_light(ON)
+        server = self.open_socket()
+        self.scan_keys()
+        self.take_inhibitor()
+        self.start_monitor()
+        for worker in (self.session_worker, self.playback_worker):
+            threading.Thread(target=worker, daemon=True).start()
+        log('ready: ON')
+        while not self.stopping:
+            watched = [*self.keys, server, self.wake_read, self.monitor.stdout]
+            readable, _, _ = select.select(watched, [], [], self.timeout())
+            # Keys first: a press that woke the tablet decides before the sleep's end is seen.
+            for fd in [fd for fd in readable if fd in self.keys]:
+                try:
+                    for name, when in key_presses(os.read(fd, INPUT_EVENT.size * 64)):
+                        # Pressed before this wake's panel lit: that wake took care of it.
+                        if self.machine.inflight and self.lit_at is not None and when <= self.lit_at:
+                            log(f't={when:.6f} {name}: consumed by the wake')
+                        else:
+                            self.feed(name, when)
+                except OSError as error:
+                    log(f'keys lost: {error}')
+                    os.close(fd)
+                    del self.keys[fd]
+            if self.wake_read in readable:
+                os.read(self.wake_read, 512)
+                while not self.events.empty():
+                    event = self.events.get()
+                    if event == 'sleep-over':
+                        self.sleep_finished()
+                    else:
+                        self.feed(event)
+            if self.monitor.stdout in readable:
+                line = self.monitor.stdout.readline()
+                if not line:
+                    self.monitor.wait()
+                    self.start_monitor()
+                elif parse_logind_started(line):
+                    log('logind started')
+                    self.renew_inhibitor()
+                else:
+                    signal = parse_sleep_signal(line)
+                    if signal and not self.machine.inflight:
+                        # Someone else's suspend: a press must end it just the same.
+                        self.lit_at = None
+                        self.begin_sleep_record()
+                        self.arm_wakeup()
+                        self.feed('sleep-signal')
+                    elif signal is False:
+                        self.sleep_finished()
+            if server in readable:
+                self.control(server)
+            self.watch_kernel()
+            self.keep_inhibitor()
+            if self.settle_at is not None and time.monotonic() >= self.settle_at:
+                self.settle_at = None
+                self.feed('settle')
+            if self.machine.inflight:
+                self.ticks += 1
+                if self.ticks > SUSPEND_TICKS:
+                    log('suspend did not happen')
+                    self.feed('timeout')
+
+
+if __name__ == '__main__':
+    try:
+        Daemon().run()
+    except KeyboardInterrupt:
+        sys.exit(0)

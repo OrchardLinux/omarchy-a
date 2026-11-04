@@ -73,7 +73,6 @@ def main():
     tmpfiles.write_text("d /var/lib/omarchy-greeter-theme 0755 tablet tablet -\n")
     (greeter / "labwc/autostart").chmod(0o755)
     copy(HERE / "greeter/greeter-session", target / "usr/local/libexec/omarchy-greeter-session", 0o755)
-    copy(HERE / "greeter/greeter-wake", target / "usr/local/libexec/omarchy-greeter-wake", 0o755)
     keyboard = source / "trials/wvkbd-mobintl-v0.20-font18-special15-state"
     copy(KEYBOARD, keyboard, 0o755)
     for script in (source / "bin").iterdir():

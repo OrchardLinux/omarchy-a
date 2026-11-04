@@ -1,0 +1,20 @@
+#!/usr/bin/python3
+"""Tell omarchy-powerd about the session: idle, wake, or ask with input/status.
+
+input: exit 0 while the panel is lit, 3 while it is dark (a dark screen ignores
+taps). See docs/power-and-lock.md.
+"""
+import socket
+import sys
+
+try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(3)
+        connection.connect('/run/omarchy-powerd.sock')
+        connection.sendall(sys.argv[1].encode() + b'\n')
+        answer = connection.recv(64).decode().strip()
+except (IndexError, OSError) as error:
+    print(f'omarchy-powerctl: {error}', file=sys.stderr)
+    sys.exit(1)
+print(answer)
+sys.exit(3 if answer == 'dark' else 1 if answer == 'unknown' else 0)
