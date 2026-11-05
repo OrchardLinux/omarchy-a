@@ -1,0 +1,40 @@
+[Unit]
+Description=Read-only battery and system dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=ipad-battery-monitor
+Group=ipad-battery-monitor
+WorkingDirectory=/opt/ipad-battery-monitor
+ExecStart=/usr/bin/python3 /opt/ipad-battery-monitor/battery-monitor.py
+Environment=BATTERY_DATABASE=/var/lib/ipad-battery-monitor/history.sqlite3
+Environment=BATTERY_PORT=3001
+Environment=BATTERY_BIND=127.0.0.1
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=10
+UMask=0077
+StateDirectory=ipad-battery-monitor
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryMax=64M
+CPUQuota=10%
+TasksMax=16
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
