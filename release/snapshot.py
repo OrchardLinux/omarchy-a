@@ -54,7 +54,10 @@ def private_firmware(root):
     for descriptor in sorted((Path(root) / 'devices').glob('*/device.toml')):
         if descriptor.is_symlink() or descriptor.parent.is_symlink():
             continue
-        recipe = tomllib.loads(descriptor.read_text())['firmware']['recipe']
+        described = tomllib.loads(descriptor.read_text())
+        if 'firmware' not in described:  # A board with identity only has no firmware to keep private.
+            continue
+        recipe = described['firmware']['recipe']
         if '\\' in recipe or ':' in recipe or any(part in ('', '.', '..') for part in recipe.split('/')):
             raise ValueError(f'{descriptor}: unsafe firmware recipe {recipe}')
         destinations |= {row['destination'] for row in
