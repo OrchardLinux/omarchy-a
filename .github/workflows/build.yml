@@ -159,6 +159,7 @@ jobs:
       - name: Build the signed Arch root filesystem
         if: inputs.reuse_run_id == ''
         env:
+          ORCHARD_CHECKOUT: ${{ github.workspace }}/.orchard
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
           RUN_ID: ${{ github.run_id }}
