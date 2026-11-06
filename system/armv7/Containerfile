@@ -1,0 +1,12 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY desktop/install-toolchain desktop/rank-mirrors desktop/pacman-download /tmp/desktop/
+COPY desktop/labwc/install-toolchain /tmp/labwc/install-toolchain
+RUN test "$(uname -m)" = armv7l && \
+    bash /tmp/desktop/install-toolchain && bash /tmp/labwc/install-toolchain && \
+    pacman-download -Syu --noconfirm --needed arch-install-scripts qt6-base qt6-declarative qt6-tools && \
+    pacman -Su --noconfirm --needed arch-install-scripts qt6-base qt6-declarative qt6-tools && \
+    pacman -Q > /usr/share/omarchy-builder-packages.lock && \
+    pacman -Sc --noconfirm && rm -rf /tmp/desktop /tmp/labwc
+LABEL org.orchard.target.architecture="armv7h"
+WORKDIR /work
