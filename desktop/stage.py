@@ -10,8 +10,12 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import sys
 
 HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+from target import check_elf
 PORT = HERE / "shell"
 CONFIG = HERE / "configuration"
 INPUTS = json.loads((HERE / 'arm64/inputs.json').read_text())
@@ -36,12 +40,14 @@ def main():
     parser.add_argument("--keyboard", type=Path, required=True, help="built wvkbd-mobintl binary")
     parser.add_argument("--keyboard-sha256", required=True, help="hash from the source-build manifest")
     parser.add_argument("--omafox-xpi", type=Path, required=True, help="signed Omafox extension")
+    parser.add_argument("--architecture", default="aarch64", choices=("aarch64", "armv7h"))
     args = parser.parse_args()
     FORK, KEYBOARD, XPI = args.upstream, args.keyboard, args.omafox_xpi
     target = args.target.resolve()
     if target.exists() or target == Path("/") or target.is_relative_to(Path("/Volumes")):
         parser.error("target must be a new local staging directory, not an existing/mounted volume")
     checked(KEYBOARD, args.keyboard_sha256)
+    check_elf(KEYBOARD, args.architecture, "keyboard")
     checked(XPI, XPI_SHA)
     source = target / "home/tablet/.local/share/omarchy-ipad"
     # Copy shell sources and immutable upstream theme assets.

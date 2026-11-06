@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import sys
+import struct
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -24,7 +25,11 @@ class GreeterStagingTests(unittest.TestCase):
             (upstream / 'applications').mkdir()
             (upstream / 'applications/foot.desktop').write_text('[Desktop Entry]\n')
             keyboard = root / 'keyboard'
-            keyboard.write_bytes(b'keyboard')
+            elf = bytearray(64)
+            elf[:7] = b'\x7fELF\x02\x01\x01'
+            struct.pack_into('<HHI', elf, 16, 3, 183, 1)
+            struct.pack_into('<H', elf, 52, 64)
+            keyboard.write_bytes(elf)
             xpi = root / 'extension.xpi'
             xpi.write_bytes(b'extension')
             target = root / 'payload'

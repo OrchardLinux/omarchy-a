@@ -5,3 +5,4 @@ name = "omarchy-a"
 [release]
 build = "tools/build.py"
 selects-platform = true  # tools/build.py takes --platform NAME ... or --platform all
+selects-device = true    # Cascadia payloads use the selected board's handoff profile
