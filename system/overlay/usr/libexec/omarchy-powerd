@@ -180,6 +180,21 @@ def log(message):
     print(message, flush=True)
 
 
+def parse_supply_uevent(message):
+    """(name, online) from a kernel uevent of a power supply that has an online state, else None."""
+    fields = dict(item.split('=', 1) for item in message.decode(errors='replace').split('\0') if '=' in item)
+    if fields.get('SUBSYSTEM') != 'power_supply' or 'POWER_SUPPLY_ONLINE' not in fields:
+        return None
+    return fields.get('POWER_SUPPLY_NAME', ''), fields['POWER_SUPPLY_ONLINE'] == '1'
+
+
+def plugged_in(known, name, online):
+    """Whether this report is a source being plugged in; remembers it in known."""
+    was = known.get(name, False)
+    known[name] = online
+    return online and not was
+
+
 def parse_sleep_signal(line):
     """True or False from a `busctl --json=short monitor` line of PrepareForSleep, else None."""
     try:
@@ -284,6 +299,8 @@ class Daemon:
         self.next_inhibitor = 0.0
         self.lit_at = None
         self.watching_unit = False
+        self.supplies = {}
+        self.uevents = None
 
     # --- plumbing -----------------------------------------------------------
     def post(self, event):
@@ -293,6 +310,31 @@ class Daemon:
     def backlight(self):
         panels = sorted(BACKLIGHTS.iterdir())
         return panels[0] if len(panels) == 1 else None
+
+    def start_uevents(self):
+        """Being plugged in lights the screen, as on any tablet; being unplugged does not."""
+        for supply in Path('/sys/class/power_supply').glob('*'):
+            try:
+                self.supplies[supply.name] = (supply / 'online').read_text().strip() == '1'
+            except OSError:
+                pass  # a battery has no online state
+        try:
+            self.uevents = socket.socket(socket.AF_NETLINK, socket.SOCK_DGRAM | socket.SOCK_NONBLOCK, 15)
+            self.uevents.bind((0, 1))
+        except (AttributeError, OSError) as error:  # AttributeError: no netlink on this system
+            log(f'no power supply events: {error}')
+            self.uevents = None
+
+    def read_uevents(self):
+        try:
+            while True:
+                report = parse_supply_uevent(self.uevents.recv(8192))
+                if report and plugged_in(self.supplies, *report):
+                    self.feed('wake')
+        except BlockingIOError:
+            pass
+        except OSError as error:  # the kernel dropped some: the next report sets it right
+            log(f'power supply events: {error}')
 
     def scan_keys(self):
         for device in Path('/sys/class/input').glob('event*'):
@@ -587,11 +629,14 @@ class Daemon:
         self.scan_keys()
         self.take_inhibitor()
         self.start_monitor()
+        self.start_uevents()
         for worker in (self.session_worker, self.playback_worker):
             threading.Thread(target=worker, daemon=True).start()
         log('ready: ON')
         while not self.stopping:
             watched = [*self.keys, server, self.wake_read, self.monitor.stdout]
+            if self.uevents:
+                watched.append(self.uevents)
             readable, _, _ = select.select(watched, [], [], self.timeout())
             # Keys first: a press that woke the tablet decides before the sleep's end is seen.
             for fd in [fd for fd in readable if fd in self.keys]:
@@ -634,6 +679,8 @@ class Daemon:
                         self.sleep_finished()
             if server in readable:
                 self.control(server)
+            if self.uevents in readable:
+                self.read_uevents()
             self.watch_kernel()
             self.keep_inhibitor()
             if self.settle_at is not None and time.monotonic() >= self.settle_at:

@@ -28,9 +28,9 @@ work, with an on-screen display.
 - Volume starts quiet; the volume keys step in 5% steps and show the shell's
   on-screen display; the mixer is in the bar.
 - No leftover boot splash between the greeter and the desktop.
-- Power locks and darkens the screen at once; the iPad sleeps 10 s later, on
-  iPads where orchard marks suspend as working (iPad 6 today). One press wakes
-  it, in well under a second, and Home wakes it too.
+- Power locks and darkens the screen at once; the iPad sleeps 10 s later. One
+  press wakes it, in well under a second, and Home wakes it too.
+- Plugging in lights the screen.
 - The greeter and the lock screen go dark after 30 s without input, the desktop
   after 5 minutes.
 

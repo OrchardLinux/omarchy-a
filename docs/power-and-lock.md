@@ -4,9 +4,8 @@
 of the screen, the lock request and sleep. Its state machine, the `Machine`
 class, has no I/O and no clocks; `tests/test_powerd.py` walks every reachable
 state with every input and checks the invariants below. Whether a board may
-suspend at all is orchard's device data
-(`/run/systemd/sleep.conf.d/50-orchard-board.conf`, see orchard
-`docs/bring-up/suspend.md`); this model decides when.
+suspend at all is not decided here or by device data: every board may (see
+orchard `docs/bring-up/suspend.md`); this model decides when.
 
 ## Requirements
 
@@ -21,6 +20,8 @@ suspend at all is orchard's device data
 7. Playback keeps playing: dark and running instead of asleep, volume keys
    working.
 8. A board without suspend behaves the same, minus sleep.
+9. Being plugged in lights the screen, as on any tablet, asleep or awake. Being
+   unplugged wakes the kernel (orchard) but stays dark and sleeps again.
 
 ## One owner
 

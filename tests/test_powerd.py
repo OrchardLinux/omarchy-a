@@ -36,6 +36,25 @@ def asleep():
     return machine
 
 
+class SupplyEvents(unittest.TestCase):
+    def test_a_supplys_online_state_is_read_from_its_uevent(self):
+        message = b'change@/devices/x/power_supply/lightning\0ACTION=change\0SUBSYSTEM=power_supply\0' \
+                  b'POWER_SUPPLY_NAME=lightning\0POWER_SUPPLY_ONLINE=1\0'
+        self.assertEqual(powerd.parse_supply_uevent(message), ('lightning', True))
+        self.assertEqual(powerd.parse_supply_uevent(message.replace(b'ONLINE=1', b'ONLINE=0')), ('lightning', False))
+
+    def test_other_uevents_are_ignored(self):
+        self.assertIsNone(powerd.parse_supply_uevent(b'change@/x\0SUBSYSTEM=input\0POWER_SUPPLY_ONLINE=1\0'))
+        self.assertIsNone(powerd.parse_supply_uevent(b'change@/x\0SUBSYSTEM=power_supply\0POWER_SUPPLY_NAME=battery\0'))
+
+    def test_only_being_plugged_in_counts(self):
+        known = {}
+        self.assertTrue(powerd.plugged_in(known, 'lightning', True))
+        self.assertFalse(powerd.plugged_in(known, 'lightning', True))
+        self.assertFalse(powerd.plugged_in(known, 'lightning', False))
+        self.assertTrue(powerd.plugged_in(known, 'lightning', True))
+
+
 class Scenarios(unittest.TestCase):
     def test_power_darkens_at_once_and_sleeps_after_the_settle_time(self):
         machine = Machine()
