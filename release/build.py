@@ -108,6 +108,9 @@ def platform_inputs(args, name, document=None):
     architecture = getattr(args, 'architecture', 'aarch64')
     row = (document or {}).get('platforms', {}).get(name, {})
     boards = row.get('boards', {})
+    requested_device = getattr(args, 'device', None)
+    if requested_device is not None and boards and requested_device not in boards:
+        raise ValueError(f'{name}: input boards differ from the selected device {requested_device}')
     resolved.device = next(iter(boards)) if len(boards) == 1 else getattr(args, 'device', None)
     if architecture == 'armv7h' and not resolved.device:
         raise ValueError(f'{name}: Cascadia requires one selected board in the input record or --device')

@@ -75,6 +75,9 @@ class ReleaseArchitecture(unittest.TestCase):
             self.assertEqual(selected.kernel_image, 'zImage')
             self.assertEqual(selected.loader, paths['loader'])
             self.assertEqual(selected.busybox, paths['busybox'])
+            wrong_board = argparse.Namespace(**vars(args), device='j1')
+            with self.assertRaisesRegex(ValueError, 'input boards differ'):
+                build.platform_inputs(wrong_board, 'apple-armv7', inputs)
             row['loader']['kind'] = 'm1n1'
             with self.assertRaisesRegex(ValueError, 'loader kind'):
                 build.platform_inputs(args, 'apple-armv7', inputs)
