@@ -116,3 +116,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for bring-up guidance and [BUILD.md](BUIL
 ## Troubleshooting
 
 See [Troubleshooting](docs/troubleshooting.md) for USB connectivity, diagnostics, and failed installations.
+
+For read-only battery, CPU, memory, disk and network charts, see the
+[optional device monitor](extras/device-monitor/README.md). It keeps 24 hours
+of system statistics and runs only when installed and enabled separately.
