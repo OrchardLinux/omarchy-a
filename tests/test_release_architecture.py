@@ -38,6 +38,17 @@ def static_elf(architecture):
     return bytes(data)
 
 
+def bpf_elf():
+    data = bytearray(200)
+    data[:7] = b'\x7fELF\x02\x01\x01'
+    struct.pack_into('<HHI', data, 16, 1, 247, 1)
+    struct.pack_into('<Q', data, 40, 64)
+    struct.pack_into('<6H', data, 52, 64, 0, 0, 64, 2, 0)
+    struct.pack_into('<I', data, 128 + 4, 1)
+    struct.pack_into('<QQ', data, 128 + 24, 192, 8)
+    return bytes(data)
+
+
 class ReleaseArchitecture(unittest.TestCase):
     def args(self, architecture, platforms):
         return argparse.Namespace(architecture=architecture, platform=platforms, kernel_dir=None)
@@ -124,6 +135,21 @@ class ReleaseArchitecture(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'dynamic segment'):
                 build.check_static_elf(path, 'armv7h')
 
+    def test_keymap_bytecode_guard_preserves_native_and_framing_checks(self):
+        name = 'usr/lib/udev/rc_keymaps/protocols/grundig.o'
+        self.assertEqual(public_root.check_root_elf(bpf_elf(), 'armv7h', name), 'bpf')
+        for machine in (183, 62):
+            foreign = bytearray(bpf_elf())
+            struct.pack_into('<H', foreign, 18, machine)
+            with self.subTest(machine=machine), self.assertRaises(ValueError):
+                public_root.check_root_elf(foreign, 'armv7h', name)
+        executable = bytearray(bpf_elf())
+        struct.pack_into('<H', executable, 16, 2)
+        for data, location in ((bpf_elf()[:63], name), (bpf_elf()[:-1], name),
+                               (bytes(executable), name), (bpf_elf(), 'usr/bin/foreign')):
+            with self.subTest(bytes=len(data), location=location), self.assertRaises(ValueError):
+                public_root.check_root_elf(data, 'armv7h', location)
+
     def cursor(self, root, binary_architecture, receipt_architecture):
         contents = {'wtype': elf(binary_architecture), 'LICENSE': b'MIT'}
         for name, data in contents.items():
@@ -207,7 +233,7 @@ class ReleaseArchitecture(unittest.TestCase):
             self.assertFalse((root / 'out').exists())
 
     @unittest.skipUnless(shutil.which('zstd'), 'zstd is required for root compression')
-    def test_armv7_root_accepts_link_objects_and_preserves_package_privileges(self):
+    def test_armv7_root_accepts_link_objects_and_bpf_preserving_privileges(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             replacements = public_root.desktop_replacements()
@@ -216,6 +242,7 @@ class ReleaseArchitecture(unittest.TestCase):
             struct.pack_into('<H', relocatable, 16, 1)
             struct.pack_into('<I', relocatable, 36, 0x05000000)
             contents.update({'usr/lib/systemd/systemd': elf('armv7h'), 'usr/lib/crt1.o': bytes(relocatable),
+                             'usr/lib/udev/rc_keymaps/protocols/grundig.o': bpf_elf(),
                              'usr/bin/sudo': elf('armv7h'),
                              'etc/group': b'seat:x:1:\nvideo:x:2:\ninput:x:3:\n',
                              'etc/gshadow': b'seat:!*::\nvideo:!*::\ninput:!*::\n'})
@@ -252,6 +279,7 @@ class ReleaseArchitecture(unittest.TestCase):
             raw = subprocess.check_output(['zstd', '-dq', '-c', str(root / 'out/rootfs.tar.zst')])
             with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
                 self.assertEqual(archive.extractfile('usr/lib/crt1.o').read(), bytes(relocatable))
+                self.assertEqual(archive.extractfile('usr/lib/udev/rc_keymaps/protocols/grundig.o').read(), bpf_elf())
                 self.assertEqual(archive.getmember('usr/bin/sudo').mode, 0o4755)
 
     def test_armv7_manifest_uses_its_boot_method_without_pongo(self):

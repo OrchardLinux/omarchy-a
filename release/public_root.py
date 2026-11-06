@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import struct
 import tarfile
 import tempfile
 
@@ -28,6 +29,28 @@ def safe_name(name):
     if path.is_absolute() or '..' in path.parts or not path.parts:
         raise ValueError('Unsafe public root path')
     return str(path)
+
+
+def check_root_elf(data, architecture, name):
+    """Keymap BPF objects are bytecode data; native objects must match the root."""
+    path = PurePosixPath(name)
+    keymap = path.parent.as_posix() == 'usr/lib/udev/rc_keymaps/protocols' and path.suffix == '.o'
+    if (keymap and len(data) >= 64 and data[:7] == b'\x7fELF\x02\x01\x01' and
+            struct.unpack_from('<HHI', data, 16) == (1, 247, 1)):
+        offset = struct.unpack_from('<Q', data, 40)[0]
+        header, _, programs, section_size, sections, strings = struct.unpack_from('<6H', data, 52)
+        if (header != 64 or programs or struct.unpack_from('<Q', data, 32)[0] or
+                section_size != 64 or not sections or strings >= sections or
+                offset < 64 or offset + section_size * sections > len(data)):
+            raise ValueError('Invalid BPF data object section table: ' + name)
+        for index in range(sections):
+            start = offset + index * section_size
+            kind = struct.unpack_from('<I', data, start + 4)[0]
+            content, length = struct.unpack_from('<QQ', data, start + 24)
+            if kind != 8 and content + length > len(data):  # SHT_NOBITS has no file data.
+                raise ValueError('Truncated BPF data object section: ' + name)
+        return 'bpf'
+    return check_elf(data, architecture, name, executable=False)
 
 
 def desktop_replacements():
@@ -224,7 +247,7 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                             raise ValueError('Base must link lib to usr/lib')
                         data = source.extractfile(member).read() if member.isfile() else None
                         if data is not None and data.startswith(b'\x7fELF'):
-                            check_elf(data, architecture, member.name, executable=False)
+                            check_root_elf(data, architecture, member.name)
                         if architecture == 'armv7h' and member.name == 'usr/lib/systemd/systemd':
                             check_elf(data, architecture, member.name)
                         if member.name in ('etc/group', 'etc/gshadow'):

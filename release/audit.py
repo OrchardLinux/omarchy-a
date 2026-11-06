@@ -12,9 +12,9 @@ from release import snapshot
 from release.manifests import read_release
 
 from .common import PROJECT
-from .public_root import sha
+from .public_root import sha, check_root_elf
 from .recovery_audit import audit_runtime
-from release.architecture import validate, check_elf
+from release.architecture import validate
 
 # m1n1's payload framing (orchard docs/ram-development.md, "Assembling by hand").
 INITRAMFS_MAGIC = b'm1n1_initramfs'
@@ -263,7 +263,7 @@ def audit(manifest, orchard=None):
                 elif member.isfile():
                     data = archive.extractfile(member).read()
                     if data.startswith(b'\x7fELF'):
-                        check_elf(data, architecture, name, executable=False)
+                        check_root_elf(data, architecture, name)
                     hashes[name] = hashlib.sha256(data).hexdigest()
                     if name == 'arch-ipad-ui-manifest.json':
                         desktop = json.loads(data)
