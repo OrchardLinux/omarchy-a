@@ -11,6 +11,7 @@ import copy
 import json
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tomllib
@@ -18,7 +19,7 @@ import tomllib
 from .public_root import build as build_root, sha
 from release import snapshot
 from release.manifests import write as write_manifests
-from release.architecture import validate, platform_arch, orchard_arch
+from release.architecture import validate, platform_arch, orchard_arch, check_elf
 
 
 TOOLS = ('busybox', 'dropbear', 'dropbearkey', 'wpa_supplicant', 'wpa_cli', 'iw')
@@ -31,6 +32,45 @@ def orchard_files(args):
     snapshot.command(args.orchard, 'orchard.image.platforms_index', args.output, *source,
                      *selection, stdout=subprocess.DEVNULL)
     return tomllib.loads((args.output / 'platforms.toml').read_text())
+
+
+def check_static_elf(path, architecture, label='helper'):
+    """Check a native helper before assembling a root that depends on it."""
+    path = Path(path)
+    if path.stat().st_size > 32 * 1024 * 1024:
+        raise ValueError(f'{label}: static helper exceeds its inspection bound')
+    data = path.read_bytes()
+    check_elf(data, architecture, label)
+    arm = data[4] == 1
+    offset = struct.unpack_from('<I' if arm else '<Q', data, 28 if arm else 32)[0]
+    size, count = struct.unpack_from('<HH', data, 42 if arm else 54)
+    if not count or size != (32 if arm else 56) or offset + size * count > len(data):
+        raise ValueError(f'{label}: invalid ELF program headers')
+    loadable = False
+    for index in range(count):
+        start = offset + index * size
+        kind = struct.unpack_from('<I', data, start)[0]
+        loadable |= kind == 1
+        if kind == 3:
+            raise ValueError(f'{label}: static helper has an ELF interpreter')
+        if kind != 2:
+            continue
+        dynamic = struct.unpack_from('<I' if arm else '<Q', data, start + (4 if arm else 8))[0]
+        length = struct.unpack_from('<I' if arm else '<Q', data, start + (16 if arm else 32))[0]
+        stride = 8 if arm else 16
+        if not length or length % stride or dynamic + length > len(data):
+            raise ValueError(f'{label}: invalid ELF dynamic segment')
+        for position in range(dynamic, dynamic + length, stride):
+            tag = struct.unpack_from('<I' if arm else '<Q', data, position)[0]
+            if tag == 0:
+                break
+            if tag == 1:
+                raise ValueError(f'{label}: static helper needs a shared library')
+        else:
+            raise ValueError(f'{label}: unterminated ELF dynamic segment')
+    if not loadable:
+        raise ValueError(f'{label}: static helper has no loadable segment')
+    return architecture
 
 
 def kernels(args, document=None):
@@ -91,6 +131,20 @@ def platform_inputs(args, name, document=None):
         path = getattr(resolved, field)
         if path.is_symlink() or not path.is_file():
             raise ValueError(f'{name}: missing regular component {field}: {path}')
+    root_format = row.get('root_format', 'gpt')
+    if root_format not in ('gpt', 'lwvm'):
+        raise ValueError(f'{name}: unsupported root format {root_format}')
+    helper = row.get('tools', {}).get('lwvm', getattr(args, 'lwvm', None))
+    resolved.lwvm = Path(helper) if helper is not None else None
+    if root_format == 'lwvm' and resolved.lwvm is None:
+        raise ValueError(f'{name}: LwVM root requires tools.lwvm')
+    if resolved.lwvm is not None:
+        if resolved.lwvm.is_symlink() or not resolved.lwvm.is_file():
+            raise ValueError(f'{name}: missing regular LwVM helper: {resolved.lwvm}')
+        check_static_elf(resolved.lwvm, architecture, name + ' LwVM helper')
+        if (resolved.dropbear.name != 'dropbear' or resolved.dropbearkey.name != 'dropbearkey' or
+                resolved.dropbear.parent != resolved.dropbearkey.parent):
+            raise ValueError(f'{name}: LwVM rescue tools require one Dropbear directory')
     return resolved
 
 
@@ -100,6 +154,8 @@ def layer(args, name, bundle):
     receipt.parent.mkdir(parents=True, exist_ok=True)
     snapshot.command(args.orchard, 'orchard.image.platform', name, '--output', args.output, '--kernel-dir', bundle,
                      '--busybox', args.busybox, '--root-architecture', orchard_arch(args.architecture),
+                     *(['--lwvm', args.lwvm, '--rescue-tools', args.dropbear.parent]
+                       if getattr(args, 'lwvm', None) is not None else []),
                      *(['--device', args.device] if getattr(args, 'device', None) else []),
                      '--receipt', receipt, stdout=subprocess.DEVNULL)
     return json.loads(receipt.read_text())
@@ -122,6 +178,8 @@ def recovery(args, name, bundle, boards, root_receipt):
         command.extend(['--' + option.replace('_', '-'), str(getattr(args, option))])
     if args.architecture == 'aarch64':
         command.extend(['--logo', str(args.logo)])
+    if getattr(args, 'lwvm', None) is not None:
+        command.extend(['--lwvm', str(args.lwvm)])
     command.extend(['--kernel', str(bundle / args.kernel_image), '--modules-dir', str(bundle / 'lib/modules'),
                     '--root-receipt', str(root_receipt), '--output', str(output)])
     snapshot.command(args.orchard, 'orchard.image.recovery', *command)
@@ -132,7 +190,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     for name in ('base', 'base-receipt', 'splash', 'cursor-tools', 'bluetooth-tools', 'labwc-tools', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
-    for name in ('loader', 'logo', 'pongo', 'busybox', 'dropbear', 'dropbearkey', 'wpa-supplicant', 'wpa-cli', 'iw'):
+    for name in ('loader', 'logo', 'pongo', 'busybox', 'dropbear', 'dropbearkey', 'wpa-supplicant', 'wpa-cli', 'iw', 'lwvm'):
         parser.add_argument('--' + name, type=Path)
     parser.add_argument('--architecture', choices=('aarch64', 'armv7h'), default='aarch64')
     parser.add_argument('--device', help='board profile when explicit ARMv7 components are used without an inputs record')

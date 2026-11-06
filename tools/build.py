@@ -25,6 +25,7 @@ from components import component  # noqa: E402
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
 from release.architecture import platform_arch, validate  # noqa: E402
+from release.build import TOOLS, platform_inputs  # noqa: E402
 DESKTOP_IMAGE = ['desktop/Containerfile', 'desktop/install-toolchain']
 # What each component is made from, relative to this checkout.
 INPUTS = {
@@ -101,6 +102,7 @@ def main():
     parser.add_argument('--labwc-builder-image', help='prepared Labwc builder; defaults to --builder-image')
     parser.add_argument('--platform-loader', action='append', default=[], metavar='PLATFORM=FILE')
     parser.add_argument('--platform-tools', action='append', default=[], metavar='PLATFORM=DIRECTORY')
+    parser.add_argument('--platform-lwvm', action='append', default=[], metavar='PLATFORM=FILE')
     args = parser.parse_args()
     orchard = args.orchard or (Path(os.environ['ORCHARD_CHECKOUT']) if os.environ.get('ORCHARD_CHECKOUT') else None)
     if orchard is None or not (orchard / 'src/orchard').is_dir():
@@ -119,6 +121,20 @@ def main():
     except (OSError, KeyError, ValueError) as error:
         parser.error(str(error))
     selected = [part for name in platforms for part in ('--platform', name)]
+    # Resolve native storage helpers before any desktop or root compilation.
+    inputs = PROJECT / f'out/components/.inputs-{architecture}.json'
+    overrides = [part for option in ('platform_loader', 'platform_tools', 'platform_lwvm')
+                 for value in getattr(args, option)
+                 for part in ('--' + option.replace('_', '-'), value)]
+    board = ['--device', args.device] if args.device else []
+    orchard_command('orchard.inputs', '--output', inputs, *selected, *board, *overrides)
+    document = json.loads(inputs.read_text())
+    shared = document.get('shared', {})
+    preflight = argparse.Namespace(architecture=architecture, device=args.device,
+                                  loader=shared.get('m1n1'),
+                                  **{key: shared.get('tools', {}).get(key) for key in TOOLS})
+    for name in platforms:
+        platform_inputs(preflight, name, document)
     target_args = ['--architecture', architecture]
     builder_args = ['--builder-image', args.builder_image] if args.builder_image else []
     labwc_image = args.labwc_builder_image or args.builder_image
@@ -146,14 +162,6 @@ def main():
     # The Omarchy mark is data for orchard's m1n1, which every distribution boots.
     artwork, _ = component(PROJECT, 'artwork', INPUTS['artwork'],
                            lambda path, work: python('boot/build-artwork', '--output', path), artifact='artwork')
-    # What orchard supplies finished: kernels, m1n1, Pongo, tools (the nightly's when they match).
-    inputs = PROJECT / f'out/components/.inputs-{architecture}.json'
-    overrides = [part for option in ('platform_loader', 'platform_tools') for value in getattr(args, option)
-                 for part in ('--' + option.replace('_', '-'), value)]
-    board = ['--device', args.device] if args.device else []
-    orchard_command('orchard.inputs', '--output', inputs, *selected, *board, *overrides)
-    document = json.loads(inputs.read_text())
-    shared = document.get('shared', {})
     first = document['platforms'][platforms[0]]
     tools = first.get('tools') or shared['tools']
     loader = first.get('loader', {}).get('file') or shared['m1n1']

@@ -27,6 +27,17 @@ def elf(architecture):
     return bytes(raw)
 
 
+def static_elf(architecture):
+    arm = architecture == 'armv7h'
+    data = bytearray(elf(architecture))
+    offset, size = len(data), 32 if arm else 56
+    data.extend(bytes(size))
+    struct.pack_into('<I' if arm else '<Q', data, 28 if arm else 32, offset)
+    struct.pack_into('<HH', data, 42 if arm else 54, size, 1)
+    struct.pack_into('<I', data, offset, 1)
+    return bytes(data)
+
+
 class ReleaseArchitecture(unittest.TestCase):
     def args(self, architecture, platforms):
         return argparse.Namespace(architecture=architecture, platform=platforms, kernel_dir=None)
@@ -67,6 +78,48 @@ class ReleaseArchitecture(unittest.TestCase):
             row['loader']['kind'] = 'm1n1'
             with self.assertRaisesRegex(ValueError, 'loader kind'):
                 build.platform_inputs(args, 'apple-armv7', inputs)
+
+    def test_lwvm_root_requires_a_native_static_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('loader', *build.TOOLS):
+                (root / name).write_bytes(b'component')
+            args = argparse.Namespace(architecture='armv7h', loader=None)
+            row = {'root_format': 'lwvm', 'boards': {'p105': 's5l8942x-p105'},
+                   'loader': {'kind': 'cascadia', 'file': str(root / 'loader')},
+                   'tools': {name: str(root / name) for name in build.TOOLS}}
+            document = {'platforms': {'apple-armv7': row}}
+            with self.assertRaisesRegex(ValueError, 'requires tools.lwvm'):
+                build.platform_inputs(args, 'apple-armv7', document)
+            helper = root / 'orchard-lwvm'
+            row['tools']['lwvm'] = str(helper)
+            helper.write_bytes(static_elf('armv7h'))
+            self.assertEqual(build.platform_inputs(args, 'apple-armv7', document).lwvm, helper)
+            helper.write_bytes(static_elf('aarch64'))
+            with self.assertRaisesRegex(ValueError, 'LwVM helper.*ELF'):
+                build.platform_inputs(args, 'apple-armv7', document)
+            dynamic = bytearray(static_elf('armv7h'))
+            struct.pack_into('<I', dynamic, 52, 3)
+            helper.write_bytes(dynamic)
+            with self.assertRaisesRegex(ValueError, 'ELF interpreter'):
+                build.platform_inputs(args, 'apple-armv7', document)
+
+    def test_static_helper_checks_dynamic_dependencies_and_table_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'helper'
+            data = bytearray(static_elf('armv7h'))
+            data.extend(bytes(32))
+            struct.pack_into('<H', data, 44, 2)
+            struct.pack_into('<II', data, 84, 2, 116)
+            struct.pack_into('<I', data, 84 + 16, 16)
+            data.extend(struct.pack('<4I', 1, 0, 0, 0))
+            path.write_bytes(data)
+            with self.assertRaisesRegex(ValueError, 'shared library'):
+                build.check_static_elf(path, 'armv7h')
+            struct.pack_into('<I', data, 84 + 16, 32)
+            path.write_bytes(data)
+            with self.assertRaisesRegex(ValueError, 'dynamic segment'):
+                build.check_static_elf(path, 'armv7h')
 
     def cursor(self, root, binary_architecture, receipt_architecture):
         contents = {'wtype': elf(binary_architecture), 'LICENSE': b'MIT'}
@@ -224,6 +277,7 @@ class ReleaseArchitecture(unittest.TestCase):
             (root / 'dtbs').mkdir()
             (root / 'dtbs/s5l8942x-p105.dtb').write_bytes(b'\xd0\x0d\xfe\xed')
             args = argparse.Namespace(architecture='armv7h', output=root, orchard=root, kernel_image='zImage',
+                                      lwvm=root / 'orchard-lwvm',
                                       **{name: root / name for name in ('base', 'base_receipt', 'loader', *build.TOOLS)})
             with patch.object(build.snapshot, 'command') as command:
                 build.recovery(args, 'apple-armv7', root, {'p105': 's5l8942x-p105'}, root / 'rootfs.json')
@@ -232,6 +286,23 @@ class ReleaseArchitecture(unittest.TestCase):
             self.assertIn('apple-armv7', argv)
             self.assertIn(str(root / 'zImage'), argv)
             self.assertNotIn('--logo', argv)
+            self.assertEqual(argv[argv.index('--lwvm') + 1], str(root / 'orchard-lwvm'))
+
+    def test_lwvm_platform_uses_the_selected_rescue_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = argparse.Namespace(architecture='armv7h', output=root, orchard=root, device='p105',
+                                      busybox=root / 'busybox', dropbear=root / 'dropbear',
+                                      lwvm=root / 'orchard-lwvm')
+
+            def produce(*argv, **kwargs):
+                Path(argv[argv.index('--receipt') + 1]).write_text('{}')
+
+            with patch.object(build.snapshot, 'command', side_effect=produce) as command:
+                build.layer(args, 'apple-armv7', root / 'kernel')
+            argv = command.call_args.args
+            self.assertEqual(argv[argv.index('--lwvm') + 1], root / 'orchard-lwvm')
+            self.assertEqual(argv[argv.index('--rescue-tools') + 1], root)
 
     def cascadia_fixture(self, root):
         # Exercise the companion Orchard producer's real framing contract.

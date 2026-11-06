@@ -55,7 +55,7 @@ Retain each component's receipt. Do not change hardware activation or timing as 
 ## Assemble
 
 The following example uses distro-owned components collected under `out/components/`.
-A release covers every platform: one root image, and per platform a recovery
+A release serves one userspace architecture: one root image, and per platform a recovery
 (`recovery-PLATFORM.bin`) and orchard's platform layer (`platform-PLATFORM.tar.gz`:
 kernel, every board's DTB, modules), which the installer writes into the root.
 The kernels come from the same orchard builder and cache as `orchard build` in
@@ -91,12 +91,20 @@ To use a staged kernel bundle instead (as CI does with orchard's published
 component bundles), pass `--kernel-dir PLATFORM=DIRECTORY` per platform; the
 others still come from `--inputs`, and without `--inputs` the given bundles are
 the release's platforms. `--platform PLATFORM` builds only that
-platform, for development; a release covers every platform. Each recovery carries
+platform, for development; the default serves the AArch64 platforms. Each recovery carries
 the DTB of every board of its platform; m1n1 boots with the one matching the
 device. The cache respects `XDG_CACHE_HOME` and `ORCHARD_CACHE_DIR`, just like RAM
 builds.
 
 Choose a new version and output directory for each build. Root builds first; recoveries embed its exact stream receipt, and `release.toml` and the index are written last. The installed root carries no Orchard device runtime: it boots directly from the boot entry orchard's installer writes.
+
+For the ARMv7 compiler and selected-board build, see
+[ARMv7 desktop components](desktop/armv7/README.md). The producer checks
+Orchard's inputs before compiling the desktop or assembling the root. A selected
+input record with `root_format = "lwvm"` must supply the native static helper
+at `tools.lwvm`; it is passed to both the installed initrd and RAM recovery.
+An offline build can provide it through `tools/build.py --platform-lwvm
+PLATFORM=FILE`. The selected Dropbear pair supplies early SSH recovery.
 
 ## Validate without a device
 

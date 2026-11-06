@@ -107,6 +107,10 @@ class ArchitectureSelectionTests(unittest.TestCase):
             device.parent.mkdir(parents=True)
             device.write_text('[kernel]\nplatform = "apple-armv7"\n')
             calls, keys = [], {}
+            tools = root / 'arm'
+            tools.mkdir()
+            for name in ('cascadia.bin', *entry.TOOLS):
+                (tools / name).write_bytes(b'component')
 
             def component(project, name, inputs, produce, *, artifact, extra=()):
                 target = root / 'components' / name / artifact
@@ -120,9 +124,9 @@ class ArchitectureSelectionTests(unittest.TestCase):
                     path = Path(args[args.index('--output') + 1])
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(json.dumps({'platforms': {'apple-armv7': {
-                        'tools': {name: '/arm/' + name for name in
+                        'tools': {name: str(tools / name) for name in
                                   ('busybox', 'dropbear', 'dropbearkey', 'wpa_supplicant', 'wpa_cli', 'iw')},
-                        'loader': {'kind': 'cascadia', 'file': '/arm/cascadia.bin'}}}}))
+                        'loader': {'kind': 'cascadia', 'file': str(tools / 'cascadia.bin')}}}}))
 
             argv = ['build', '--version', 'test', '--output', str(root / 'release'),
                     '--orchard', str(orchard), '--device', 'p105']
@@ -136,8 +140,38 @@ class ArchitectureSelectionTests(unittest.TestCase):
                 call = next(call for call in calls if script in call)
                 self.assertEqual(call[call.index('--architecture') + 1], 'armv7h')
             release = next(call for call in calls if 'release.build' in call)
-            self.assertEqual(release[release.index('--loader') + 1], '/arm/cascadia.bin')
+            self.assertEqual(release[release.index('--loader') + 1], str(tools / 'cascadia.bin'))
             self.assertNotIn('--pongo', release)
+
+    def test_missing_lwvm_input_stops_before_root_or_component_build(self):
+        entry = build_entry()
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            orchard = root / 'orchard'
+            (orchard / 'src/orchard').mkdir(parents=True)
+            platform(orchard, 'apple-armv7', 'arm')
+            tools = root / 'arm'
+            tools.mkdir()
+            for name in ('cascadia.bin', *entry.TOOLS):
+                (tools / name).write_bytes(b'component')
+
+            def command(module, *args):
+                self.assertEqual(module, 'orchard.inputs')
+                path = Path(args[args.index('--output') + 1])
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps({'platforms': {'apple-armv7': {
+                    'root_format': 'lwvm', 'boards': {'p105': 's5l8942x-p105'},
+                    'tools': {name: str(tools / name) for name in entry.TOOLS},
+                    'loader': {'kind': 'cascadia', 'file': str(tools / 'cascadia.bin')}}}}))
+
+            argv = ['build', '--version', 'test', '--output', str(root / 'release'),
+                    '--orchard', str(orchard), '--platform', 'apple-armv7']
+            with patch.dict(os.environ, dict(os.environ)), patch.object(sys, 'argv', argv), \
+                    patch.object(entry, 'PROJECT', root), patch.object(entry, 'orchard_command', command), \
+                    patch.object(entry, 'component') as component, \
+                    self.assertRaisesRegex(ValueError, 'requires tools.lwvm'):
+                entry.main()
+            component.assert_not_called()
 
 
 if __name__ == '__main__':
