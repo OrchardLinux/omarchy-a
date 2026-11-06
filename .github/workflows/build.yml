@@ -180,6 +180,9 @@ jobs:
       # orchard's producers run as commands from this snapshot (ci/dependencies clones it).
       ORCHARD_CHECKOUT: ${{ github.workspace }}/.orchard
       HARDWARE_TAG: ${{ needs.orchard.outputs.tag }}
+      # The root image keeps its owners: as root, directly on this runner.
+      ORCHARD_BUILD_NATIVE: '1'
+      ORCHARD_BUILD_ENV_ID: ubuntu-24.04-arm-root-image
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -226,7 +229,6 @@ jobs:
         run: |
           . .venv/bin/activate
           tar -xzf out/downloads/omarchy-userspace.tar.gz -C out
-          python ci/normalize-recovery-tools.py --archive out/base/rootfs.tar.gz --receipt out/base/rootfs.tar.gz.json
           tar -xzf out/downloads/boot-inputs.tar.gz -C out
           VERSION="preview-$RUN_ID"
           TAG="v$VERSION"
@@ -241,15 +243,16 @@ jobs:
           # component given from the release bundles, nothing is fetched or built.
           PYTHONPATH="$ORCHARD_CHECKOUT/src" python -m orchard.inputs --output out/inputs.json "${kernels[@]}" \
             --m1n1 "$tools/quiet/m1n1.bin" --pongo "$tools/quiet/pongo.bin" --tools "$tools/boot"
-          shared() { python -c 'import json, sys; print(json.load(open("out/inputs.json"))["shared"][sys.argv[1]])' "$1"; }
           tool() { python -c 'import json, sys; print(json.load(open("out/inputs.json"))["shared"]["tools"][sys.argv[1]])' "$1"; }
-          python -m release.build --release "$VERSION" --inputs out/inputs.json \
+          # A published orchard build's files are linked from the release; a run's own are hosted with it.
+          source=(--orchard-release "$HARDWARE_TAG")
+          if [[ -n "${HARDWARE_ARTIFACT_DIR:-}" && -d "${HARDWARE_ARTIFACT_DIR:-}" ]]; then
+            source=(--inputs out/inputs.json)
+          fi
+          python -m release.build --release "$VERSION" "${source[@]}" \
             --base out/base/rootfs.tar.gz --base-receipt out/base/rootfs.tar.gz.json \
-            --loader "$(shared m1n1)" --splash out/boot/artwork/splash \
-            --logo out/boot/artwork/logo.bin --pongo "$(shared pongo)" \
-            --busybox "$(tool busybox)" --dropbear "$(tool dropbear)" \
-            --dropbearkey "$(tool dropbearkey)" --wpa-supplicant "$(tool wpa_supplicant)" \
-            --wpa-cli "$(tool wpa_cli)" --iw "$(tool iw)" \
+            --splash out/boot/artwork/splash --logo out/boot/artwork/logo.bin \
+            --busybox "$(tool busybox)" --dropbear "$(tool dropbear)" --dropbearkey "$(tool dropbearkey)" \
             --cursor-tools out/cursor --bluetooth-tools out/bluetooth --labwc-tools out/labwc \
             --output out/release
           python -m release.audit out/release/release.toml

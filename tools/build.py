@@ -5,7 +5,7 @@ orchard runs it as `tools/build.py --version VERSION --output DIRECTORY
 [--platform NAME ... | --platform all]` in this checkout. Components land in out/components/NAME/KEY/, keyed by the
 files they are made from, so a build redoes only what changed: a shell edit
 rebuilds the desktop payload and the root, not Labwc. orchard supplies its
-m1n1, Pongo, the static recovery tools and every platform's kernel
+m1n1, Pongo, the static tools and every platform's kernel
 (python -m orchard.inputs); its producers run as commands from the orchard
 snapshot (ORCHARD_CHECKOUT, which orchard build sets, or --orchard DIR) and
 none of its Python is imported (orchard docs/distribution-contract.md). The
@@ -69,7 +69,7 @@ def main():
     os.environ['ORCHARD_CHECKOUT'] = str(orchard.resolve())
     if 'all' in args.platform and len(args.platform) > 1:
         parser.error('--platform all builds every platform and combines with no other')
-    # The release builder builds every platform when it is given none.
+    # orchard.inputs resolves every platform when it is given none.
     selected = [part for name in args.platform if name != 'all' for part in ('--platform', name)]
 
     desktop, desktop_key = component(PROJECT, 'desktop', INPUTS['desktop'],
@@ -98,12 +98,11 @@ def main():
     tools = shared['tools']
     python('-m', 'release.build', '--release', args.version, '--inputs', inputs,
            '--base', base / 'rootfs.tar.gz', '--base-receipt', base / 'rootfs.tar.gz.json',
-           '--loader', shared['m1n1'], '--splash', artwork / 'splash', '--logo', artwork / 'logo.bin',
-           '--pongo', shared['pongo'],
-           *(part for name in ('busybox', 'dropbear', 'dropbearkey', 'wpa_supplicant', 'wpa_cli', 'iw')
-             for part in ('--' + name.replace('_', '-'), tools[name])),
+           '--splash', artwork / 'splash', '--logo', artwork / 'logo.bin',
+           *(part for name in ('busybox', 'dropbear', 'dropbearkey')
+             for part in ('--' + name, tools[name])),
            '--cursor-tools', cursor, '--bluetooth-tools', bluetooth, '--labwc-tools', labwc,
-           *selected, '--output', args.output)
+           '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
     # install.sh and orchard-install.pyz, with orchard's launch loaders.
     orchard_command('orchard.installer', 'release', args.output)

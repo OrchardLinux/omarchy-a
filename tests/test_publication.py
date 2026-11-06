@@ -36,15 +36,15 @@ class HostedPublication(unittest.TestCase):
             self.assertEqual(pin['bytes'], manifest.stat().st_size)
             self.assertNotIn('file', pin)
             doc = manifests.tomllib.loads(manifest.read_text())
-            receipts = [doc['root'], doc['pongo']]
-            receipts += [files[role] for files in doc['platforms'].values() for role in ('boot', 'layer')]
-            self.assertEqual(len(receipts), 6)
+            receipts = [doc['root'], doc['root']['map'], doc['logo'], doc['pongo'], doc['m1n1'], doc['install_tools']]
+            receipts += [files['layer'] for files in doc['platforms'].values()]
+            self.assertEqual(len(receipts), 8)
             for receipt in receipts:
                 self.assertNotIn('file', receipt)
                 self.assertIn('/releases/download/v1.2.3/', receipt['url'])
             self.assertEqual(doc['platforms']['apple-4k']['boards'], ['n61'])
             self.assertEqual((root / 'local/index.toml').read_bytes(), original)
-            self.assertEqual((output / 'rootfs.tar.zst').read_bytes(), b'rootfs.tar.zst')
+            self.assertEqual((output / 'root.blocks.zst').read_bytes(), b'root.blocks.zst')
             with self.assertRaises(subprocess.CalledProcessError):
                 publish(root / 'local', 'v1.2.3', output)
 
