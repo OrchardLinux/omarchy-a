@@ -155,32 +155,6 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
         with self.assertRaisesRegex(ValueError, 'content differs'):
             apply(member, b'X' * len(data), records[member.name], {})
 
-    def test_recovery_framing_preserves_the_compressed_initramfs(self):
-        import struct
-        from orchard.image.assemble import INITRAMFS_MAGIC, LOGO_BYTES, LOGO_MAGIC
-        from release.audit import audit_recovery
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            fdt = b'\xd0\x0d\xfe\xed'
-            logo = LOGO_MAGIC + bytes(LOGO_BYTES - len(LOGO_MAGIC))
-            inputs = {'loader': b'loader', 'logo': logo, 'dtb': fdt + b'a', 'dtb2': fdt + b'b', 'kernel': b'kernel',
-                      'initramfs': gzip.compress(b'070701' + b'\0' * 32)}
-            for name, data in inputs.items():
-                (root / name).write_bytes(data)
-            (root / 'profile.json').write_text(json.dumps({'bootargs': 'chosen.bootargs=test\n'}))
-            image = root / 'recovery.bin'
-            argv = [sys.executable, '-m', 'orchard.image.assemble', '--manifest', str(root / 'profile.json'),
-                    '--output', str(image)]
-            for name in inputs:
-                argv.extend(['--' + name.rstrip('2'), str(root / name)])
-            subprocess.run(argv, check=True, capture_output=True)
-            expected = (inputs['loader'] + logo + b'chosen.bootargs=test\n' + inputs['dtb'] + inputs['dtb2'] + inputs['kernel'] +
-                        INITRAMFS_MAGIC + struct.pack('<I', len(inputs['initramfs'])) + inputs['initramfs'])
-            self.assertEqual(image.read_bytes(), expected)
-            audit = audit_recovery(image)
-            self.assertEqual(audit['initramfs_sha256'], hashlib.sha256(inputs['initramfs']).hexdigest())
-            self.assertEqual(audit['dtbs'], 2)
-
     def test_recovery_adt_endpoint_owns_size_and_exact_binary_selection(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -4,7 +4,6 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import subprocess
-import struct
 import tarfile
 
 from release import snapshot
@@ -12,46 +11,6 @@ from release.manifests import read_release
 
 from .common import PROJECT
 from .public_root import sha
-from .recovery_audit import audit_runtime
-
-# m1n1's payload framing (orchard docs/ram-development.md, "Assembling by hand").
-INITRAMFS_MAGIC = b'm1n1_initramfs'
-LOGO_MAGIC = b'm1n1_logo_256128'
-
-
-def audit_recovery(image):
-    receipt = json.loads(Path(str(image) + '.json').read_text())
-    parts, dtbs, end = {}, 0, 0
-    with image.open('rb') as stream:
-        for row in receipt['components']:
-            # One DTB per device the recovery boots; every other part once.
-            if (row['name'] in parts and row['name'] != 'dtb') or row['offset'] != end or row['bytes'] <= 0:
-                raise ValueError('Invalid recovery component boundaries')
-            data = stream.read(row['bytes'])
-            if len(data) != row['bytes'] or hashlib.sha256(data).hexdigest() != row['sha256']:
-                raise ValueError('Recovery component integrity mismatch: ' + row['name'])
-            if row['name'] == 'dtb':
-                if not data.startswith(b'\xd0\x0d\xfe\xed'):
-                    raise ValueError('Recovery DTB component is not a devicetree')
-                dtbs += 1
-            parts[row['name']] = (row, data[:32])
-            end += row['bytes']
-    if end != image.stat().st_size or receipt['image_sha256'] != sha(image):
-        raise ValueError('Recovery image receipt mismatch')
-    if set(parts) != {'loader', 'logo', 'bootargs', 'dtb', 'kernel', 'initramfs_header', 'initramfs'}:
-        raise ValueError('Missing recovery component')
-    # The Omarchy mark, which orchard's m1n1 draws only directly after itself.
-    if receipt['components'][1]['name'] != 'logo' or not parts['logo'][1].startswith(LOGO_MAGIC):
-        raise ValueError('The recovery logo is not m1n1\'s custom logo payload directly after m1n1')
-    header = parts['initramfs_header'][1]
-    size = parts['initramfs'][0]['bytes']
-    if (receipt.get('initramfs_encoding') != 'm1n1_initramfs' or
-            header != INITRAMFS_MAGIC + struct.pack('<I', size) or
-            not parts['initramfs'][1].startswith(b'\x1f\x8b')):
-        raise ValueError('Initramfs is not framed for Linux decompression')
-    return {'passed': True, 'dtbs': dtbs, 'initramfs_encoding': receipt['initramfs_encoding'],
-            'compressed_bytes': size, 'initramfs_sha256': parts['initramfs'][0]['sha256']}
-
 
 def private_firmware(orchard=None):
     """Where any board of the orchard snapshot puts its private firmware; none of it may be public."""
@@ -105,28 +64,19 @@ def audit(manifest, orchard=None):
     if record.get('schema') != 2 or record.get('protocol') != 1:
         raise ValueError('Incompatible release manifest')
     private = private_firmware(orchard)
-    root_path = asset(manifest, record['root'], 'root')
-    asset(manifest, record['pongo'], 'pongo')
+    # The checks read the tree the image was made from; orchard.image.root_image made it, and checks it.
+    root_path = asset(manifest, {'file': 'rootfs.tar.zst', **{key: value for key, value in json.loads(
+        (Path(manifest).parent / 'rootfs.json').read_text()).items() if key in ('bytes', 'sha256')}}, 'root')
+    for role, item in (('root image', record['root']), ('root map', record['root']['map']), ('logo', record['logo']),
+                       ('pongo', record['pongo']), ('m1n1', record['m1n1']), ('install tools', record['install_tools'])):
+        asset(manifest, item, role)
     platforms, layers = {}, {}
     for name, files in sorted(record['platforms'].items()):
         layer = audit_layer(asset(manifest, files['layer'], name + ' layer'), name, files['layer'], private)
         if sorted(layer['boards']) != sorted(files['boards']):
             raise ValueError(f'The manifest and the {name} layer list different boards')
-        image = asset(manifest, files['boot'], name + ' recovery')
-        recovery = audit_recovery(image)
-        if recovery['dtbs'] != len(set(layer['boards'].values())):
-            raise ValueError(f'The {name} recovery does not start every board of its platform')
-        runtime = audit_runtime(image, layer['kernel_release'], record['release'], private)
-        # The recovery runs the kernel the installed entry boots: the same modules.
-        base = f'usr/lib/modules/{layer["kernel_release"]}/'
-        for path, digest in layer['hashes'].items():
-            if (path.startswith(base) and path not in (base + 'vmlinuz', base + 'initrd') and
-                    not path.startswith(base + 'dtb/') and
-                    runtime['hashes'].get(path) != digest):
-                raise ValueError(f'The {name} recovery and layer have different modules: {path}')
-        recovery['runtime_members_verified'] = runtime['members']
         platforms[name] = {'boards': sorted(layer['boards']), 'kernel_release': layer['kernel_release'],
-                           'layer_files': len(layer['hashes']), 'recovery': recovery}
+                           'layer_files': len(layer['hashes'])}
         layers[name] = layer['hashes']
     hashes, links, modes, owners, groups, sizes = {}, {}, {}, {}, {}, {}
     names, ancestors, directories = set(), set(), set()

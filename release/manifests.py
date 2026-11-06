@@ -21,11 +21,11 @@ def table(name, row):
     return '\n[' + name + ']\n' + ''.join(key + ' = ' + json.dumps(value) + '\n' for key, value in row.items())
 
 
-def write(output, version, root, platforms, orchard):
+def write(output, version, root, offered, orchard):
     """release.toml and index.toml in OUTPUT.
 
-    PLATFORMS maps each platform to its boards, recovery (`boot`) and
-    orchard layer receipts; ORCHARD is the snapshot's revision ({'commit', 'modified'}).
+    ROOT is orchard.image.root_image's table, OFFERED orchard's platforms.toml beside it;
+    ORCHARD is the snapshot's revision ({'commit', 'modified'}).
     """
     document = ('schema = 2\nkind = "orchard.install"\ndistro = "omarchy-a"\n'
                 'name = "Omarchy A"\nversion = ' + json.dumps(version) + '\n'
@@ -38,14 +38,15 @@ def write(output, version, root, platforms, orchard):
                                   'ready': '/run/omarchy-greeter/ready.json'})
     document += table('install.account', {'user': 'tablet', 'password': True, 'pin': True,
                                           'passwordless_sudo': False})
-    row = receipt(output / 'rootfs.tar.zst')
-    row.update({key: root[key] for key in ('compression', 'expanded_bytes', 'members')})
-    document += table('root', row)
-    document += table('pongo', receipt(output / 'pongo.bin'))
-    for name, files in sorted(platforms.items()):
-        document += f'\n[platforms.{name}]\nboards = {json.dumps(files["boards"])}\n'
-        document += table(f'platforms.{name}.boot', files['boot'])
-        document += table(f'platforms.{name}.layer', files['layer'])
+    document += table('root', {key: value for key, value in root.items() if key != 'map'})
+    document += table('root.map', root['map'])
+    document += table('logo', receipt(output / 'logo.bin'))
+    document += table('pongo', offered['loaders']['pongo'])
+    document += table('m1n1', offered['loaders']['m1n1'])
+    document += table('install_tools', offered['install_tools'])
+    for name, layer in sorted(offered['platforms'].items()):
+        document += f'\n[platforms.{name}]\nboards = {json.dumps(layer["boards"])}\n'
+        document += table(f'platforms.{name}.layer', {key: value for key, value in layer.items() if key != 'boards'})
     manifest = output / 'release.toml'
     with manifest.open('x') as stream:
         stream.write(document)
@@ -61,4 +62,5 @@ def read_release(manifest):
     if value.get('schema') != 2 or value.get('kind') != 'orchard.install' or value.get('distro') != 'omarchy-a':
         raise ValueError('Expected an Omarchy Orchard installation manifest')
     return {'schema': value['schema'], 'protocol': value['protocol'], 'release': value['version'],
-            'root': value['root'], 'pongo': value['pongo'], 'platforms': value['platforms']}
+            'root': value['root'], 'pongo': value['pongo'], 'm1n1': value['m1n1'],
+            'install_tools': value['install_tools'], 'logo': value['logo'], 'platforms': value['platforms']}
