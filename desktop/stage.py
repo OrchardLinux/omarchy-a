@@ -128,6 +128,12 @@ def main():
     (target / "usr/local/libexec/arch-ipad-rotate-output").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-touch-output").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-login-session").chmod(0o755)
+    # The base overlay preserves directory modes. Set the target layout
+    # explicitly so a private build umask cannot block the tablet session.
+    home = target / "home/tablet"
+    for path in [target, *target.rglob("*")]:
+        if not path.is_symlink() and path.is_dir():
+            path.chmod(0o700 if path.is_relative_to(home) else 0o755)
     # Record a content hash for each staged payload file.
     files = sorted(p for p in target.rglob("*") if p.is_file() and not p.is_symlink())
     manifest = {str(p.relative_to(target)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
