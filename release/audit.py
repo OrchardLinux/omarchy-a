@@ -7,6 +7,7 @@ import subprocess
 import tarfile
 
 from release import snapshot
+from release.architecture import validate
 from release.manifests import read_release
 
 from .common import PROJECT
@@ -65,10 +66,18 @@ def audit(manifest, orchard=None):
         raise ValueError('Incompatible release manifest')
     private = private_firmware(orchard)
     # The checks read the tree the image was made from; orchard.image.root_image made it, and checks it.
-    root_path = asset(manifest, {'file': 'rootfs.tar.zst', **{key: value for key, value in json.loads(
-        (Path(manifest).parent / 'rootfs.json').read_text()).items() if key in ('bytes', 'sha256')}}, 'root')
-    for role, item in (('root image', record['root']), ('root map', record['root']['map']), ('logo', record['logo']),
-                       ('pongo', record['pongo']), ('m1n1', record['m1n1']), ('install tools', record['install_tools'])):
+    root_receipt = json.loads((Path(manifest).parent / 'rootfs.json').read_text())
+    architecture = validate(root_receipt.get('architecture', 'aarch64'))
+    root_path = asset(manifest, {'file': 'rootfs.tar.zst', **{key: value for key, value in root_receipt.items()
+                                                              if key in ('bytes', 'sha256')}}, 'root')
+    if architecture == 'aarch64' and not ({'pongo', 'm1n1'} <= record['loaders'].keys() and record['logo']):
+        raise ValueError('An arm64 release boots with orchard\'s Pongo and m1n1, and has a logo')
+    if architecture == 'armv7h' and (record['boot_method'] != 'recovery-autogo' or record['logo'] or
+                                     not all(name.startswith('cascadia ') for name in record['loaders'])):
+        raise ValueError('A 32-bit release boots with each board\'s Cascadia loader, and has no logo')
+    for role, item in (('root image', record['root']), ('root map', record['root']['map']),
+                       *((('logo', record['logo']),) if record['logo'] else ()),
+                       *record['loaders'].items(), ('install tools', record['install_tools'])):
         asset(manifest, item, role)
     platforms, layers = {}, {}
     for name, files in sorted(record['platforms'].items()):
@@ -153,10 +162,15 @@ def audit(manifest, orchard=None):
                 raise ValueError('Privileged package file differs: ' + name)
     if not cursor or hashes.get('usr/libexec/omarchy-wtype') != cursor['files'].get('wtype'):
         raise ValueError('Startup cursor helper differs from build receipt')
+    # The helpers built for the desktop are of the root's architecture.
+    if cursor.get('architecture') != architecture:
+        raise ValueError('Startup cursor helper architecture differs from root')
     if hashes.get('usr/share/licenses/omarchy-wtype/LICENSE') != cursor['files'].get('LICENSE'):
         raise ValueError('Missing startup cursor helper license')
     verify_bluetooth(bluetooth, hashes, modes, owners, groups)
     verify_labwc(labwc, hashes, modes, owners, groups)
+    if labwc.get('architecture', 'aarch64') != architecture:
+        raise ValueError('Labwc architecture differs from root')
     if 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml' not in desktop:
         raise ValueError('Pairing UI is absent from desktop integrity manifest')
     for name in ('omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-powerd', 'omarchy-powerctl', 'omarchy-bluetooth-pair'):
@@ -168,7 +182,7 @@ def audit(manifest, orchard=None):
         raise ValueError('Power, lock and sleep have no owner: omarchy-powerd is not enabled')
     if links.get('lib') != (True, 'usr/lib') or owners.get('home/tablet') != 1000 or sizes.get('etc/machine-id') != 0:
         raise ValueError('Invalid root/session contract')
-    return {'passed': True, 'hardware_validated': False, 'release': record['release'],
+    return {'passed': True, 'hardware_validated': False, 'release': record['release'], 'architecture': architecture,
             'members': len(names), 'desktop_files_verified': len(desktop),
             'root_sha256': record['root']['sha256'], 'platforms': platforms,
             'privileged_entries_verified': len(privileges)}

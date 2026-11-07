@@ -1,0 +1,10 @@
+{
+  "omacalc": {
+    "version": "0.3.1",
+    "commit": "573d7106f5c6c0225864eb8634ae37ddcb657f63",
+    "urls": [
+      "https://github.com/omacom/omacalc/archive/573d7106f5c6c0225864eb8634ae37ddcb657f63.tar.gz"
+    ],
+    "sha256": "6a4ad731acb4f68226b975e1b817b2907fea1534d52d1e769564a76a48f3eafc"
+  }
+}

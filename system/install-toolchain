@@ -12,7 +12,7 @@ rank-mirrors
 pacman-key --init
 pacman-key --populate archlinuxarm
 # The base image's kernel and firmware are not needed to build: never download them.
-mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-firmware.*)$')
+mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-armv7|linux-firmware.*)$')
 (( ${#unneeded[@]} == 0 )) || pacman -Rdd --noconfirm "${unneeded[@]}"
 packages=(arch-install-scripts python)
 pacman-download -Sy --noconfirm --needed "${packages[@]}"

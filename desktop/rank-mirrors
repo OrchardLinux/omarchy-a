@@ -24,6 +24,7 @@ candidates=(
   mirrors.tuna.tsinghua.edu.cn/archlinuxarm mirrors.ustc.edu.cn/archlinuxarm
 )
 arch=$(uname -m)
+case "$arch" in armv7l|armv7|armhf) arch=armv7h;; esac
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 

@@ -1,0 +1,18 @@
+{
+  "schema": 2,
+  "architecture": "armv7h",
+  "build_date": "2026-08-05",
+  "urls": [
+    "https://github.com/OrchardLinux/omarchy-a/releases/download/armv7-bootstrap-20260805/ArchLinuxARM-armv7-20260805.tar.gz",
+    "http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-latest.tar.gz"
+  ],
+  "signature_urls": [
+    "https://github.com/OrchardLinux/omarchy-a/releases/download/armv7-bootstrap-20260805/ArchLinuxARM-armv7-20260805.tar.gz.sig",
+    "http://os.archlinuxarm.org/os/ArchLinuxARM-armv7-latest.tar.gz.sig"
+  ],
+  "bytes": 770429322,
+  "sha256": "ebe0fa119dea45e3af0aa61785676bdbf417bc5f754d529b87255dbf0ca4e3f0",
+  "signature_sha256": "0d4bb680d381c8053c378fad27cedb67446b39b7bff1c87257ebf6743db0fd94",
+  "signer_source": "https://archlinuxarm.org/about/package-signing",
+  "signer": "68B3537F39A313B3E574D06777193F152BDBE6A6"
+}

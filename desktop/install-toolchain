@@ -12,7 +12,7 @@ rank-mirrors
 pacman-key --init
 pacman-key --populate archlinuxarm
 # The base image's kernel and firmware are not needed to build: never download them.
-mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-firmware.*)$')
+mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-armv7|linux-firmware.*)$')
 (( ${#unneeded[@]} == 0 )) || pacman -Rdd --noconfirm "${unneeded[@]}"
 packages=(base-devel wayland libxkbcommon pango scdoc pkgconf patch python python-pip git curl tar gzip
   # wlroots0.20 (packages/wlroots0.20): Arch's makedepends and the libraries it links

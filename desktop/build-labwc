@@ -10,6 +10,7 @@ import subprocess
 import tarfile
 import tempfile
 from snapshot_buildenv import buildenv
+from target import validate, check_elf, machine, podman_arch, builder, source_pins, check_package
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
@@ -23,10 +24,13 @@ def sha(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--architecture', default='aarch64', choices=('aarch64', 'armv7h'))
     parser.add_argument('--archive', type=Path)
+    parser.add_argument('--builder-image', help='existing target compiler image')
     args = parser.parse_args()
     if args.output.exists():
         parser.error('Choose a new Labwc output directory')
+    image = builder(buildenv, args.architecture, args.builder_image, labwc=True)
     pin = json.loads((HERE / 'labwc/source.json').read_text())
     patch = HERE / 'labwc/0001-cancel-super-tap-on-pointer.patch'
     if sha(patch) != pin['patch_sha256']:
@@ -34,8 +38,7 @@ def main():
     data = args.archive.read_bytes() if args.archive else urllib.request.urlopen(pin['url'], timeout=30).read()
     if hashlib.sha256(data).hexdigest() != pin['sha256']:
         parser.error('Labwc source differs from pin')
-    buildenv.build(IMAGE, HERE / 'labwc/Containerfile', HERE / 'labwc')
-    image_id = buildenv.identity(IMAGE)
+    image_id = buildenv.identity(image)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=args.output.parent, prefix='.labwc-') as directory:
         work = Path(directory).resolve()
@@ -55,7 +58,7 @@ def main():
         subprocess.run(['patch', '-p1', '-i', str(patch.resolve())], cwd=source, check=True)
         recipe = '''
 set -eu
-test "$(uname -m)" = aarch64
+test "$(uname -m)" = "$OMARCHY_MACHINE"
 meson setup "$ORCHARD_WORK/build" "$ORCHARD_SOURCE" --buildtype=release --wrap-mode=nofallback -Dman-pages=disabled -Dlabnag=disabled -Dxwayland=enabled -Dnls=enabled -Dsystemd-session=disabled
 meson compile -C "$ORCHARD_WORK/build" -j2
 cp "$ORCHARD_WORK/build/labwc" "$ORCHARD_OUTPUT/labwc"
@@ -63,12 +66,14 @@ pacman -Q > "$ORCHARD_OUTPUT/packages.lock"
 cc --version > "$ORCHARD_OUTPUT/compiler.txt"
 "$ORCHARD_OUTPUT/labwc" --version > "$ORCHARD_OUTPUT/version.txt"
 '''
-        buildenv.run(IMAGE, ['sh', '-c', recipe],
-                     [(source, '/source', True), (output, '/output', False)], root=True)
+        buildenv.run(image, ['sh', '-c', recipe],
+                     [(source, '/source', True), (output, '/output', False)], root=True,
+                     env={'OMARCHY_MACHINE': machine(args.architecture)}, arch=podman_arch(args.architecture))
+        check_elf(output / 'labwc', args.architecture, 'Labwc')
         shutil.copyfile(source / 'LICENSE', output / 'LICENSE')
         shutil.copyfile(patch, output / '0001-cancel-super-tap-on-pointer.patch')
         (output / 'source.tar.gz').write_bytes(data)
-        record = {'schema': 1, 'source': pin, 'compiler_image': image_id,
+        record = {'schema': 1, 'architecture': args.architecture, 'source': pin, 'compiler_image': image_id,
                   'build_options': ['release', 'nofallback', 'xwayland=enabled', 'nls=enabled', 'labnag=disabled'],
                   'files': {p.name: sha(p) for p in sorted(output.iterdir())}}
         (output / 'manifest.json').write_text(json.dumps(record, indent=2) + '\n')

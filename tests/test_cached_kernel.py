@@ -1,7 +1,10 @@
 """The release build refuses missing inputs before it assembles anything."""
 from contextlib import redirect_stderr
 import io
+import json
+import hashlib
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -22,9 +25,12 @@ class ReleaseInputs(unittest.TestCase):
             path = root / name
             if name.endswith('-tools'):
                 path.mkdir()
+                (path / 'manifest.json').write_text(json.dumps({'schema': 1, 'files': {}}))
             else:
                 path.write_text('fixture')
             argv += ['--' + name, str(path)]
+        (root / 'base-receipt').write_text(json.dumps({'release': 'base-fixture',
+            'bytes': (root / 'base').stat().st_size, 'sha256': hashlib.sha256((root / 'base').read_bytes()).hexdigest()}))
         return argv + ['--orchard', str(SNAPSHOT)]
 
     def test_the_root_comes_first_then_orchards_files(self):
@@ -40,7 +46,7 @@ class ReleaseInputs(unittest.TestCase):
                 root = Path(temporary)
                 argv = self.argv(root, '--orchard-release', 'nightly-1')
                 path = root / name
-                path.rmdir() if path.is_dir() else path.unlink()
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
                 with patch.object(sys, 'argv', argv), patch.object(build, 'build_root') as assemble, \
                         redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                     build.main()

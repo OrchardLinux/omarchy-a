@@ -1,6 +1,9 @@
 # Publishing Omarchy A
 
-Build and validate a coherent local release using [BUILD.md](../BUILD.md). Its rootfs and recovery must be produced together; do not combine artifacts from different builds.
+Build and validate a coherent local release using [BUILD.md](../BUILD.md). Its
+root and orchard's files must come from that build. The arm64 and the 32-bit
+(armv7h) release are two releases of the same shape, each its root as a block
+image; the 32-bit one is not published by the workflow below yet.
 
 ## GitHub builds
 
@@ -38,13 +41,13 @@ https://github.com/OrchardLinux/omarchy-a/releases/latest/download/index.toml
 
 Only that entry point follows latest. Its manifest and image references point to specific release tags, preventing cross-release mixing.
 
-Every release carries its installer: `install.sh` and `orchard-install.pyz` (orchard's core with this release's index, device data and launch loaders), made by `orchard.installer` from the orchard release CI pins and rewritten by `release.publish` for the release's URLs. The README's command runs the latest release's `install.sh`; the repository's `install.sh` only forwards to it, for older instructions. Publish the pinned [orchard release](https://github.com/OrchardLinux/orchard/blob/main/docs/releases.md) first: its tag provides the components and the loaders. Change the README's install command only once a release with `install.sh` is published.
+Every public release carries its installer: `install.sh` and `orchard-install.pyz` (orchard's core with this release's index, device data and launch loaders), made by `orchard.installer` from the orchard release CI pins and rewritten by `release.publish` for the release's URLs. The README's command runs the latest release's `install.sh`; the repository's `install.sh` only forwards to it, for older instructions. Publish the pinned [orchard release](https://github.com/OrchardLinux/orchard/blob/main/docs/releases.md) first: its tag provides the components and the loaders. Change the README's install command only once a release with `install.sh` is published.
 
 Before announcing a release:
 
 - Resolve its hosted index with `orchard resolve https://github.com/OrchardLinux/omarchy-a/releases/latest/download/index.toml` from a clean host environment.
 - Test installation and `orchard launch` after a cold restart on supported hardware; do not infer device qualification from unit tests or container checks.
-- Confirm the published root and recovery come from the audited build and retain their build receipts, source pins, licenses and corresponding source/build inputs.
+- Confirm the published root and orchard files come from the audited build and retain their build receipts, source pins, licenses and corresponding source/build inputs.
 - Include the experimental status and the README's automatic-login/passwordless-sudo warning in release notes.
 
 ## Updates

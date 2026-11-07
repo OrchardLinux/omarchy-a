@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Prepare an ARMv7 compiler from a hash-pinned and signature-checked Arch root.
+
+The selected Podman connection must already execute ARM32 binaries. This
+command does not install an emulator or change the host's default connection.
+The bootstrap is one dated Arch Linux ARM build: its copy in this repository's
+releases first, then upstream's "latest" while that is still the same build.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+from urllib.request import urlopen
+
+
+PROJECT = Path(__file__).resolve().parents[1]
+INPUTS = PROJECT / 'system/armv7'
+
+
+def sha(path):
+    result = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            result.update(chunk)
+    return result.hexdigest()
+
+
+def verify(archive, signature, pin):
+    if not archive.is_file() or not signature.is_file():
+        raise ValueError('Bootstrap and signature must be regular files')
+    if archive.stat().st_size != pin['bytes'] or sha(archive) != pin['sha256']:
+        raise ValueError('ARMv7 bootstrap differs from its pinned bytes')
+    if sha(signature) != pin['signature_sha256']:
+        raise ValueError('ARMv7 bootstrap signature differs from its pin')
+    # Short paths keep GnuPG's local socket within the macOS path limit.
+    with tempfile.TemporaryDirectory(prefix='oa-armv7-gpg-') as home:
+        command = ['gpg', '--homedir', home, '--batch', '--no-auto-key-retrieve']
+        subprocess.run([*command, '--import', str(INPUTS / 'archlinuxarm-build.asc')],
+                       check=True, capture_output=True, text=True, timeout=30)
+        checked = subprocess.run([*command, '--status-fd', '1', '--verify', str(signature), str(archive)],
+                                 check=True, capture_output=True, text=True, timeout=60)
+        expected = '[GNUPG:] VALIDSIG ' + pin['signer'] + ' '
+        if not any(line.startswith(expected) for line in checked.stdout.splitlines()):
+            raise ValueError('ARMv7 bootstrap signature has the wrong signer')
+    return pin['sha256']
+
+
+def fetch_first(urls, path, maximum, pinned):
+    """The first of URLS whose bytes are PINNED's sha256 (the dated copy, then upstream), into PATH."""
+    if path.exists():
+        return path
+    failures = []
+    for url in urls:
+        try:
+            fetch(url, path, maximum)
+        except (OSError, ValueError) as error:
+            failures.append(f'{url}: {error}')
+            continue
+        if sha(path) == pinned:
+            return path
+        path.unlink()
+        failures.append(f'{url}: another build than the pinned one')
+    raise ValueError('No source has the pinned ARMv7 bootstrap: ' + '; '.join(failures))
+
+
+def fetch(url, path, maximum):
+    if path.exists():
+        return path
+    temporary = tempfile.NamedTemporaryFile(prefix=path.name + '.', suffix='.part', dir=path.parent, delete=False)
+    partial = Path(temporary.name)
+    count = 0
+    try:
+        with temporary as output, urlopen(url, timeout=60) as source:
+            while block := source.read(1024 * 1024):
+                count += len(block)
+                if count > maximum:
+                    raise ValueError('Bootstrap download exceeds its pinned size bound')
+                output.write(block)
+        if path.exists():
+            partial.unlink()
+        else:
+            partial.replace(path)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    return path
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    parser.add_argument('--bootstrap', type=Path, help='existing official archive; otherwise use the pinned download')
+    parser.add_argument('--signature', type=Path, help='signature for --bootstrap (default: ARCHIVE.sig)')
+    parser.add_argument('--cache', type=Path, default=PROJECT / 'system/.work/armv7-bootstrap')
+    parser.add_argument('--connection', help='Podman connection for this build')
+    parser.add_argument('--output-image', default='localhost/omarchy-a-arch-builder:armv7h')
+    parser.add_argument('--receipt', type=Path, required=True)
+    parser.add_argument('--verify-only', action='store_true')
+    args = parser.parse_args()
+    if args.receipt.exists():
+        parser.error('Choose a new compiler receipt path')
+    pin = json.loads((INPUTS / 'bootstrap.json').read_text())
+    args.cache.mkdir(parents=True, exist_ok=True)
+    archive = args.bootstrap or fetch_first(pin['urls'], args.cache / 'bootstrap.tar.gz', pin['bytes'], pin['sha256'])
+    signature = args.signature or (Path(str(args.bootstrap) + '.sig') if args.bootstrap else
+                                  fetch_first(pin['signature_urls'], args.cache / 'bootstrap.tar.gz.sig', 16384,
+                                              pin['signature_sha256']))
+    verify(archive, signature, pin)
+    result = {'schema': 1, 'architecture': 'armv7h', 'bootstrap': pin, 'signature_valid': True}
+    if not args.verify_only:
+        podman = [shutil.which('podman') or 'podman']
+        if args.connection:
+            podman += ['--connection', args.connection]
+        base = 'localhost/omarchy-a-armv7-base:' + pin['sha256'][:16]
+        exists = subprocess.run([*podman, 'image', 'exists', base], check=False, timeout=30).returncode == 0
+        if not exists:
+            subprocess.run([*podman, 'import', '--arch', 'arm', '--variant', 'v7',
+                            '--change', 'LABEL org.orchard.bootstrap.sha256=' + pin['sha256'],
+                            str(archive.resolve()), base], check=True, timeout=600)
+        inspection = json.loads(subprocess.check_output([*podman, 'image', 'inspect', base], text=True, timeout=30))[0]
+        labels = inspection.get('Labels') or inspection.get('Config', {}).get('Labels', {})
+        if labels.get('org.orchard.bootstrap.sha256') != pin['sha256']:
+            raise ValueError('Existing compiler base has another bootstrap pin')
+        subprocess.run([*podman, 'build', '--platform', 'linux/arm/v7', '--build-arg', 'BASE_IMAGE=' + base,
+                        '-f', str(INPUTS / 'Containerfile'), '-t', args.output_image, str(PROJECT)],
+                       check=True, timeout=7200)
+        result['image'] = args.output_image
+        result['image_id'] = subprocess.check_output([*podman, 'image', 'inspect', '--format', '{{.Id}}',
+                                                     args.output_image], text=True, timeout=30).strip()
+        result['packages_lock'] = subprocess.check_output([*podman, 'run', '--rm', '--platform', 'linux/arm/v7',
+                                                          args.output_image, 'cat',
+                                                          '/usr/share/omarchy-builder-packages.lock'], text=True, timeout=120)
+    args.receipt.parent.mkdir(parents=True, exist_ok=True)
+    with args.receipt.open('x') as output:
+        json.dump(result, output, indent=2)
+        output.write('\n')
+    print('Verified ARMv7 compiler inputs:', args.receipt)
+
+
+if __name__ == '__main__':
+    main()

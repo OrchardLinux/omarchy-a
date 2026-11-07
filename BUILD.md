@@ -17,9 +17,10 @@ orchard build [--version VERSION]
 builds a release into `out/releases/VERSION` (default `dev-DATE-TIME`) through
 `tools/build.py`, the entry `orchard.toml` names: each component below is kept in
 `out/components/NAME/KEY/`, keyed by its files, and rebuilt only when they
-change; the release is assembled and audited every time. `orchard run` then boots
-its recovery on the attached device without installing, and `orchard install`
-installs it. The rest of this page is what that entry runs, step by step.
+change; the release is assembled and audited every time. `orchard run` starts
+the selected kernel on the attached device and `orchard install` installs the
+release. `orchard build --platform apple-armv7` builds the 32-bit (armv7h)
+release instead. The rest of this page describes the producer steps.
 
 ## Local setup
 
@@ -47,17 +48,20 @@ Python 3.11.
 - `desktop/build-sources` and `desktop/build`: desktop applications and payload.
 - `system/build-rootfs`: signed Arch Linux ARM base and package receipt; see [system/README.md](system/README.md).
 - orchard supplies the kernel, DTBs and modules of every platform, its platform layer, and the static BusyBox/Dropbear recipes; see [orchard's build instructions](https://github.com/OrchardLinux/orchard/blob/main/BUILD.md). Local assembly builds or reuses each platform's kernel through orchard's shared cache. Build the static tools separately; supply explicit kernel bundles only when overriding that default.
-- `python boot/build-artwork --output DIR`: the Omarchy mark as data for orchard's m1n1: `splash` (480 px, painted by m1n1 for an installed boot entry) and `logo.bin` (m1n1's custom logo payload, 256 and 128 px, shown by the recovery). No m1n1 is built here; releases boot orchard's, `quiet/m1n1.bin` from the component bundle.
-- Pongo is not built here. Releases ship orchard's one Pongo, `quiet/pongo.bin` from the orchard component bundle (black screen; the logo appears with m1n1).
+- `python boot/build-artwork --output DIR`: the Omarchy mark: `splash` (480 px, painted for an installed boot entry) and `logo.bin` (256 and 128 px).
+- No loader is built here: a release names orchard's loaders as orchard's index lists them (arm64: Pongo and m1n1).
 
 Retain each component's receipt. Do not change hardware activation or timing as part of presentation changes.
 
 ## Assemble
 
 The following example uses distro-owned components collected under `out/components/`.
-A release covers every platform: one root image, and per platform a recovery
-(`recovery-PLATFORM.bin`) and orchard's platform layer (`platform-PLATFORM.tar.gz`:
-kernel, every board's DTB, modules), which the installer writes into the root.
+A release has one root of one userspace architecture, and the same shape for
+both: the root as a block image (`root.blocks.zst`, `root.map.json`), its logo,
+and orchard's platform layers, loaders and install tools, which
+`orchard.image.platforms_index` supplies from orchard's index of that
+architecture (`platforms.toml` for arm64, the separate 32-bit index for
+armv7h). No recovery image is part of a release.
 The kernels come from the same orchard builder and cache as `orchard build` in
 orchard's examples; matching inputs reuse the compiled bundles. Boot artwork,
 userspace and assembly remain owned by this repository; the m1n1 is orchard's.
@@ -71,32 +75,37 @@ python -m release.build \
   --inputs out/inputs.json \
   --base out/components/base/rootfs.tar.gz \
   --base-receipt out/components/base/rootfs.tar.gz.json \
-  --loader out/components/quiet/m1n1.bin \
   --splash out/components/artwork/splash \
   --logo out/components/artwork/logo.bin \
-  --pongo out/components/quiet/pongo.bin \
   --busybox out/components/boot/busybox \
   --dropbear out/components/boot/dropbear \
   --dropbearkey out/components/boot/dropbearkey \
-  --wpa-supplicant out/components/boot/wpa_supplicant \
-  --wpa-cli out/components/boot/wpa_cli \
-  --iw out/components/boot/iw \
   --cursor-tools out/components/desktop/cursor-tools \
   --bluetooth-tools out/components/desktop/bluetooth-tools \
   --labwc-tools out/components/desktop/labwc-tools \
   --output out/releases/0.1.0-orchard.3
 ```
 
-To use a staged kernel bundle instead (as CI does with orchard's published
-component bundles), pass `--kernel-dir PLATFORM=DIRECTORY` per platform; the
-others still come from `--inputs`, and without `--inputs` the given bundles are
-the release's platforms. `--platform PLATFORM` builds only that
-platform, for development; a release covers every platform. Each recovery carries
-the DTB of every board of its platform; m1n1 boots with the one matching the
-device. The cache respects `XDG_CACHE_HOME` and `ORCHARD_CACHE_DIR`, just like RAM
-builds.
+To use a staged kernel bundle, pass `--kernel-dir PLATFORM=DIRECTORY` to
+`orchard.inputs`. Select a subset there with `--platform PLATFORM`; the index
+consumes that document's exact selection. `release.build --orchard-release TAG`
+takes finished AArch64 files from a published Orchard build and accepts
+`--platform PLATFORM` to select its layers. `--architecture armv7h` builds the
+32-bit release; from a published build it names its platforms
+(`--platform apple-armv7`). The cache respects `XDG_CACHE_HOME`
+and `ORCHARD_CACHE_DIR`, just like RAM builds.
 
-Choose a new version and output directory for each build. Root builds first; recoveries embed its exact stream receipt, and `release.toml` and the index are written last. The installed root carries no Orchard device runtime: it boots directly from the boot entry orchard's installer writes.
+Choose a new version and output directory for each build. Root builds first,
+then orchard's files and the block image; `release.toml` and the index are
+written last. The cached base retains `base-<desktop-key>` in
+`etc/ipadlinux/release`; `etc/orchard/release.json` identifies the final
+release.
+
+For the ARMv7 compiler and build, see
+[ARMv7 desktop components](desktop/armv7/README.md). Building the armv7h
+desktop and base runs ARMv7 code: the builder image needs a Podman connection
+that executes ARM32 binaries (emulated on an arm64 host, 1 to 3 hours). The
+release step itself runs only arm64 tools.
 
 ## Validate without a device
 
@@ -106,7 +115,10 @@ python -m release.audit out/releases/0.1.0-orchard.3/release.toml
 PYTHONPATH=$ORCHARD_CHECKOUT/src python -m orchard.manifests --verify-local out/releases/0.1.0-orchard.3/index.toml
 ```
 
-The auditor verifies, per platform, the recovery's contents, endpoints and loader framing, orchard's layer against its receipt and SHA256SUMS, and that recovery and layer carry the same modules; for the root, desktop/privilege policy, that it holds no file of any layer, and the absence of private session/firmware data.
+The auditor checks the block image, map, logo, loaders and install tools, the
+platform layers against their receipts and SHA256SUMS, desktop integrity,
+package privileges, that the desktop helpers are of the root's architecture,
+and the absence of private session and firmware data.
 
 Headless finished-artifact checks use Podman without network or device passthrough:
 
