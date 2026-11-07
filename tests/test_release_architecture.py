@@ -89,9 +89,10 @@ class ReleaseArchitecture(unittest.TestCase):
             path = manifests.write(root, 'armv7-test', block, offered, {'commit': 'a' * 40, 'modified': False},
                                    architecture='armv7h')
             record = manifests.read_release(path)
-            self.assertEqual(record['boot_method'], 'cascadia')
-            self.assertEqual(sorted(record['loaders']), ['cascadia'])
+            self.assertEqual(record['boot_method'], 'recovery-autogo')
+            self.assertEqual(sorted(record['loaders']), ['cascadia p105'])
             self.assertIsNone(record['pongo'])
+            self.assertIsNone(record['logo'])
 
 
 if __name__ == '__main__':

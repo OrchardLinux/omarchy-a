@@ -70,9 +70,13 @@ def audit(manifest, orchard=None):
     architecture = validate(root_receipt.get('architecture', 'aarch64'))
     root_path = asset(manifest, {'file': 'rootfs.tar.zst', **{key: value for key, value in root_receipt.items()
                                                               if key in ('bytes', 'sha256')}}, 'root')
-    if architecture == 'aarch64' and not {'pongo', 'm1n1'} <= record['loaders'].keys():
-        raise ValueError('An arm64 release boots with orchard\'s Pongo and m1n1')
-    for role, item in (('root image', record['root']), ('root map', record['root']['map']), ('logo', record['logo']),
+    if architecture == 'aarch64' and not ({'pongo', 'm1n1'} <= record['loaders'].keys() and record['logo']):
+        raise ValueError('An arm64 release boots with orchard\'s Pongo and m1n1, and has a logo')
+    if architecture == 'armv7h' and (record['boot_method'] != 'recovery-autogo' or record['logo'] or
+                                     not all(name.startswith('cascadia ') for name in record['loaders'])):
+        raise ValueError('A 32-bit release boots with each board\'s Cascadia loader, and has no logo')
+    for role, item in (('root image', record['root']), ('root map', record['root']['map']),
+                       *((('logo', record['logo']),) if record['logo'] else ()),
                        *record['loaders'].items(), ('install tools', record['install_tools'])):
         asset(manifest, item, role)
     platforms, layers = {}, {}

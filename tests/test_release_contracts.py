@@ -23,9 +23,10 @@ SNAPSHOT = Path(orchard.__file__).resolve().parents[2]
 def armv7_files(output):
     """What orchard's 32-bit index offers, in its shape as assumed here: loaders, install tools, platforms."""
     root, _ = release_files(output)
-    for name in ('cascadia.bin', 'install-tools-armv7.tar.gz', 'platform-apple-armv7.tar.gz'):
+    for name in ('cascadia-p105.bin', 'install-tools-armv7.tar.gz', 'platform-apple-armv7.tar.gz'):
         (output / name).write_bytes(name.encode())
-    offered = {'loaders': {'cascadia': manifests.receipt(output / 'cascadia.bin')},
+    # orchard's platforms-armv7.toml: a Cascadia loader per board.
+    offered = {'architecture': 'arm', 'loaders': {'cascadia': {'p105': manifests.receipt(output / 'cascadia-p105.bin')}},
                'install_tools': manifests.receipt(output / 'install-tools-armv7.tar.gz'),
                'platforms': {'apple-armv7': {**manifests.receipt(output / 'platform-apple-armv7.tar.gz'),
                                              'compression': 'gzip', 'expanded_bytes': 10, 'members': 2,
@@ -76,7 +77,11 @@ class ReleaseContracts(unittest.TestCase):
                 events.append(module)
                 if module == 'orchard.image.platforms_index':
                     _, offered = (release_files if architecture == 'aarch64' else armv7_files)(output)
-                    text = ''.join(manifests.table('loaders.' + name, row) for name, row in offered['loaders'].items())
+                    loaders = offered['loaders']
+                    text = ''.join(manifests.table('loaders.cascadia.' + board, row)
+                                   for board, row in loaders.get('cascadia', {}).items())
+                    text += ''.join(manifests.table('loaders.' + name, row)
+                                    for name, row in loaders.items() if name != 'cascadia')
                     text += manifests.table('install_tools', offered['install_tools'])
                     text += ''.join(manifests.table('platforms.' + name, row)
                                     for name, row in offered['platforms'].items())
@@ -111,11 +116,13 @@ class ReleaseContracts(unittest.TestCase):
         events, commands, document, receipt = self.release('armv7h', '--orchard-release', 'nightly-test',
                                                            '--platform', 'apple-armv7')
         self.assertEqual(events, [('root', 'armv7h'), 'orchard.image.platforms_index', 'orchard.image.root_image'])
-        self.assertEqual(commands[0][1][1:], ('--release', 'nightly-test', '--platform', 'apple-armv7'))
+        self.assertEqual(commands[0][1][1:], ('--release', 'nightly-test', '--architecture', 'arm',
+                                              '--platform', 'apple-armv7'))
         self.assertEqual(document['root']['format'], 'blocks')
-        self.assertEqual(document['boot_method'], 'cascadia')
-        self.assertEqual(document['cascadia']['file'], 'cascadia.bin')
-        self.assertNotIn('pongo', document)
+        self.assertEqual(document['boot_method'], 'recovery-autogo')
+        self.assertEqual(document['cascadia']['p105']['file'], 'cascadia-p105.bin')
+        for absent in ('pongo', 'm1n1', 'logo'):
+            self.assertNotIn(absent, document)
         self.assertEqual(document['platforms']['apple-armv7']['boards'], ['p105'])
         self.assertNotIn('boot', document['platforms']['apple-armv7'], 'no recovery')
         self.assertEqual(receipt['architecture'], 'armv7h')

@@ -17,7 +17,7 @@ import tomllib
 from .public_root import build as build_root, sha
 from release import snapshot
 from release.architecture import platform_arch, validate
-from release.manifests import INDEXES, write as write_manifests
+from release.manifests import INDEXES, ORCHARD_ARCHITECTURES, write as write_manifests
 
 
 def orchard_files(args):
@@ -27,7 +27,10 @@ def orchard_files(args):
     a developer's own kernel. Only the former is linked instead of hosted when published.
     """
     if args.orchard_release:
-        source = ('--release', args.orchard_release, *(part for name in args.platform for part in ('--platform', name)))
+        # --architecture only for 32-bit: the arm64 index is the default (and older orchards lack the option).
+        source = ('--release', args.orchard_release,
+                  *(('--architecture', ORCHARD_ARCHITECTURES[args.architecture]) if args.architecture != 'aarch64' else ()),
+                  *(part for name in args.platform for part in ('--platform', name)))
     else:
         source = ('--inputs', args.inputs)
     snapshot.command(args.orchard, 'orchard.image.platforms_index', args.output, *source, stdout=subprocess.DEVNULL)
@@ -80,7 +83,8 @@ def main():
     offered = orchard_files(args)
     snapshot.command(args.orchard, 'orchard.image.root_image', args.output / 'rootfs.tar.zst', '--output', args.output)
     root = json.loads((args.output / 'root-image.json').read_text())
-    shutil.copyfile(args.logo, args.output / 'logo.bin')
+    if args.architecture == 'aarch64':   # a 32-bit release has no logo
+        shutil.copyfile(args.logo, args.output / 'logo.bin')
     published = write_manifests(args.output, args.release, root, offered, revision, architecture=args.architecture)
     # Assembly provenance is separate from the public installation contract.
     receipt = {'schema': 2, 'release': args.release, 'architecture': args.architecture, 'orchard': revision,
