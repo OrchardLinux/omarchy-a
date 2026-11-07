@@ -1,0 +1,36 @@
+# Omarchy A: ARMv7 build of Omacalc's pinned, MIT-licensed source.
+# Corresponding source: omacom/omacalc v0.3.1, commit 573d7106f5c6c0225864eb8634ae37ddcb657f63.
+pkgname=omacalc
+pkgver=0.3.1
+pkgrel=1
+pkgdesc="Omarchy calculator"
+arch=('armv7h')
+url='https://github.com/omacom/omacalc'
+license=('MIT' 'OFL-1.1')
+depends=('qt6-base' 'qt6-declarative' 'xdg-desktop-portal')
+makedepends=('qt6-tools')
+_commit=573d7106f5c6c0225864eb8634ae37ddcb657f63
+source=("$pkgname-$pkgver.tar.gz::$url/archive/$_commit.tar.gz")
+sha256sums=('6a4ad731acb4f68226b975e1b817b2907fea1534d52d1e769564a76a48f3eafc')
+
+build() {
+    cd "$srcdir/omacalc-$_commit"
+    mkdir -p build
+    cd build
+    qmake6 ../omacalc.pro
+    make
+}
+
+check() {
+    cd "$srcdir/omacalc-$_commit"
+    sh bin/test
+}
+
+package() {
+    cd "$srcdir/omacalc-$_commit"
+    install -Dm755 build/omacalc "$pkgdir/usr/bin/omacalc"
+    install -Dm644 pkgbuild/omacalc.desktop "$pkgdir/usr/share/applications/omacalc.desktop"
+    install -Dm644 pkgbuild/omacalc.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/omacalc.svg"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/omacalc/LICENSE"
+    install -Dm644 fonts/OFL.txt "$pkgdir/usr/share/licenses/omacalc/OFL.txt"
+}

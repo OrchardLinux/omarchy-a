@@ -1,7 +1,9 @@
 import hashlib
 import importlib.util
+import os
 from pathlib import Path
 import sys
+import struct
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -23,8 +25,16 @@ class GreeterStagingTests(unittest.TestCase):
             (theme / 'backgrounds/first.webp').write_bytes(b'fallback')
             (upstream / 'applications').mkdir()
             (upstream / 'applications/foot.desktop').write_text('[Desktop Entry]\n')
+            outside = root / 'outside-theme'
+            outside.mkdir(mode=0o711)
+            outside.chmod(0o711)
+            (upstream / 'themes/external-theme').symlink_to(outside, target_is_directory=True)
             keyboard = root / 'keyboard'
-            keyboard.write_bytes(b'keyboard')
+            elf = bytearray(64)
+            elf[:7] = b'\x7fELF\x02\x01\x01'
+            struct.pack_into('<HHI', elf, 16, 3, 183, 1)
+            struct.pack_into('<H', elf, 52, 64)
+            keyboard.write_bytes(elf)
             xpi = root / 'extension.xpi'
             xpi.write_bytes(b'extension')
             target = root / 'payload'
@@ -32,7 +42,20 @@ class GreeterStagingTests(unittest.TestCase):
                     '--keyboard-sha256', hashlib.sha256(keyboard.read_bytes()).hexdigest(),
                     '--omafox-xpi', str(xpi)]
             with patch.object(sys, 'argv', args), patch.object(stage, 'XPI_SHA', hashlib.sha256(xpi.read_bytes()).hexdigest()):
-                stage.main()
+                previous = os.umask(0o077)
+                try:
+                    stage.main()
+                finally:
+                    os.umask(previous)
+            for directory in [target, *target.rglob('*')]:
+                if not directory.is_symlink() and directory.is_dir():
+                    expected = 0o700 if directory.is_relative_to(target / 'home/tablet') else 0o755
+                    self.assertEqual(directory.stat().st_mode & 0o777, expected, directory)
+            self.assertEqual(outside.stat().st_mode & 0o777, 0o711)
+            self.assertTrue((target / 'home/tablet/.local/share/omarchy-ipad/themes/external-theme').is_symlink())
+            self.assertEqual((target / 'etc/greetd/config.toml').stat().st_mode & 0o777,
+                             (stage.HERE / 'greeter/greetd.toml').stat().st_mode & 0o777)
+            self.assertEqual((target / 'usr/local/libexec/arch-ipad-login-session').stat().st_mode & 0o777, 0o755)
             menu = target / 'home/tablet/.local/share/omarchy-ipad/default/omarchy/omarchy-menu.jsonc'
             self.assertIn('"system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"systemctl poweroff"}', menu.read_text())
             self.assertIn('"system.reboot": {"icon":"󰜉","label":"Reboot","action":"systemctl reboot"}', menu.read_text())

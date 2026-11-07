@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 import tomllib
 
+from release.architecture import validate, platform_arch, orchard_arch
+
+LAYER_FIELDS = ('file', 'url', 'bytes', 'sha256', 'compression', 'expanded_bytes', 'members', 'kernel_release')
+
 
 def sha(path):
     digest = hashlib.sha256()
@@ -21,15 +25,22 @@ def table(name, row):
     return '\n[' + name + ']\n' + ''.join(key + ' = ' + json.dumps(value) + '\n' for key, value in row.items())
 
 
-def write(output, version, root, offered, orchard):
+def write(output, version, root, offered, orchard, *, architecture='aarch64'):
     """release.toml and index.toml in OUTPUT.
 
-    ROOT is orchard.image.root_image's table, OFFERED orchard's platforms.toml beside it;
-    ORCHARD is the snapshot's revision ({'commit', 'modified'}).
+    OFFERED is Orchard's ARM64 platform index or the ARMv7 board's native
+    layer and recovery receipts. ORCHARD records the source revision.
     """
+    validate(architecture)
+    platforms = offered['platforms'] if architecture == 'aarch64' else offered
+    if root.get('architecture', 'aarch64') != architecture:
+        raise ValueError('Root receipt architecture differs from release')
+    if any(platform_arch(name) != architecture for name in platforms):
+        raise ValueError('Release platforms do not share the root architecture')
+    boot_method = 'recovery-autogo' if architecture == 'armv7h' else 'checkm8-pongo'
     document = ('schema = 2\nkind = "orchard.install"\ndistro = "omarchy-a"\n'
                 'name = "Omarchy A"\nversion = ' + json.dumps(version) + '\n'
-                'boot_method = "checkm8-pongo"\nmin_orchard = "0.2.0"\nprotocol = 1\n')
+                'boot_method = ' + json.dumps(boot_method) + '\nmin_orchard = "0.2.0"\nprotocol = 1\n')
     document += table('orchard', orchard)
     # The tablet user gets the password and the lock-screen PIN at install. The
     # installer waits over this boot's SSH for the greeter's ready record: the
@@ -38,15 +49,27 @@ def write(output, version, root, offered, orchard):
                                   'ready': '/run/omarchy-greeter/ready.json'})
     document += table('install.account', {'user': 'tablet', 'password': True, 'pin': True,
                                           'passwordless_sudo': False})
-    document += table('root', {key: value for key, value in root.items() if key != 'map'})
-    document += table('root.map', root['map'])
-    document += table('logo', receipt(output / 'logo.bin'))
-    document += table('pongo', offered['loaders']['pongo'])
-    document += table('m1n1', offered['loaders']['m1n1'])
-    document += table('install_tools', offered['install_tools'])
-    for name, layer in sorted(offered['platforms'].items()):
-        document += f'\n[platforms.{name}]\nboards = {json.dumps(layer["boards"])}\n'
-        document += table(f'platforms.{name}.layer', {key: value for key, value in layer.items() if key != 'boards'})
+    if architecture == 'aarch64':
+        document += table('root', {key: value for key, value in root.items() if key != 'map'})
+        document += table('root.map', root['map'])
+        document += table('logo', receipt(output / 'logo.bin'))
+        document += table('pongo', offered['loaders']['pongo'])
+        document += table('m1n1', offered['loaders']['m1n1'])
+        document += table('install_tools', offered['install_tools'])
+        for name, layer in sorted(platforms.items()):
+            if layer.get('architecture', 'arm64') != orchard_arch(architecture):
+                raise ValueError('Platform layer architecture differs from release')
+            document += f'\n[platforms.{name}]\nboards = {json.dumps(layer["boards"])}\n'
+            document += table(f'platforms.{name}.layer', {key: layer[key] for key in LAYER_FIELDS if key in layer})
+    else:
+        row = receipt(output / 'rootfs.tar.zst')
+        row.update({key: root[key] for key in ('compression', 'expanded_bytes', 'members')})
+        document += table('root', row)
+        for name, files in sorted(platforms.items()):
+            document += f'\n[platforms.{name}]\nboards = {json.dumps(files["boards"])}\n'
+            document += table(f'platforms.{name}.boot', files['boot'])
+            document += table(f'platforms.{name}.layer', {key: files['layer'][key]
+                              for key in LAYER_FIELDS if key in files['layer']})
     manifest = output / 'release.toml'
     with manifest.open('x') as stream:
         stream.write(document)
@@ -61,6 +84,14 @@ def read_release(manifest):
     value = tomllib.loads(Path(manifest).read_text())
     if value.get('schema') != 2 or value.get('kind') != 'orchard.install' or value.get('distro') != 'omarchy-a':
         raise ValueError('Expected an Omarchy Orchard installation manifest')
+    architectures = {platform_arch(name) for name in value['platforms']}
+    if len(architectures) != 1:
+        raise ValueError('Release platforms do not share one userspace architecture')
+    architecture = architectures.pop()
+    expected_method = 'recovery-autogo' if architecture == 'armv7h' else 'checkm8-pongo'
+    if value.get('boot_method') != expected_method:
+        raise ValueError('Release boot method differs from its platform architecture')
     return {'schema': value['schema'], 'protocol': value['protocol'], 'release': value['version'],
-            'root': value['root'], 'pongo': value['pongo'], 'm1n1': value['m1n1'],
-            'install_tools': value['install_tools'], 'logo': value['logo'], 'platforms': value['platforms']}
+            'architecture': architecture, 'boot_method': value['boot_method'],
+            'root': value['root'], 'pongo': value.get('pongo'), 'm1n1': value.get('m1n1'),
+            'install_tools': value.get('install_tools'), 'logo': value.get('logo'), 'platforms': value['platforms']}

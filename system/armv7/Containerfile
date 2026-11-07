@@ -1,0 +1,16 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY desktop/install-toolchain desktop/rank-mirrors desktop/pacman-download /tmp/desktop/
+COPY desktop/labwc/install-toolchain /tmp/labwc/install-toolchain
+RUN test "$(uname -m)" = armv7l && \
+    bash /tmp/desktop/install-toolchain && bash /tmp/labwc/install-toolchain && \
+    pacman-download -Syu --noconfirm --needed arch-install-scripts qt6-base qt6-declarative qt6-tools && \
+    pacman -Su --noconfirm --needed arch-install-scripts qt6-base qt6-declarative qt6-tools && \
+    pacman -Q > /usr/share/omarchy-builder-packages.lock && \
+    pacman -Sc --noconfirm && rm -rf /tmp/desktop /tmp/labwc
+# The shared makepkg defaults enable RELR, which GNU ld for ARM32 rejects.
+# Keep the remaining Arch hardening flags and check them with this compiler.
+RUN sed -i 's/ -Wl,-z,pack-relative-relocs//g' /etc/makepkg.conf && \
+    bash -euc 'source /etc/makepkg.conf; printf "int main(void) { return 0; }\n" | cc ${CFLAGS} ${LDFLAGS} -x c - -o /tmp/compiler-check; /tmp/compiler-check; rm /tmp/compiler-check'
+LABEL org.orchard.target.architecture="armv7h"
+WORKDIR /work

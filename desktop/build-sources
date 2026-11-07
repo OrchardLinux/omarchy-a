@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 from snapshot_buildenv import buildenv
+from target import validate, check_elf, machine, podman_arch, builder, source_pins, check_package
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -52,19 +53,22 @@ def fetch(entry, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--architecture', default='aarch64', choices=('aarch64', 'armv7h'))
+    parser.add_argument('--builder-image', help='existing target compiler image')
     args = parser.parse_args()
     output = args.output.resolve()
     if output.exists():
         parser.error(f'Output exists: {output}')
     if not buildenv.native() and not shutil.which('podman'):
         parser.error('Podman is required')
-    pins = json.loads((HERE / 'sources.json').read_text())
+    pins = source_pins(args.architecture)
     pkgbuild = HERE / 'packages/omafox/PKGBUILD'
     if pins['omafox']['sha256'] not in pkgbuild.read_text():
         parser.error('Omafox PKGBUILD and source pin differ')
     wlroots = HERE / 'packages/wlroots0.20/PKGBUILD'
     if pins['wlroots']['sha256'] not in wlroots.read_text():
         parser.error('wlroots PKGBUILD and source pin differ')
+    image = builder(buildenv, args.architecture, args.builder_image)
     (HERE / '.work').mkdir(exist_ok=True)
     try:
         with tempfile.TemporaryDirectory(prefix='sources-', dir=HERE / '.work') as temporary:
@@ -76,11 +80,12 @@ def main():
                 'omafox': fetch(pins['omafox'], sources / 'omafox-1.1.0.tar.gz'),
                 'wlroots': fetch(pins['wlroots'], sources / 'wlroots-0.20.2.tar.gz'),
             }
-            print('Preparing AArch64 desktop builder...', flush=True)
-            buildenv.build(IMAGE, HERE / 'Containerfile', HERE)
+            if args.architecture == 'armv7h':
+                fetched['omacalc'] = fetch(pins['omacalc'], sources / 'omacalc-0.3.1.tar.gz')
             print('Building keyboard and Omafox package...', flush=True)
             script = r'''
 set -euo pipefail
+test "$(uname -m)" = "$OMARCHY_MACHINE"
 build=$(mktemp -d "$ORCHARD_TMP/desktop.XXXXXX")
 trap 'rm -rf "$build"' EXIT
 mkdir -p "$build/keyboard" "$build/omafox" "$build/result" "$ORCHARD_WORK/result"
@@ -93,35 +98,56 @@ fi
 tar -xzf "$ORCHARD_WORK/sources/wvkbd-v0.20.tar.gz" --strip-components=1 -C "$build/keyboard"
 patch --batch --fuzz=0 -d "$build/keyboard" -p1 < "$ORCHARD_RECIPE/keyboard/wvkbd-0.20.patch"
 make -C "$build/keyboard" -j2 wvkbd-mobintl
-readelf -h "$build/keyboard/wvkbd-mobintl" | grep -q 'Machine:.*AArch64'
+readelf -h "$build/keyboard/wvkbd-mobintl" >/dev/null
 cp "$build/keyboard/wvkbd-mobintl" "$ORCHARD_WORK/result/wvkbd-mobintl"
 cp "$ORCHARD_RECIPE/packages/omafox/PKGBUILD" "$ORCHARD_RECIPE/packages/omafox/omafox.install" "$build/omafox/"
 cp "$ORCHARD_WORK/sources/omafox-1.1.0.tar.gz" "$build/omafox/omafox-1.1.0.tar.gz"
 cd "$build/omafox"
-PKGDEST="$build/result" makepkg --noconfirm --nodeps
-package="$build/result/omafox-1.1.0-1-aarch64.pkg.tar.xz"
+PKGDEST="$build/result" PKGEXT='.pkg.tar.xz' makepkg --noconfirm --nodeps
+package="$build/result/omafox-1.1.0-1-$OMARCHY_ARCH.pkg.tar.xz"
 test -s "$package"
-bsdtar -xOf "$package" .PKGINFO | grep -x 'arch = aarch64' >/dev/null
+bsdtar -xOf "$package" .PKGINFO | grep -x "arch = $OMARCHY_ARCH" >/dev/null
 cp "$package" "$ORCHARD_WORK/result/omafox.pkg.tar.xz"
 mkdir -p "$build/wlroots"
 cp "$ORCHARD_RECIPE"/packages/wlroots0.20/* "$build/wlroots/"
 cp "$ORCHARD_WORK/sources/wlroots-0.20.2.tar.gz" "$build/wlroots/"
 cd "$build/wlroots"
-PKGDEST="$build/result" makepkg --noconfirm --nodeps
-package=$(ls "$build"/result/wlroots0.20-0.20.2-*-aarch64.pkg.tar.*)
+PKGDEST="$build/result" PKGEXT='.pkg.tar.xz' makepkg --noconfirm --nodeps
+package=$(ls "$build"/result/wlroots0.20-0.20.2-*-$OMARCHY_ARCH.pkg.tar.*)
 test -s "$package"
-bsdtar -xOf "$package" .PKGINFO | grep -x 'arch = aarch64' >/dev/null
+bsdtar -xOf "$package" .PKGINFO | grep -x "arch = $OMARCHY_ARCH" >/dev/null
 cp "$package" "$ORCHARD_WORK/result/wlroots0.20.pkg.tar.xz"
 '''
-            buildenv.run(IMAGE, ['bash', '-euc', script],
-                         [(work, '/work', False), (HERE, '/recipe', True)])
+            if args.architecture == 'armv7h':
+                script += r'''
+mkdir -p "$build/omacalc"
+cp "$ORCHARD_RECIPE/packages/omacalc/PKGBUILD" "$build/omacalc/"
+cp "$ORCHARD_WORK/sources/omacalc-0.3.1.tar.gz" "$build/omacalc/"
+cd "$build/omacalc"
+QT_QPA_PLATFORM=offscreen PKGDEST="$build/result" PKGEXT='.pkg.tar.zst' makepkg --noconfirm --nodeps
+package="$build/result/omacalc-0.3.1-1-$OMARCHY_ARCH.pkg.tar.zst"
+bsdtar -xOf "$package" .PKGINFO | grep -x "arch = $OMARCHY_ARCH" >/dev/null
+cp "$package" "$ORCHARD_WORK/result/omacalc.pkg.tar.zst"
+'''
+            buildenv.run(image, ['bash', '-euc', script],
+                         [(work, '/work', False), (HERE, '/recipe', True)],
+                         env={'OMARCHY_MACHINE': machine(args.architecture), 'OMARCHY_ARCH': args.architecture},
+                         arch=podman_arch(args.architecture))
             built = work / 'result'
-            files = {name: sha(built / name) for name in ('wvkbd-mobintl', 'omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz')}
-            meta = {'architecture': 'aarch64', 'source_urls': fetched,
+            check_elf(built / 'wvkbd-mobintl', args.architecture, 'keyboard')
+            names = ['wvkbd-mobintl', 'omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz']
+            if args.architecture == 'armv7h':
+                names.append('omacalc.pkg.tar.zst')
+            for name in names[1:]:
+                check_package(built / name, args.architecture)
+            files = {name: sha(built / name) for name in names}
+            meta = {'architecture': args.architecture, 'source_urls': fetched,
                     'source_sha256': {name: pins[name]['sha256'] for name in pins},
                     'patch_sha256': sha(HERE / 'keyboard/wvkbd-0.20.patch'),
                     'pkgbuild_sha256': sha(pkgbuild), 'wlroots_recipe_sha256': recipe_sha(HERE / 'packages/wlroots0.20'),
                     'files': files}
+            if args.architecture == 'armv7h':
+                meta['omacalc_recipe_sha256'] = recipe_sha(HERE / 'packages/omacalc')
             (built / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')
             output.parent.mkdir(parents=True, exist_ok=True)
             os.replace(built, output)

@@ -5,6 +5,7 @@ import io
 import json
 import os
 import subprocess
+import struct
 from pathlib import Path
 import sys
 import tarfile
@@ -132,12 +133,17 @@ assert.equal(bluetooth.deviceLabel(bluetooth.deviceRow({name:'My alias',deviceNa
         pin = json.loads((PROJECT / 'desktop/cursor/wtype.json').read_text())
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ('wtype', 'LICENSE'):
-                (root / name).write_bytes(name.encode())
+            binary = bytearray(64)
+            binary[:7] = b'\x7fELF\x02\x01\x01'
+            struct.pack_into('<HHI', binary, 16, 2, 183, 1)
+            struct.pack_into('<H', binary, 52, 64)
+            contents = {'wtype': bytes(binary), 'LICENSE': b'LICENSE'}
+            for name, data in contents.items():
+                (root / name).write_bytes(data)
             record = {'schema': 1, 'architecture': 'aarch64', 'source': pin,
-                      'files': {name: hashlib.sha256(name.encode()).hexdigest() for name in ('wtype', 'LICENSE')}}
+                      'files': {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}}
             (root / 'manifest.json').write_text(json.dumps(record))
-            self.assertEqual(cursor_files(root)['usr/libexec/omarchy-wtype'], (b'wtype', 0o755))
+            self.assertEqual(cursor_files(root)['usr/libexec/omarchy-wtype'], (contents['wtype'], 0o755))
             (root / 'wtype').write_bytes(b'changed')
             with self.assertRaisesRegex(ValueError, 'differs from receipt'):
                 cursor_files(root)

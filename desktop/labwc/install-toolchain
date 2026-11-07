@@ -5,7 +5,7 @@ set -euo pipefail
 # also in CI).
 rank-mirrors
 # The base image's kernel and firmware are not needed to build: never download them.
-mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-firmware.*)$')
+mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-armv7|linux-firmware.*)$')
 (( ${#unneeded[@]} == 0 )) || pacman -Rdd --noconfirm "${unneeded[@]}"
 packages=(meson wlroots0.20 wayland-protocols libsfdo libxml2 glib2 cairo pango librsvg xcb-util-wm
   xorg-xwayland gettext)
