@@ -3,6 +3,8 @@
 
 The selected Podman connection must already execute ARM32 binaries. This
 command does not install an emulator or change the host's default connection.
+The bootstrap is one dated Arch Linux ARM build: its copy in this repository's
+releases first, then upstream's "latest" while that is still the same build.
 """
 import argparse
 import hashlib
@@ -46,6 +48,24 @@ def verify(archive, signature, pin):
     return pin['sha256']
 
 
+def fetch_first(urls, path, maximum, pinned):
+    """The first of URLS whose bytes are PINNED's sha256 (the dated copy, then upstream), into PATH."""
+    if path.exists():
+        return path
+    failures = []
+    for url in urls:
+        try:
+            fetch(url, path, maximum)
+        except (OSError, ValueError) as error:
+            failures.append(f'{url}: {error}')
+            continue
+        if sha(path) == pinned:
+            return path
+        path.unlink()
+        failures.append(f'{url}: another build than the pinned one')
+    raise ValueError('No source has the pinned ARMv7 bootstrap: ' + '; '.join(failures))
+
+
 def fetch(url, path, maximum):
     if path.exists():
         return path
@@ -83,9 +103,10 @@ def main():
         parser.error('Choose a new compiler receipt path')
     pin = json.loads((INPUTS / 'bootstrap.json').read_text())
     args.cache.mkdir(parents=True, exist_ok=True)
-    archive = args.bootstrap or fetch(pin['url'], args.cache / 'bootstrap.tar.gz', pin['bytes'])
+    archive = args.bootstrap or fetch_first(pin['urls'], args.cache / 'bootstrap.tar.gz', pin['bytes'], pin['sha256'])
     signature = args.signature or (Path(str(args.bootstrap) + '.sig') if args.bootstrap else
-                                  fetch(pin['signature_url'], args.cache / 'bootstrap.tar.gz.sig', 16384))
+                                  fetch_first(pin['signature_urls'], args.cache / 'bootstrap.tar.gz.sig', 16384,
+                                              pin['signature_sha256']))
     verify(archive, signature, pin)
     result = {'schema': 1, 'architecture': 'armv7h', 'bootstrap': pin, 'signature_valid': True}
     if not args.verify_only:
