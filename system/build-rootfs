@@ -70,10 +70,11 @@ else
     /repo/system/assemble-rootfs \
       --root /work/root --output /work/rootfs.tar.gz \
       --desktop /inputs/desktop --release "$release" --architecture "$architecture"
+  # Drain the export through EOF, including tar's trailing zero padding.
   "$podman" run --rm "${container_args[@]}" --network none -v "$volume:/work:ro" \
     "$builder_image" \
     tar -C /work -cf - rootfs.tar.gz rootfs.tar.gz.json packages.lock \
-    | tar -C "$stage" -xf -
+    | tar -C "$stage" --ignore-zeros -xf -
 fi
 python3 - "$stage" "$architecture" <<'PY'
 import hashlib, json, pathlib, sys
