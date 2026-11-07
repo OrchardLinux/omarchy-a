@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from release import audit, build, manifests, public_root
+from release import audit, build, manifests, public_root, snapshot
 
 
 def elf(architecture):
@@ -345,7 +345,13 @@ class ReleaseArchitecture(unittest.TestCase):
 
     def cascadia_fixture(self, root):
         # Exercise the companion Orchard producer's real framing contract.
-        from orchard.image import cascadia
+        orchard = snapshot.directory()
+        if not (orchard / 'src/orchard/image/cascadia.py').is_file():
+            self.skipTest('Orchard snapshot has no Cascadia producer command')
+        if (orchard / 'src/orchard/cascadia_payload.py').is_file():
+            from orchard import cascadia_payload as cascadia
+        else:
+            from orchard.image import cascadia
         described = {'schema': 1, 'load_address': 0x80000000, 'kernel_offset': 0x8000,
                      'watchdog_address': 0x3c100000, 'l2_address': 0xb0000000,
                      'ram_start': 0x80000000, 'ram_end': 0xa0000000,
