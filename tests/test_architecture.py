@@ -215,7 +215,8 @@ class ArchitectureSelectionTests(unittest.TestCase):
             device.parent.mkdir(parents=True)
             device.write_text('[kernel]\nplatform = "apple-armv7"\n')
             argv = ['build', '--version', 'test', '--output', str(root / 'out'), '--orchard', str(root), '--device', 'p105']
-            with patch.object(sys, 'argv', argv), patch.object(entry, 'orchard_command') as inputs, \
+            with patch.dict(os.environ, dict(os.environ)), patch.object(sys, 'argv', argv), \
+                    patch.object(entry, 'orchard_command') as inputs, \
                     patch.object(entry, 'component') as component, \
                     patch.object(entry, 'require_native_contract', side_effect=ValueError('missing --lwvm')) as check, \
                     self.assertRaisesRegex(ValueError, 'missing --lwvm'):
