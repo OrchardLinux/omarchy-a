@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import struct
 import sys
 import tempfile
@@ -13,6 +14,8 @@ from release.architecture import check_elf, orchard_arch, platform_arch
 
 
 PROJECT = Path(__file__).resolve().parents[1]
+PRODUCER = {'orchard': {'commit': 'a' * 40, 'modified': False, 'tree_sha256': 'b' * 64},
+            'buildenv': {'sha256': 'c' * 64}, 'wrapper': {'sha256': 'd' * 64}}
 
 
 def executable(architecture):
@@ -23,6 +26,17 @@ def executable(architecture):
     struct.pack_into('<H', data, 52 if elf_class == 2 else 40, size)
     if elf_class == 1:
         struct.pack_into('<I', data, 36, 0x05000400)
+    return bytes(data)
+
+
+def static_executable(architecture):
+    arm = architecture == 'armv7h'
+    data = bytearray(executable(architecture))
+    offset, size = len(data), 32 if arm else 56
+    data.extend(bytes(size))
+    struct.pack_into('<I' if arm else '<Q', data, 28 if arm else 32, offset)
+    struct.pack_into('<HH', data, 42 if arm else 54, size, 1)
+    struct.pack_into('<I', data, offset, 1)
     return bytes(data)
 
 
@@ -110,7 +124,7 @@ class ArchitectureSelectionTests(unittest.TestCase):
             tools = root / 'arm'
             tools.mkdir()
             for name in ('cascadia.bin', *entry.TOOLS):
-                (tools / name).write_bytes(b'component')
+                (tools / name).write_bytes(b'loader' if name == 'cascadia.bin' else static_executable('armv7h'))
 
             def component(project, name, inputs, produce, *, artifact, extra=()):
                 target = root / 'components' / name / artifact
@@ -124,6 +138,7 @@ class ArchitectureSelectionTests(unittest.TestCase):
                     path = Path(args[args.index('--output') + 1])
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(json.dumps({'platforms': {'apple-armv7': {
+                        'boards': {'p105': 's5l8942x-p105'},
                         'tools': {name: str(tools / name) for name in
                                   ('busybox', 'dropbear', 'dropbearkey', 'wpa_supplicant', 'wpa_cli', 'iw')},
                         'loader': {'kind': 'cascadia', 'file': str(tools / 'cascadia.bin')}}}}))
@@ -132,16 +147,24 @@ class ArchitectureSelectionTests(unittest.TestCase):
                     '--orchard', str(orchard), '--device', 'p105']
             with patch.dict(os.environ, dict(os.environ)), patch.object(sys, 'argv', argv), patch.object(entry, 'PROJECT', root), \
                     patch.object(entry, 'component', component), patch.object(entry, 'orchard_command', command), \
+                    patch.object(entry, 'require_native_contract'), \
+                    patch.object(entry, 'producer_identity', return_value=PRODUCER), \
                     patch.object(entry, 'run', side_effect=lambda *args: calls.append(tuple(map(str, args)))):
                 entry.main()
             for name in ('desktop', 'cursor', 'labwc', 'base'):
                 self.assertIn('armv7h', keys[name])
+            for name in ('desktop', 'cursor', 'labwc'):
+                self.assertIn(json.dumps(PRODUCER, sort_keys=True), keys[name])
             for script in ('desktop/build', 'desktop/build-cursor-helper', 'desktop/build-labwc', 'system/build-rootfs'):
                 call = next(call for call in calls if script in call)
                 self.assertEqual(call[call.index('--architecture') + 1], 'armv7h')
             release = next(call for call in calls if 'release.build' in call)
             self.assertEqual(release[release.index('--loader') + 1], str(tools / 'cascadia.bin'))
             self.assertNotIn('--pongo', release)
+            self.assertEqual(release[release.index('--base-release') + 1], 'base-' + 'f' * 16)
+            recorded = json.loads(Path(release[release.index('--component-keys') + 1]).read_text())
+            self.assertEqual(set(recorded['components']), {'desktop', 'cursor', 'bluetooth', 'labwc', 'base', 'artwork'})
+            self.assertEqual(recorded['producer'], PRODUCER)
 
     def test_missing_lwvm_input_stops_before_root_or_component_build(self):
         entry = build_entry()
@@ -150,10 +173,15 @@ class ArchitectureSelectionTests(unittest.TestCase):
             orchard = root / 'orchard'
             (orchard / 'src/orchard').mkdir(parents=True)
             platform(orchard, 'apple-armv7', 'arm')
+            with (orchard / 'platforms/apple-armv7.toml').open('a') as descriptor:
+                descriptor.write('[root]\nformat = "lwvm"\ndevices = ["p105"]\n')
+            device = orchard / 'devices/p105/device.toml'
+            device.parent.mkdir(parents=True)
+            device.write_text('[kernel]\nplatform = "apple-armv7"\n')
             tools = root / 'arm'
             tools.mkdir()
             for name in ('cascadia.bin', *entry.TOOLS):
-                (tools / name).write_bytes(b'component')
+                (tools / name).write_bytes(b'loader' if name == 'cascadia.bin' else static_executable('armv7h'))
 
             def command(module, *args):
                 self.assertEqual(module, 'orchard.inputs')
@@ -165,13 +193,78 @@ class ArchitectureSelectionTests(unittest.TestCase):
                     'loader': {'kind': 'cascadia', 'file': str(tools / 'cascadia.bin')}}}}))
 
             argv = ['build', '--version', 'test', '--output', str(root / 'release'),
-                    '--orchard', str(orchard), '--platform', 'apple-armv7']
+                    '--orchard', str(orchard), '--device', 'p105']
             with patch.dict(os.environ, dict(os.environ)), patch.object(sys, 'argv', argv), \
                     patch.object(entry, 'PROJECT', root), patch.object(entry, 'orchard_command', command), \
+                    patch.object(entry, 'require_native_contract'), \
+                    patch.object(entry, 'producer_identity', return_value=PRODUCER), \
                     patch.object(entry, 'component') as component, \
                     self.assertRaisesRegex(ValueError, 'requires tools.lwvm'):
                 entry.main()
             component.assert_not_called()
+
+    def test_native_cli_preflight_precedes_cold_input_production(self):
+        entry = build_entry()
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'src/orchard').mkdir(parents=True)
+            platform(root, 'apple-armv7', 'arm')
+            with (root / 'platforms/apple-armv7.toml').open('a') as descriptor:
+                descriptor.write('[root]\nformat = "lwvm"\ndevices = ["p105"]\n')
+            device = root / 'devices/p105/device.toml'
+            device.parent.mkdir(parents=True)
+            device.write_text('[kernel]\nplatform = "apple-armv7"\n')
+            argv = ['build', '--version', 'test', '--output', str(root / 'out'), '--orchard', str(root), '--device', 'p105']
+            with patch.object(sys, 'argv', argv), patch.object(entry, 'orchard_command') as inputs, \
+                    patch.object(entry, 'component') as component, \
+                    patch.object(entry, 'require_native_contract', side_effect=ValueError('missing --lwvm')) as check, \
+                    self.assertRaisesRegex(ValueError, 'missing --lwvm'):
+                entry.main()
+            check.assert_called_once_with(root, lwvm_required=True)
+            inputs.assert_not_called()
+            component.assert_not_called()
+
+    def test_base_cache_invalidates_when_either_package_helper_changes(self):
+        entry = build_entry()
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name in entry.INPUTS['base']:
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(PROJECT / name, target)
+            produce = lambda path, work: path.write_text('base fixture')
+            _, previous = entry.component(root, 'base', entry.INPUTS['base'], produce, artifact='base')
+            for name in ('system/rank-mirrors', 'system/pacman-download'):
+                path = root / name
+                path.write_bytes(path.read_bytes() + b'\n# changed package helper\n')
+                _, current = entry.component(root, 'base', entry.INPUTS['base'], produce, artifact='base')
+                self.assertNotEqual(current, previous, name)
+                previous = current
+
+    def test_native_caches_bind_the_wrapper_and_selected_build_environment(self):
+        entry = build_entry()
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name in ('desktop', 'cursor', 'labwc'):
+                for relative in entry.INPUTS[name]:
+                    path = root / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text('source fixture')
+            make = lambda path, work: path.write_text('binary fixture')
+            first = {}
+            producer = json.dumps(PRODUCER, sort_keys=True)
+            for name in ('desktop', 'cursor', 'labwc'):
+                _, first[name] = entry.component(root, name, entry.INPUTS[name], make, artifact='binary', extra=[producer])
+            (root / 'desktop/snapshot_buildenv.py').write_text('changed wrapper')
+            second = {}
+            for name in first:
+                _, second[name] = entry.component(root, name, entry.INPUTS[name], make, artifact='binary', extra=[producer])
+                self.assertNotEqual(first[name], second[name])
+            changed = {**PRODUCER, 'buildenv': {'sha256': 'e' * 64}}
+            for name in first:
+                _, third = entry.component(root, name, entry.INPUTS[name], make, artifact='binary',
+                                            extra=[json.dumps(changed, sort_keys=True)])
+                self.assertNotEqual(second[name], third)
 
 
 if __name__ == '__main__':

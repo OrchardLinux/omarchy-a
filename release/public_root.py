@@ -209,6 +209,7 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
     replacements = desktop_replacements()
     outdir.parent.mkdir(parents=True, exist_ok=True)
     seen, directories, expanded, count = set(), set(), 0, 0
+    base_stamp = None
     with tempfile.TemporaryDirectory(dir=outdir.parent, prefix='.root-') as temp:
         temporary = Path(temp)
         archive = temporary / 'rootfs.tar.zst'
@@ -246,6 +247,12 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                         if member.name == 'lib' and (not member.issym() or member.linkname != 'usr/lib'):
                             raise ValueError('Base must link lib to usr/lib')
                         data = source.extractfile(member).read() if member.isfile() else None
+                        if member.name == 'etc/ipadlinux/release':
+                            if data is None or len(data) > 256:
+                                raise ValueError('Invalid base release stamp')
+                            base_stamp = data.decode().rstrip('\n')
+                            if record.get('release') is not None and data != (record['release'] + '\n').encode():
+                                raise ValueError('Base release stamp differs from its receipt')
                         if data is not None and data.startswith(b'\x7fELF'):
                             check_root_elf(data, architecture, member.name)
                         if architecture == 'armv7h' and member.name == 'usr/lib/systemd/systemd':
@@ -307,9 +314,12 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                     'arch-ipad-ui-manifest.json'}
         if not required <= seen or not privileges.keys() <= seen or not replacements.keys() <= seen:
             raise ValueError('Incomplete public root or privileged package metadata')
+        if record.get('release') is not None and base_stamp is None:
+            raise ValueError('Base release stamp is missing')
         receipt = {'schema': 2, 'kind': 'rootfs', 'release': release, 'architecture': architecture,
                    'bytes': archive.stat().st_size, 'sha256': sha(archive), 'compression': 'zstd',
-                   'expanded_bytes': expanded, 'members': count, 'base_sha256': record['sha256']}
+                   'expanded_bytes': expanded, 'members': count, 'base_sha256': record['sha256'],
+                   'stamps': {'base': base_stamp, 'orchard': release}}
         (temporary / 'rootfs.json').write_text(json.dumps(receipt, indent=2) + '\n')
         os.replace(temporary, outdir)
     return receipt

@@ -86,4 +86,4 @@ def audit_runtime(image, kernel_release, release, private):
         digest, name = line.split('  ', 1)
         if hashes.get(name.lstrip('/')) != digest:
             raise ValueError('Recovery public runtime differs: ' + name)
-    return {'members': len(names), 'hashes': hashes, 'public': public}
+    return {'members': len(names), 'hashes': hashes, 'modes': modes, 'public': public}

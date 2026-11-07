@@ -25,8 +25,9 @@ from components import component  # noqa: E402
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
 from release.architecture import platform_arch, validate  # noqa: E402
-from release.build import TOOLS, platform_inputs  # noqa: E402
-DESKTOP_IMAGE = ['desktop/Containerfile', 'desktop/install-toolchain']
+from release.build import TOOLS, platform_inputs, require_native_contract, selected_root_format  # noqa: E402
+from release.provenance import producer_identity  # noqa: E402
+DESKTOP_IMAGE = ['desktop/Containerfile', 'desktop/install-toolchain', 'desktop/snapshot_buildenv.py']
 # What each component is made from, relative to this checkout.
 INPUTS = {
     'desktop': ['desktop/build', 'desktop/build-sources', 'desktop/stage.py', 'desktop/target.py', 'desktop/arm64', 'desktop/armv7', 'desktop/keyboard',
@@ -34,9 +35,11 @@ INPUTS = {
                 'desktop/greeter', 'desktop/shell', 'desktop/themes', 'release/architecture.py', *DESKTOP_IMAGE],
     'cursor': ['desktop/build-cursor-helper', 'desktop/cursor', 'desktop/target.py', 'release/architecture.py', *DESKTOP_IMAGE],
     'bluetooth': ['desktop/build-bluetooth-tools', 'desktop/bluetooth'],
-    'labwc': ['desktop/build-labwc', 'desktop/labwc', 'desktop/target.py', 'release/architecture.py'],
+    'labwc': ['desktop/build-labwc', 'desktop/labwc', 'desktop/target.py', 'desktop/snapshot_buildenv.py',
+              'release/architecture.py'],
     'base': ['system/build-rootfs', 'system/assemble-rootfs', 'system/Containerfile',
-             'system/install-toolchain', 'system/packages.txt', 'release/architecture.py'],
+             'system/install-toolchain', 'system/packages.txt', 'system/rank-mirrors',
+             'system/pacman-download', 'release/architecture.py'],
     'artwork': ['boot/build-artwork', 'boot/generate-logo.py', 'boot/splash.py', 'boot/artwork'],
 }
 
@@ -107,7 +110,6 @@ def main():
     orchard = args.orchard or (Path(os.environ['ORCHARD_CHECKOUT']) if os.environ.get('ORCHARD_CHECKOUT') else None)
     if orchard is None or not (orchard / 'src/orchard').is_dir():
         parser.error('Name the orchard snapshot: --orchard DIR, or ORCHARD_CHECKOUT (orchard build sets it)')
-    # Every step below, the desktop recipes included, finds orchard here.
     # Every producer below resolves Orchard from this exact snapshot.
     os.environ['ORCHARD_CHECKOUT'] = str(orchard.resolve())
     try:
@@ -121,6 +123,14 @@ def main():
     except (OSError, KeyError, ValueError) as error:
         parser.error(str(error))
     selected = [part for name in platforms for part in ('--platform', name)]
+    if architecture == 'armv7h':
+        if not args.device:
+            parser.error('Select one ARMv7 board with --device before resolving its build inputs')
+        # The CLI check precedes cold-cache kernel, loader and helper production.
+        require_native_contract(orchard, lwvm_required=any(
+            selected_root_format(orchard, name, args.device) == 'lwvm' for name in platforms))
+    producer = producer_identity(orchard, PROJECT)
+    producer_key = json.dumps(producer, sort_keys=True)
     # Resolve native storage helpers before any desktop or root compilation.
     inputs = PROJECT / f'out/components/.inputs-{architecture}.json'
     overrides = [part for option in ('platform_loader', 'platform_tools', 'platform_lwvm')
@@ -130,11 +140,12 @@ def main():
     orchard_command('orchard.inputs', '--output', inputs, *selected, *board, *overrides)
     document = json.loads(inputs.read_text())
     shared = document.get('shared', {})
-    preflight = argparse.Namespace(architecture=architecture, device=args.device,
+    preflight = argparse.Namespace(architecture=architecture, device=args.device, orchard=orchard,
                                   loader=shared.get('m1n1'),
                                   **{key: shared.get('tools', {}).get(key) for key in TOOLS})
-    for name in platforms:
-        platform_inputs(preflight, name, document)
+    components = {name: platform_inputs(preflight, name, document) for name in platforms}
+    if architecture == 'armv7h':
+        require_native_contract(orchard, components)
     target_args = ['--architecture', architecture]
     builder_args = ['--builder-image', args.builder_image] if args.builder_image else []
     labwc_image = args.labwc_builder_image or args.builder_image
@@ -144,24 +155,29 @@ def main():
 
     desktop, desktop_key = component(PROJECT, 'desktop', INPUTS['desktop'],
         lambda path, work: python('desktop/build', '--output', path, *target_args, *builder_args),
-        artifact='desktop', extra=[architecture, identity])
-    cursor, _ = component(PROJECT, 'cursor', INPUTS['cursor'],
+        artifact='desktop', extra=[architecture, identity, producer_key])
+    cursor, cursor_key = component(PROJECT, 'cursor', INPUTS['cursor'],
                           lambda path, work: python('desktop/build-cursor-helper', '--output', path, *target_args, *builder_args),
-                          artifact='cursor-tools', extra=[architecture, identity])
-    bluetooth, _ = component(PROJECT, 'bluetooth', INPUTS['bluetooth'],
+                          artifact='cursor-tools', extra=[architecture, identity, producer_key])
+    bluetooth, bluetooth_key = component(PROJECT, 'bluetooth', INPUTS['bluetooth'],
                              lambda path, work: python('desktop/build-bluetooth-tools', '--output', path),
                              artifact='bluetooth-tools')
-    labwc, _ = component(PROJECT, 'labwc', INPUTS['labwc'],
+    labwc, labwc_key = component(PROJECT, 'labwc', INPUTS['labwc'],
                          lambda path, work: python('desktop/build-labwc', '--output', path, *target_args, *labwc_args),
-                         artifact='labwc-tools', extra=[architecture, compiler_identity])
+                         artifact='labwc-tools', extra=[architecture, compiler_identity, producer_key])
     # The base names the component, not a release: it serves every build with the same inputs.
-    base, _ = component(PROJECT, 'base', INPUTS['base'],
+    base, base_key = component(PROJECT, 'base', INPUTS['base'],
                         lambda path, work: run('system/build-rootfs', '--output', path, '--desktop', desktop,
                                                '--release', 'base-' + desktop_key[:16], *target_args, *builder_args),
                         artifact='base', extra=[desktop_key, architecture, identity])
-    # The Omarchy mark is data for orchard's m1n1, which every distribution boots.
-    artwork, _ = component(PROJECT, 'artwork', INPUTS['artwork'],
+    # The artwork serves the AArch64 m1n1 flow and the shared root's splash.
+    artwork, artwork_key = component(PROJECT, 'artwork', INPUTS['artwork'],
                            lambda path, work: python('boot/build-artwork', '--output', path), artifact='artwork')
+    keys = PROJECT / f'out/components/.keys-{architecture}.json'
+    keys.parent.mkdir(parents=True, exist_ok=True)
+    keys.write_text(json.dumps({'schema': 1, 'architecture': architecture, 'producer': producer, 'components': {
+        'desktop': desktop_key, 'cursor': cursor_key, 'bluetooth': bluetooth_key,
+        'labwc': labwc_key, 'base': base_key, 'artwork': artwork_key}}, indent=2) + '\n')
     first = document['platforms'][platforms[0]]
     tools = first.get('tools') or shared['tools']
     loader = first.get('loader', {}).get('file') or shared['m1n1']
@@ -173,12 +189,14 @@ def main():
                           for part in ('--' + name.replace('_', '-'), tools[name])]
     python('-m', 'release.build', '--release', args.version, '--inputs', inputs,
            '--base', base / 'rootfs.tar.gz', '--base-receipt', base / 'rootfs.tar.gz.json',
+           '--base-release', 'base-' + desktop_key[:16], '--component-keys', keys,
            '--splash', artwork / 'splash', '--logo', artwork / 'logo.bin', *native_inputs,
            '--cursor-tools', cursor, '--bluetooth-tools', bluetooth, '--labwc-tools', labwc,
            *target_args, *selected, '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
-    # install.sh and orchard-install.pyz, with orchard's launch loaders.
-    orchard_command('orchard.installer', 'release', args.output)
+    # The public installer currently implements the ARM64 m1n1 boot method.
+    if architecture == 'aarch64':
+        orchard_command('orchard.installer', 'release', args.output)
 
 
 if __name__ == '__main__':

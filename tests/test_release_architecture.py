@@ -73,8 +73,8 @@ class ReleaseArchitecture(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             paths = {key: root / key for key in ('loader', *build.TOOLS)}
-            for path in paths.values():
-                path.write_bytes(b'component')
+            for name, path in paths.items():
+                path.write_bytes(b'loader' if name == 'loader' else static_elf('armv7h'))
             args = argparse.Namespace(architecture='armv7h', loader=None,
                                       **{key: None for key in build.TOOLS})
             row = {'architecture': 'arm', 'image': 'zImage',
@@ -97,7 +97,7 @@ class ReleaseArchitecture(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ('loader', *build.TOOLS):
-                (root / name).write_bytes(b'component')
+                (root / name).write_bytes(b'loader' if name == 'loader' else static_elf('armv7h'))
             args = argparse.Namespace(architecture='armv7h', loader=None)
             row = {'root_format': 'lwvm', 'boards': {'p105': 's5l8942x-p105'},
                    'loader': {'kind': 'cascadia', 'file': str(root / 'loader')},
@@ -244,6 +244,7 @@ class ReleaseArchitecture(unittest.TestCase):
             contents.update({'usr/lib/systemd/systemd': elf('armv7h'), 'usr/lib/crt1.o': bytes(relocatable),
                              'usr/lib/udev/rc_keymaps/protocols/grundig.o': bpf_elf(),
                              'usr/bin/sudo': elf('armv7h'),
+                             'etc/ipadlinux/release': b'base-fixture\n',
                              'etc/group': b'seat:x:1:\nvideo:x:2:\ninput:x:3:\n',
                              'etc/gshadow': b'seat:!*::\nvideo:!*::\ninput:!*::\n'})
             contents['arch-ipad-ui-manifest.json'] = json.dumps({
@@ -264,7 +265,7 @@ class ReleaseArchitecture(unittest.TestCase):
                 member.type, member.linkname = tarfile.SYMTYPE, 'usr/lib'
                 archive.addfile(member)
             receipt = root / 'base.json'
-            receipt.write_text(json.dumps({'architecture': 'armv7h', 'bytes': base.stat().st_size,
+            receipt.write_text(json.dumps({'architecture': 'armv7h', 'release': 'base-fixture', 'bytes': base.stat().st_size,
                                            'sha256': public_root.sha(base)}))
             privileges = {'usr/bin/sudo': {'uid': 0, 'gid': 0, 'mode': 0o4755, 'type': 'file',
                                           'bytes': len(elf('armv7h')),
@@ -275,12 +276,19 @@ class ReleaseArchitecture(unittest.TestCase):
                     patch.object(public_root, 'labwc_files', return_value={}), \
                     patch.object(public_root, 'system_files', return_value={}):
                 result = public_root.build(base, receipt, root / 'out', 'test', root, architecture='armv7h')
+                record = json.loads(receipt.read_text())
+                receipt.write_text(json.dumps({**record, 'release': 'wrong-base'}))
+                with self.assertRaisesRegex(ValueError, 'Base release stamp differs'):
+                    public_root.build(base, receipt, root / 'mismatched', 'test', root, architecture='armv7h')
             self.assertEqual(result['architecture'], 'armv7h')
+            self.assertEqual(result['stamps'], {'base': 'base-fixture', 'orchard': 'test'})
             raw = subprocess.check_output(['zstd', '-dq', '-c', str(root / 'out/rootfs.tar.zst')])
             with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
                 self.assertEqual(archive.extractfile('usr/lib/crt1.o').read(), bytes(relocatable))
                 self.assertEqual(archive.extractfile('usr/lib/udev/rc_keymaps/protocols/grundig.o').read(), bpf_elf())
                 self.assertEqual(archive.getmember('usr/bin/sudo').mode, 0o4755)
+                self.assertEqual(archive.extractfile('etc/ipadlinux/release').read(), b'base-fixture\n')
+                self.assertEqual(json.load(archive.extractfile('etc/orchard/release.json'))['release'], 'test')
 
     def test_armv7_manifest_uses_its_boot_method_without_pongo(self):
         with tempfile.TemporaryDirectory() as directory:

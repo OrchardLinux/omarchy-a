@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 import tomllib
 
-from release.architecture import validate, platform_arch
+from release.architecture import validate, platform_arch, orchard_arch
+
+LAYER_FIELDS = ('file', 'url', 'bytes', 'sha256', 'compression', 'expanded_bytes', 'members', 'kernel_release')
 
 
 def sha(path):
@@ -26,8 +28,8 @@ def table(name, row):
 def write(output, version, root, offered, orchard, *, architecture='aarch64'):
     """release.toml and index.toml in OUTPUT.
 
-    PLATFORMS maps each platform to its boards, recovery (`boot`) and
-    orchard layer receipts; ORCHARD is the snapshot's revision ({'commit', 'modified'}).
+    OFFERED is Orchard's ARM64 platform index or the ARMv7 board's native
+    layer and recovery receipts. ORCHARD records the source revision.
     """
     validate(architecture)
     platforms = offered['platforms'] if architecture == 'aarch64' else offered
@@ -55,8 +57,10 @@ def write(output, version, root, offered, orchard, *, architecture='aarch64'):
         document += table('m1n1', offered['loaders']['m1n1'])
         document += table('install_tools', offered['install_tools'])
         for name, layer in sorted(platforms.items()):
+            if layer.get('architecture', 'arm64') != orchard_arch(architecture):
+                raise ValueError('Platform layer architecture differs from release')
             document += f'\n[platforms.{name}]\nboards = {json.dumps(layer["boards"])}\n'
-            document += table(f'platforms.{name}.layer', {key: value for key, value in layer.items() if key != 'boards'})
+            document += table(f'platforms.{name}.layer', {key: layer[key] for key in LAYER_FIELDS if key in layer})
     else:
         row = receipt(output / 'rootfs.tar.zst')
         row.update({key: root[key] for key in ('compression', 'expanded_bytes', 'members')})
@@ -64,7 +68,8 @@ def write(output, version, root, offered, orchard, *, architecture='aarch64'):
         for name, files in sorted(platforms.items()):
             document += f'\n[platforms.{name}]\nboards = {json.dumps(files["boards"])}\n'
             document += table(f'platforms.{name}.boot', files['boot'])
-            document += table(f'platforms.{name}.layer', files['layer'])
+            document += table(f'platforms.{name}.layer', {key: files['layer'][key]
+                              for key in LAYER_FIELDS if key in files['layer']})
     manifest = output / 'release.toml'
     with manifest.open('x') as stream:
         stream.write(document)

@@ -1,10 +1,13 @@
 """Offline audit of finished assets: namespace safety, integrity and boot contracts."""
 import argparse
+import gzip
 import hashlib
+import io
 import json
 from pathlib import Path, PurePosixPath
 import subprocess
 import struct
+import stat
 import tarfile
 import zlib
 
@@ -13,8 +16,9 @@ from release.manifests import read_release
 
 from .common import PROJECT
 from .public_root import sha, check_root_elf
-from .recovery_audit import audit_runtime
-from release.architecture import validate
+from .recovery_audit import audit_runtime, read_newc
+from .build import selected_root_format
+from release.architecture import validate, check_elf
 
 # m1n1's payload framing (orchard docs/ram-development.md, "Assembling by hand").
 INITRAMFS_MAGIC = b'm1n1_initramfs'
@@ -175,7 +179,7 @@ def asset(manifest, item, role):
 
 def audit_layer(path, platform, row, private):
     """orchard's platform layer: root-owned files under usr/ that say which platform and kernel they are."""
-    hashes, expanded = {}, 0
+    hashes, expanded, initrd = {}, 0, None
     with tarfile.open(path, 'r:gz') as archive:
         for member in archive:
             name = member.name
@@ -191,6 +195,8 @@ def audit_layer(path, platform, row, private):
                 description = json.loads(data)
             if name == 'usr/lib/orchard/platform.SHA256SUMS':
                 sums = data.decode()
+            if name.endswith('/initrd') and name.startswith('usr/lib/modules/'):
+                initrd = data
     if (len(hashes), expanded) != (row['members'], row['expanded_bytes']):
         raise ValueError(f'The {platform} layer differs from its receipt')
     if (description['platform'], description['kernel_release']) != (platform, row['kernel_release']):
@@ -202,7 +208,57 @@ def audit_layer(path, platform, row, private):
         expected, name = line.split('  ', 1)
         if hashes.get(name.lstrip('/')) != expected:
             raise ValueError(f'The {platform} layer differs from its SHA256SUMS: {name}')
-    return {'hashes': hashes, 'boards': description['boards'], 'kernel_release': release}
+    return {'hashes': hashes, 'boards': description['boards'], 'kernel_release': release, 'initrd': initrd}
+
+
+def audit_lwvm_helpers(initrd, runtime, architecture):
+    """The installed initrd and RAM recovery carry the same native mapper and SSH tools."""
+    paths = {'bin/orchard-lwvm': 'usr/sbin/orchard-lwvm', 'bin/dropbear': 'usr/sbin/dropbear',
+             'bin/dropbearkey': 'usr/bin/dropbearkey', 'bin/busybox': 'bin/busybox'}
+    found = {}
+    if initrd is None:
+        raise ValueError('LwVM platform has no installed initrd')
+    with gzip.GzipFile(fileobj=io.BytesIO(initrd)) as stream:
+        for name, mode, data in read_newc(stream):
+            if name not in paths:
+                continue
+            if not stat.S_ISREG(mode) or mode & 0o111 != 0o111:
+                raise ValueError('Installed LwVM helper is not executable: ' + name)
+            check_elf(data, architecture, name)
+            target = paths[name]
+            digest = hashlib.sha256(data).hexdigest()
+            if (runtime['hashes'].get(target) != digest or
+                    not stat.S_ISREG(runtime['modes'].get(target, 0)) or
+                    runtime['modes'].get(target, 0) & 0o111 != 0o111):
+                raise ValueError('Installed and recovery LwVM helpers differ: ' + name)
+            found[name] = digest
+    if found.keys() != paths.keys():
+        raise ValueError('LwVM initrd lacks its mapper or early SSH helpers')
+    return found
+
+
+def audit_platform(manifest, name, files, private, *, architecture, release, root_format='gpt'):
+    layer = audit_layer(asset(manifest, files['layer'], name + ' layer'), name, files['layer'], private)
+    if sorted(layer['boards']) != sorted(files['boards']):
+        raise ValueError(f'The manifest and the {name} layer list different boards')
+    result = {'boards': sorted(layer['boards']), 'kernel_release': layer['kernel_release'],
+              'layer_files': len(layer['hashes'])}
+    if architecture == 'armv7h':
+        image = asset(manifest, files['boot'], name + ' recovery')
+        recovery = audit_recovery(image, architecture)
+        if recovery['dtbs'] != len(set(layer['boards'].values())):
+            raise ValueError(f'The {name} recovery does not start every board of its platform')
+        runtime = audit_runtime(image, layer['kernel_release'], release, private)
+        base = f'usr/lib/modules/{layer["kernel_release"]}/'
+        for path, digest in layer['hashes'].items():
+            if (path.startswith(base) and path not in (base + 'vmlinuz', base + 'initrd') and
+                    not path.startswith(base + 'dtb/') and runtime['hashes'].get(path) != digest):
+                raise ValueError(f'The {name} recovery and layer have different modules: {path}')
+        if root_format == 'lwvm':
+            recovery['lwvm_helpers'] = audit_lwvm_helpers(layer['initrd'], runtime, architecture)
+        recovery['runtime_members_verified'] = runtime['members']
+        result['recovery'] = recovery
+    return result, layer['hashes']
 
 
 def audit(manifest, orchard=None):
@@ -223,26 +279,15 @@ def audit(manifest, orchard=None):
         root_path = asset(manifest, record['root'], 'root')
     platforms, layers = {}, {}
     for name, files in sorted(record['platforms'].items()):
-        layer = audit_layer(asset(manifest, files['layer'], name + ' layer'), name, files['layer'], private)
-        if sorted(layer['boards']) != sorted(files['boards']):
-            raise ValueError(f'The manifest and the {name} layer list different boards')
+        root_format = 'gpt'
         if architecture == 'armv7h':
-            image = asset(manifest, files['boot'], name + ' recovery')
-            recovery = audit_recovery(image, architecture)
-            if recovery['dtbs'] != len(set(layer['boards'].values())):
-                raise ValueError(f'The {name} recovery does not start every board of its platform')
-            runtime = audit_runtime(image, layer['kernel_release'], record['release'], private)
-            # The recovery runs the kernel the installed entry boots: the same modules.
-            base = f'usr/lib/modules/{layer["kernel_release"]}/'
-            for path, digest in layer['hashes'].items():
-                if (path.startswith(base) and path not in (base + 'vmlinuz', base + 'initrd') and
-                        not path.startswith(base + 'dtb/') and
-                        runtime['hashes'].get(path) != digest):
-                    raise ValueError(f'The {name} recovery and layer have different modules: {path}')
-            recovery['runtime_members_verified'] = runtime['members']
-        platforms[name] = {'boards': sorted(layer['boards']), 'kernel_release': layer['kernel_release'],
-                           'layer_files': len(layer['hashes']), 'recovery': recovery}
-        layers[name] = layer['hashes']
+            formats = {selected_root_format(snapshot.directory(orchard), name, board) for board in files['boards']}
+            if len(formats) != 1:
+                raise ValueError('Native platform boards use different root formats')
+            root_format = formats.pop()
+        platforms[name], layers[name] = audit_platform(
+            manifest, name, files, private, architecture=architecture,
+            release=record['release'], root_format=root_format)
     hashes, links, modes, owners, groups, sizes = {}, {}, {}, {}, {}, {}
     names, ancestors, directories = set(), set(), set()
     desktop = privileges = cursor = bluetooth = labwc = None
