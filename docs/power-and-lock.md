@@ -190,3 +190,33 @@ last frame; the lock screen's own update follows when `user.slice` thaws.
 `omarchy-tablet-power` (one process per press, state in brightness and files, a
 fixed window after resume), `omarchy-screen-toggle` and `omarchy-greeter-wake`
 (a second and third writer of the backlight).
+
+## J71t Mac USB charging candidate
+
+`system/overlay/etc/orchard/mac-usb-current` opts J71t into the matching
+Orchard root initrd's Mac-current compatibility profile. It selects
+05ac:1014 with ACM+NCM and 500 mA descriptor power. Only a real host vendor
+grant allows the kernel charger to ramp higher, within board/pack limits.
+This requires the 2026-11-08 hardware changes and a freshly matched initrd;
+the file alone has no effect with older hardware bundles. No systemd gadget
+service rewrites the initrd's gadget or serial during switch-root.
+
+This candidate has host tests but no device charging result. Unlock the Mac,
+approve the new accessory and, if needed, reconnect it. The BOOT serial is
+retained for Orchard discovery and can require fresh authorization each boot.
+To disable the profile, remove `/etc/orchard/mac-usb-current` and reboot.
+No PMIC current limit or host authorization policy is forced by this file.
+
+The USB recovery service recognizes the bound NCM or ECM function. In addition
+to its carrier-loss handler, it probes 172.16.42.2 through usb0 while carrier
+and UDC configuration remain up. After a peer has replied once, 15 seconds
+of failed replies trigger an `ip link` down/up cycle, without rebinding UDC
+or disturbing ACM/charging. It logs `usb0-stall-bounce` to journal and kmsg,
+including packet/drop counters. There is a 60-second cooldown and at most
+three attempts without a new successful reply. Suspended, unconfigured,
+unbound, admin-down and VBUS-absent links do not trigger this fallback;
+unknown charging current_max does not prevent network recovery. Hosts that
+never answer ICMP do not arm it. All recovery remains disabled on NBD roots.
+The runner's transient oi-usb0-watchdog should not run alongside this service
+for an acceptance test; count all bounce markers and require zero for a clean
+NCM sustained-transfer result.
