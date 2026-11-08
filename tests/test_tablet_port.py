@@ -35,6 +35,14 @@ class TabletPort(unittest.TestCase):
         self.assertEqual(f.events(event(116,0)),[('power',1.0)])
 
 
+    def test_no_false_client_remap_and_native_touch(self):
+        source=(PROJECT/'desktop/shell/shell/Ui/ScreenMoveRemap.qml').read_text()
+        self.assertIn('readonly property bool remapping: false',source)
+        self.assertNotIn('Timer {',source)
+        tree=ET.fromstring((PROJECT/'desktop/shell/labwc-rc.xml').read_text())
+        touch=next(t for t in tree.findall('touch') if t.get('deviceName')=='iPad6,11 Touchscreen')
+        self.assertEqual(touch.get('mapToOutput'),'eDP-1')
+        self.assertEqual(touch.get('mouseEmulation'),'no')
 
 
 

@@ -117,6 +117,7 @@
     </keybind>
   </keyboard>
   <touch mouseEmulation="no" />
+  <touch deviceName="iPad6,11 Touchscreen" mapToOutput="eDP-1" mouseEmulation="no" />
   <snapping>
     <!-- Keep titlebar double-click maximize; top-edge dragging tiles upward. -->
     <topMaximize>no</topMaximize>

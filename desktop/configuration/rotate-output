@@ -23,7 +23,7 @@ transform() {
 
 apply() {
   local t output
-  [[ -e $lock ]] && return
+  [[ -e $lock ]] && return 1
   t=$(transform "$1") || return
   output=$(wlr-randr | awk '/^[^[:space:]]/ {print $1; exit}')
   [[ -n $output ]] && wlr-randr --output "$output" --transform "$t"
@@ -36,7 +36,7 @@ orientation() {
   esac
 }
 
-exec {sensor}< <(exec monitor-sensor --accel)
+exec {sensor}< <(exec stdbuf -oL monitor-sensor --accel)
 sensor_pid=$!
 watcher=''
 if [[ -n ${LABWC_PID:-} ]]; then
@@ -55,8 +55,14 @@ while :; do
       continue
     fi
     ((status > 128)) || break   # end of input, not a timeout
-    [[ $pending != "$applied" ]] && apply "$pending" && applied=$pending
-    pending=''
+    [[ -e $lock ]] && applied=''
+    if [[ $pending != "$applied" ]]; then
+      # Keep the latest settled pose while locked. Retrying the read timeout
+      # reapplies it after unlock even if the sensor sends no fresh event.
+      apply "$pending" || continue
+      applied=$pending
+    fi
+    # Keep the last pose to restore auto orientation after a manual lock.
   else
     IFS= read -r -u "$sensor" line || break
     next=$(orientation "$line") && [[ -n $next ]] && pending=$next

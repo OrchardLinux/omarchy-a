@@ -181,6 +181,8 @@
   "trigger.tests.disk-speedtest": {"icon":"󰋊","label":"Disk Speed Test","action":"omarchy-shell shell summon omarchy.disk-speedtest"},
 
   // Setup
+  "setup.tablet": {"icon":"󰦧","label":"Tablet"},
+  "setup.tablet.rotation-lock": {"icon":"󰿆","label":"Rotation Lock","checked":"omarchy-rotation-lock enabled","action":"omarchy-rotation-lock toggle"},
   "setup.monitors": {"icon":"󰍹","label":"Monitors","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/monitors.lua\""},
   "setup.keybindings": {"icon":"","label":"Keybindings","when":"[[ -f ~/.config/hypr/bindings.lua ]]","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/bindings.lua\""},
   "setup.input": {"icon":"","label":"Input","when":"[[ -f ~/.config/hypr/input.lua ]]","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/input.lua\""},
@@ -450,4 +452,5 @@
   "update.hardware.trackpad": {"icon":"󰟸","label":"Trackpad","action":"omarchy-launch-floating-terminal-with-presentation omarchy-restart-trackpad"},
   "update.password.drive": {"icon":"","label":"Drive Encryption","action":"omarchy-launch-floating-terminal-with-presentation omarchy-drive-password"},
   "update.password.user": {"icon":"","label":"User","action":"omarchy-launch-floating-terminal-with-presentation passwd"},
+  "setup.tablet.rotate": {"icon": "󰑢", "label": "Rotate Once and Lock", "action": "omarchy-rotate next"},
 }
