@@ -19,6 +19,7 @@ export WLR_RENDERER=pixman QT_QUICK_BACKEND=software QT_QPA_PLATFORM=wayland
 # Match pinned upstream Omarchy's GTK-backed Qt platform theme.
 export QT_QPA_PLATFORMTHEME=gtk3
 export OMARCHY_TOUCH_MODE=1
+export LP_NUM_THREADS=${LP_NUM_THREADS:-2}
 export LIBGL_ALWAYS_SOFTWARE=1 LIBSEAT_BACKEND=seatd MOZ_ENABLE_WAYLAND=1
 export PATH=/usr/local/bin:/usr/bin
 # Services such as PipeWire and WirePlumber use the same user manager/bus as
