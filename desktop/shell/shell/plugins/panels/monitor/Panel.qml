@@ -18,10 +18,20 @@ Panel {
   // Ambient-light auto-brightness (omarchy-auto-brightness); hidden when the tool is absent.
   property bool autoAvailable: false
   property bool autoOn: false
+  // Display scale (omarchy-display-scale); saved and reapplied at login.
+  readonly property var scaleOptions: ["1.5", "1.75", "2", "2.25", "2.5"]
+  property string scaleValue: ""
 
   function refresh() {
     if (!readProc.running && !writeProc.running) readProc.running = true
     if (!autoReadProc.running && !autoWriteProc.running) autoReadProc.running = true
+    if (!scaleReadProc.running && !scaleWriteProc.running) scaleReadProc.running = true
+  }
+  function setScale(value) {
+    if (scaleWriteProc.running || value === root.scaleValue) return
+    root.scaleValue = value
+    scaleWriteProc.command = ["omarchy-display-scale", value]
+    scaleWriteProc.running = true
   }
   function setAuto(on) {
     if (!autoAvailable || autoWriteProc.running) return
@@ -93,6 +103,23 @@ Panel {
     onRunningChanged: if (!running) root.refresh()
   }
 
+  Process {
+    id: scaleReadProc
+    command: ["omarchy-display-scale"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var v = parseFloat(String(text || "").trim())
+        root.scaleValue = isNaN(v) ? "" : String(v)
+      }
+    }
+  }
+  Process {
+    id: scaleWriteProc
+    stdout: StdioCollector { waitForEnd: true }
+    onRunningChanged: if (!running) root.refresh()
+  }
+
   BarIconButton {
     id: button
     anchors.fill: parent
@@ -160,6 +187,23 @@ Panel {
           value: root.brightnessPercent
           onMoved: function(v) { root.setBrightness(v) }
           onReleased: function(v) { root.setBrightness(v) }
+        }
+        Text {
+          width: parent.width
+          visible: root.scaleValue !== ""
+          text: Commons.I18n.t("monitor.scale")
+          color: root.bar.foreground
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.caption
+          textFormat: Text.PlainText
+        }
+        ButtonGroup {
+          visible: root.scaleValue !== ""
+          options: root.scaleOptions
+          value: root.scaleValue
+          foreground: root.bar.foreground
+          fontFamily: root.bar.fontFamily
+          onChanged: function(v) { root.setScale(v) }
         }
         Toggle {
           width: parent.width

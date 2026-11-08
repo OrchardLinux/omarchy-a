@@ -47,6 +47,7 @@ def desktop_replacements():
     replacements['usr/local/libexec/arch-ipad-rotate-output'] = (PROJECT / 'desktop/configuration/rotate-output').read_bytes()
     replacements[prefix + 'shell/plugins/panels/monitor/Panel.qml'] = (PROJECT / 'desktop/shell/shell/plugins/panels/monitor/Panel.qml').read_bytes()
     replacements[prefix + 'default/i18n/en/shell.json'] = (PROJECT / 'desktop/shell/default/i18n/en/shell.json').read_bytes()
+    replacements['usr/local/libexec/arch-ipad-scale-output'] = (PROJECT / 'desktop/configuration/scale-output').read_bytes()
     return replacements
 
 
@@ -141,6 +142,8 @@ def desktop_additions():
     files['usr/local/bin/omarchy-rotate'] = files[prefix + 'bin/omarchy-rotate']
     files[prefix + 'bin/omarchy-system'] = ((PROJECT / 'desktop/shell/bin/omarchy-system').read_bytes(), 0o755)
     files['usr/local/bin/omarchy-system'] = files[prefix + 'bin/omarchy-system']
+    files[prefix + 'bin/omarchy-display-scale'] = ((PROJECT / 'desktop/shell/bin/omarchy-display-scale').read_bytes(), 0o755)
+    files['usr/local/bin/omarchy-display-scale'] = files[prefix + 'bin/omarchy-display-scale']
     return files
 
 
