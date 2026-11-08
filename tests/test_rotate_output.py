@@ -87,6 +87,24 @@ class RotateOutput(unittest.TestCase):
         self.assertEqual(self.run_script(events, locked=True), [])
 
 
+    def test_unlock_applies_last_settled_pose_without_another_sensor_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); bindir = root/'bin'; bindir.mkdir()
+            lock = root/'config/omarchy/rotation-lock'; lock.parent.mkdir(parents=True); lock.touch()
+            log = root/'randr.log'
+            for name, body in (('wlr-randr', RANDR), ('monitor-sensor',
+                    monitor([(0, '=== Has accelerometer (orientation: left-up)'), (0.8, 'waiting')]))):
+                f=bindir/name; f.write_text(body); f.chmod(0o755)
+            env={**os.environ,'PATH':str(bindir)+':'+os.environ['PATH'],
+                 'XDG_CONFIG_HOME':str(root/'config'),'RANDR_LOG':str(log),'ROTATE_SETTLE':'0.1'}
+            proc=subprocess.Popen([BASH,str(SCRIPT)],env=env)
+            try:
+                threading.Event().wait(0.35); self.assertFalse(log.exists()); lock.unlink()
+                proc.wait(timeout=3)
+                self.assertEqual(log.read_text().splitlines(),['--output Unknown-1 --transform 90'])
+            finally:
+                if proc.poll() is None: proc.kill(); proc.wait()
+
     def test_ends_with_the_compositor(self):
         # monitor-sensor never ends by itself; the helper must stop it once
         # the compositor is gone instead of outliving the session

@@ -39,6 +39,10 @@ def desktop_replacements():
         'bin/omarchy-bluetooth-device')}
     replacements['home/tablet/.config/labwc/rc.xml'] = (PROJECT / 'desktop/shell/labwc-rc.xml').read_bytes()
     replacements['home/tablet/.config/labwc/autostart'] = (PROJECT / 'desktop/configuration/labwc-autostart').read_bytes()
+    replacements[prefix + 'shell/Ui/ScreenMoveRemap.qml'] = (PROJECT / 'desktop/shell/shell/Ui/ScreenMoveRemap.qml').read_bytes()
+    menu = (PROJECT / 'desktop/shell/default/omarchy/omarchy-menu.jsonc').read_text()
+    replacements[prefix + 'default/omarchy/omarchy-menu.jsonc'] = menu.encode()
+    replacements['usr/local/libexec/arch-ipad-rotate-output'] = (PROJECT / 'desktop/configuration/rotate-output').read_bytes()
     return replacements
 
 
@@ -121,8 +125,14 @@ def labwc_files(directory, architecture='aarch64'):
 
 
 def desktop_additions():
-    name = 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml'
-    return {name: ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644)}
+    prefix = 'home/tablet/.local/share/omarchy-ipad/'
+    files = {prefix + 'shell/bluetooth-pairing/shell.qml': ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644)}
+    files['usr/local/libexec/arch-ipad-touch-output'] = ((PROJECT / 'desktop/configuration/touch-output').read_bytes(), 0o755)
+    files[prefix + 'bin/omarchy-rotation-lock'] = ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755)
+    files['usr/local/bin/omarchy-rotation-lock'] = files[prefix + 'bin/omarchy-rotation-lock']
+    files[prefix + 'bin/omarchy-rotate'] = ((PROJECT / 'desktop/shell/bin/omarchy-rotate').read_bytes(), 0o755)
+    files['usr/local/bin/omarchy-rotate'] = files[prefix + 'bin/omarchy-rotate']
+    return files
 
 
 def system_files():
