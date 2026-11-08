@@ -1,0 +1,16 @@
+#!/bin/sh
+# Warm restart GPU handover, as linux-a9's production hop did: by the final shutdown
+# step every GPU client (compositor, greeter, sessions) is stopped, so ask the G5P
+# firmware to quiesce (td-kexec) before the next kernel takes it over. Without this,
+# a warm restart from a running desktop hangs in the incoming kernel's GPU warm start
+# (device journal 2026-11-08: "origin=warm-uncycled ... cmd8-consumed", then silence).
+# Matched by driver, not by board; harmless when there is no G5P.
+for command in /sys/bus/platform/drivers/apple-g5p-drm/*/command; do
+    [ -e "$command" ] || continue
+    if echo td-kexec > "$command"; then
+        echo "<6>orchard-kexec: GPU handover td-kexec ${command%/command}" > /dev/kmsg
+    else
+        echo "<3>orchard-kexec: GPU handover td-kexec failed ${command%/command}" > /dev/kmsg
+    fi
+done
+exit 0

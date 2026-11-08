@@ -135,11 +135,11 @@ def desktop_additions():
 def system_files():
     additions = {}
     for path in sorted(SYSTEM.rglob('*')):
-        if path.is_file() and not path.is_symlink():
+        if path.is_file() and not path.is_symlink() and '__pycache__' not in path.parts:
             name = path.relative_to(SYSTEM).as_posix()
             data = path.read_bytes()
             mode = 0o440 if name.startswith('etc/sudoers.d/') else (
-                0o755 if name.startswith('usr/libexec/') else 0o644)
+                0o755 if name.startswith(('usr/libexec/', 'usr/bin/')) else 0o644)
             additions[name] = (data, mode)
     return additions
 
@@ -277,6 +277,9 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                 wants = [('multi-user.target.wants/' + unit, unit) for unit in
                          ('omarchy-pacman-init.service', 'orchard-usb-network.service', 'orchard-ssh.service',
                           'omarchy-powerd.service')]
+                wants.append(('multi-user.target.wants/orchard-kexec-provenance.service', 'orchard-kexec-provenance.service'))
+                wants.append(('multi-user.target.wants/orchard-kexec-load.service', 'orchard-kexec-load.service'))
+                wants.append(('multi-user.target.wants/orchard-kexec-health.service', 'orchard-kexec-health.service'))
                 wants.append(('getty.target.wants/serial-getty@ttyGS0.service', 'serial-getty@.service'))
                 # BindsTo stops the USB network when usb0 goes; usb0's return starts it again
                 wants.append(('sys-subsystem-net-devices-usb0.device.wants/orchard-usb-network.service',

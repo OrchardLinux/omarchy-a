@@ -1,0 +1,13 @@
+[Unit]
+Description=Load the latest selected BLS entry for the next Linux restart
+# Not part of the reboot/kexec transaction: a unit started during shutdown that needs /boot
+# conflicts with umount.target (systemd orders the mount's stop before any start, and
+# refuses the transaction). The image is kept current at boot (orchard-kexec-load),
+# after package updates (95-orchard-kexec.hook) and by orchard-restart's preflight.
+After=local-fs.target
+RequiresMountsFor=/boot /var/tmp
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/orchard-kexec refresh
+TimeoutStartSec=180

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Preflight while the desktop and notification service still exist.
+if ! systemctl start orchard-kexec-load.service; then
+    message='Warm restart refused. Linux is still running. Check journalctl -u orchard-kexec-load; no hardware reset was requested.'
+    echo "$message" >&2
+    command -v notify-send >/dev/null && notify-send -u critical 'Restart unavailable' "$message"
+    exit 1
+fi
+exec systemctl reboot

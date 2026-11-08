@@ -46,3 +46,5 @@ jq
 pango
 cairo
 wayland
+kexec-tools
+libnotify

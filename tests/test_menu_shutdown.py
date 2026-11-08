@@ -36,7 +36,21 @@ class MenuShutdownTests(unittest.TestCase):
         self.check_system_action('shutdown', 'poweroff')
 
     def test_reboot_requests_normal_system_reboot(self):
-        self.check_system_action("reboot", "reboot")
+        entry = re.search(r'"system\.reboot":\s*(\{[^\n]+\})', MENU.read_text())
+        self.assertEqual(json.loads(entry.group(1))['action'], 'orchard-restart')
+        script = PROJECT / 'system/overlay/usr/bin/orchard-restart'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); command = root/'systemctl'
+            command.write_text('#!/bin/sh\necho "$*" >> "$CALL_LOG"\n'
+                               '[ "$1" != start ] || exit "$TEST_STATUS"\n')
+            command.chmod(0o755)
+            for status in ('0','1'):
+                log=root/('log'+status)
+                env={**os.environ, 'PATH':str(root), 'CALL_LOG':str(log), 'TEST_STATUS':status}
+                result=subprocess.run(['/bin/sh',str(script)],env=env,capture_output=True,text=True)
+                self.assertEqual(result.returncode,int(status))
+                self.assertEqual(log.read_text(), 'start orchard-kexec-load.service\n'+('reboot\n' if status=='0' else ''))
+                if status=='1': self.assertIn('no hardware reset',result.stderr)
 
 
 if __name__ == '__main__':
