@@ -182,6 +182,7 @@
 
   // Setup
   "setup.tablet": {"icon":"󰦧","label":"Tablet"},
+  "setup.tablet.auto-brightness": {"icon":"󰃠","label":"Auto Brightness","when":"omarchy-auto-brightness available","checked":"omarchy-auto-brightness enabled","action":"omarchy-auto-brightness toggle"},
   "setup.tablet.rotation-lock": {"icon":"󰿆","label":"Rotation Lock","checked":"omarchy-rotation-lock enabled","action":"omarchy-rotation-lock toggle"},
   "setup.monitors": {"icon":"󰍹","label":"Monitors","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/monitors.lua\""},
   "setup.keybindings": {"icon":"","label":"Keybindings","when":"[[ -f ~/.config/hypr/bindings.lua ]]","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/bindings.lua\""},

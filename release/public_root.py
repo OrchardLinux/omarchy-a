@@ -45,6 +45,8 @@ def desktop_replacements():
     menu = menu.replace('! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled', 'command -v ipadlinux-suspend-ready >/dev/null && ipadlinux-suspend-ready')
     replacements[prefix + 'default/omarchy/omarchy-menu.jsonc'] = menu.encode()
     replacements['usr/local/libexec/arch-ipad-rotate-output'] = (PROJECT / 'desktop/configuration/rotate-output').read_bytes()
+    replacements[prefix + 'shell/plugins/panels/monitor/Panel.qml'] = (PROJECT / 'desktop/shell/shell/plugins/panels/monitor/Panel.qml').read_bytes()
+    replacements[prefix + 'default/i18n/en/shell.json'] = (PROJECT / 'desktop/shell/default/i18n/en/shell.json').read_bytes()
     return replacements
 
 
@@ -129,7 +131,10 @@ def labwc_files(directory, architecture='aarch64'):
 def desktop_additions():
     prefix = 'home/tablet/.local/share/omarchy-ipad/'
     files = {prefix + 'shell/bluetooth-pairing/shell.qml': ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644)}
+    files['usr/local/libexec/arch-ipad-auto-brightness'] = ((PROJECT / 'desktop/configuration/auto-brightness').read_bytes(), 0o755)
     files['usr/local/libexec/arch-ipad-touch-output'] = ((PROJECT / 'desktop/configuration/touch-output').read_bytes(), 0o755)
+    files[prefix + 'bin/omarchy-auto-brightness'] = ((PROJECT / 'desktop/shell/bin/omarchy-auto-brightness').read_bytes(), 0o755)
+    files['usr/local/bin/omarchy-auto-brightness'] = files[prefix + 'bin/omarchy-auto-brightness']
     files[prefix + 'bin/omarchy-rotation-lock'] = ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755)
     files['usr/local/bin/omarchy-rotation-lock'] = files[prefix + 'bin/omarchy-rotation-lock']
     files[prefix + 'bin/omarchy-rotate'] = ((PROJECT / 'desktop/shell/bin/omarchy-rotate').read_bytes(), 0o755)
