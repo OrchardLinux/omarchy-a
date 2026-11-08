@@ -1,0 +1,8 @@
+#!/usr/bin/python3
+"""Recover a dim/off saved backlight on boot, after systemd restores it."""
+from pathlib import Path
+for panel in Path('/sys/class/backlight').glob('*'):
+    maximum = int((panel/'max_brightness').read_text())
+    current = int((panel/'brightness').read_text())
+    if current * 100 < maximum * 15:
+        (panel/'brightness').write_text(str(max(1,maximum*40//100))+'\n')

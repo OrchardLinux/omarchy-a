@@ -36,7 +36,7 @@ class MenuShutdownTests(unittest.TestCase):
         self.check_system_action('shutdown', 'poweroff')
 
     def test_reboot_requests_normal_system_reboot(self):
-        self.check_system_action('reboot', 'reboot')
+        self.check_system_action("reboot", "reboot")
 
 
 if __name__ == '__main__':

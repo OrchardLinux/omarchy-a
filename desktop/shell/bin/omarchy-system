@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+case ${1:-} in
+  logout) exec labwc --exit ;;
+  lock) exec omarchy-shell lock lock ;;
+  suspend) ipadlinux-suspend-ready && exec systemctl suspend ;;
+  reboot) exec systemctl reboot ;;
+  shutdown|poweroff) exec systemctl poweroff ;;
+  *) echo 'Usage: omarchy-system logout|lock|suspend|reboot|shutdown' >&2; exit 2 ;;
+esac

@@ -39,6 +39,10 @@ def desktop_replacements():
         'bin/omarchy-bluetooth-device')}
     replacements['home/tablet/.config/labwc/rc.xml'] = (PROJECT / 'desktop/shell/labwc-rc.xml').read_bytes()
     replacements['home/tablet/.config/labwc/autostart'] = (PROJECT / 'desktop/configuration/labwc-autostart').read_bytes()
+    replacements[prefix + 'shell/plugins/services/idle/Service.qml'] = (PROJECT / 'desktop/shell/shell/plugins/services/idle/Service.qml').read_bytes()
+    menu = (PROJECT / 'desktop/shell/default/omarchy/omarchy-menu.jsonc').read_text()
+    menu = menu.replace('! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled', 'command -v ipadlinux-suspend-ready >/dev/null && ipadlinux-suspend-ready')
+    replacements[prefix + 'default/omarchy/omarchy-menu.jsonc'] = menu.encode()
     return replacements
 
 
@@ -121,8 +125,11 @@ def labwc_files(directory, architecture='aarch64'):
 
 
 def desktop_additions():
-    name = 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml'
-    return {name: ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644)}
+    prefix = 'home/tablet/.local/share/omarchy-ipad/'
+    files = {prefix + 'shell/bluetooth-pairing/shell.qml': ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644)}
+    files[prefix + 'bin/omarchy-system'] = ((PROJECT / 'desktop/shell/bin/omarchy-system').read_bytes(), 0o755)
+    files['usr/local/bin/omarchy-system'] = files[prefix + 'bin/omarchy-system']
+    return files
 
 
 def system_files():

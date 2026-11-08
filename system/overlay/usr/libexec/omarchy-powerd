@@ -250,6 +250,34 @@ def key_presses(data):
     return presses
 
 
+class KeyFilter:
+    def __init__(self):
+        self.power = self.home = self.cancelled = False
+
+    def events(self, data):
+        out = []
+        for off in range(0, len(data)-INPUT_EVENT.size+1, INPUT_EVENT.size):
+            sec,usec,kind,code,value = INPUT_EVENT.unpack_from(data, off)
+            if kind != EV_KEY or value not in (0,1): continue
+            when = sec + usec/1000000
+            if code == KEY_HOMEPAGE:
+                self.home = bool(value)
+                if value and self.power: self.cancelled = True
+                elif value: out.append(('home',when))
+            elif code == KEY_POWER:
+                if value:
+                    self.power, self.cancelled = True, self.home
+                elif self.power:
+                    self.power = False
+                    if not self.cancelled and not self.home: out.append(('power',when))
+        return out
+
+
+def platform_suspend_ready():
+    helper = '/usr/local/bin/ipadlinux-suspend-ready'
+    return Path(helper).exists() and command(helper).returncode == 0
+
+
 def command(*argv, timeout=5, **options):
     return subprocess.run(argv, capture_output=True, text=True, timeout=timeout, **options)
 
@@ -287,8 +315,11 @@ class Daemon:
         self.saved = None
         self.counters = None
         self.sleep_started = None
+        self.key_filter = KeyFilter()
         self.ticks = 0
         self.cancel = threading.Event()
+        self.dim_saved = None
+        self.dim_level = None
         self.dark = threading.Event()
         self.session_jobs = queue.Queue()
         self.inhibitor = None
@@ -405,12 +436,21 @@ class Daemon:
             getattr(self, 'do_' + action.replace('-', '_'))(before)
         self.dark.set() if self.machine.state in (SETTLING, DARK) else self.dark.clear()
 
+    def undim(self):
+        panel = self.backlight()
+        if self.dim_saved is not None and panel:
+            current = int((panel / 'brightness').read_text())
+            if self.machine.state == ON and current == self.dim_level:
+                (panel / 'brightness').write_text(f'{self.dim_saved}\n')
+        self.dim_saved = self.dim_level = None
+
     def do_dark(self, _):
         panel = self.backlight()
         if panel:
             current = int((panel / 'brightness').read_text())
             if current > 0:
-                self.saved = current
+                self.saved = self.dim_saved or current
+            self.dim_saved = self.dim_level = None
             (panel / 'brightness').write_text('0\n')
 
     def do_light(self, origin):
@@ -481,6 +521,10 @@ class Daemon:
 
     def request_suspend(self):
         try:
+            if not platform_suspend_ready():
+                log('no suspend: platform readiness contract refused')
+                self.post('suspend-refused')
+                return
             answer = command('busctl', 'call', 'org.freedesktop.login1', '/org/freedesktop/login1',
                              'org.freedesktop.login1.Manager', 'CanSuspend').stdout.strip()
             if answer != 's "yes"':
@@ -503,6 +547,8 @@ class Daemon:
             try:
                 user = session_user()
                 if job == 'lock':
+                    if user is not None:
+                        as_user(user, 'omarchy-keyboard', 'hide')
                     self.post('lock-ok' if user is None or self.lock_session(user) else 'lock-failed')
                 elif user is not None and job == 'woke':
                     as_user(user, 'omarchy-shell', '-q', 'lock', 'woke')
@@ -552,6 +598,48 @@ class Daemon:
                     connection.sendall(b'lit\n' if self.machine.state == ON else b'dark\n')
                 elif request == 'status':
                     connection.sendall(self.machine.state.encode() + b'\n')
+                elif request.startswith('brightness '):
+                    parts = request.split()
+                    panel = self.backlight()
+                    reply = b'held\n'
+                    if (len(parts) == 4 and panel and parts[1] == panel.name and
+                            parts[2].isascii() and parts[2].isdigit() and
+                            parts[3].isascii() and parts[3].isdigit()):
+                        level, expected = int(parts[2]), int(parts[3])
+                        current = int((panel / 'brightness').read_text())
+                        maximum = int((panel / 'max_brightness').read_text())
+                        if self.machine.state == ON and self.dim_saved is None and current > 0 and current == expected and 1 <= level <= maximum:
+                            (panel / 'brightness').write_text(f'{level}\n')
+                            reply = b'ok\n'
+                    connection.sendall(reply)
+                elif request == 'als-state':
+                    connection.sendall(b'lit\n' if self.machine.state == ON and self.dim_saved is None else b'dark\n')
+                elif request == 'dim':
+                    panel = self.backlight()
+                    if self.machine.state == ON and self.dim_saved is None and panel:
+                        current = int((panel / 'brightness').read_text())
+                        level = max(1, int((panel / 'max_brightness').read_text()) // 10)
+                        if current > level:
+                            self.dim_saved, self.dim_level = current, level
+                            (panel / 'brightness').write_text(f'{level}\n')
+                    connection.sendall(b'ok\n')
+                elif request == 'undim':
+                    self.undim()
+                    connection.sendall(b'ok\n')
+                elif request == 'cover-suspend':
+                    if self.machine.state == DARK:
+                        self.machine.no_suspend = False
+                        self.feed('not-playing')
+                    connection.sendall(b'ok\n')
+                elif request == 'cover-close':
+                    self.feed('idle')
+                    # Lock, darken and stay dark without automatic suspend.
+                    # Cover polarity is opt-in; sleep remains separately qualified.
+                    if self.machine.state == SETTLING:
+                        self.settle_at = None
+                        self.machine.state = DARK
+                        self.machine.no_suspend = True
+                    connection.sendall(b'ok\n')
                 elif request in ('idle', 'wake'):
                     self.feed(request)
                     connection.sendall(b'ok\n')
@@ -641,7 +729,7 @@ class Daemon:
             # Keys first: a press that woke the tablet decides before the sleep's end is seen.
             for fd in [fd for fd in readable if fd in self.keys]:
                 try:
-                    for name, when in key_presses(os.read(fd, INPUT_EVENT.size * 64)):
+                    for name, when in self.key_filter.events(os.read(fd, INPUT_EVENT.size * 64)):
                         # Pressed before this wake's panel lit: that wake took care of it.
                         if self.machine.inflight and self.lit_at is not None and when <= self.lit_at:
                             log(f't={when:.6f} {name}: consumed by the wake')

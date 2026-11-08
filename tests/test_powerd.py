@@ -364,7 +364,7 @@ class EventLoop(unittest.TestCase):
         self.unit_state = 'activating'
         for target, value in (('SETTLE_SECONDS', 0.1), ('STATS', self.stats), ('BACKLIGHTS', self.work / 'backlight'),
                               ('WAKEUP_COUNT', self.work / 'wakeup_count'), ('SOCKET', str(self.work / 'ctl')),
-                              ('session_user', lambda: None), ('command', self.fake_command), ('log', lambda *_: None)):
+                              ('platform_suspend_ready', lambda: True), ('session_user', lambda: None), ('command', self.fake_command), ('log', lambda *_: None)):
             patcher = patch.object(powerd, target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -410,7 +410,7 @@ class EventLoop(unittest.TestCase):
 
     def press(self, code=116, when=None):
         when = time.monotonic() if when is None else when
-        os.write(self.key_write, powerd.INPUT_EVENT.pack(int(when), int(when % 1 * 1e6), 1, code, 1))
+        os.write(self.key_write, b''.join(powerd.INPUT_EVENT.pack(int(when), int(when % 1 * 1e6), 1, code, v) for v in (1,0)))
 
     def wait(self, condition, seconds=3):
         deadline = time.monotonic() + seconds
@@ -429,6 +429,38 @@ class EventLoop(unittest.TestCase):
             connection.connect(powerd.SOCKET)
             connection.sendall(request.encode() + b'\n')
             return connection.recv(64).decode().strip()
+
+    def test_idle_dim_restore_and_manual_brightness_supersedes_dim(self):
+        self.assertEqual(self.ask('dim'), 'ok')
+        self.assertEqual(self.brightness(), '300')
+        self.assertEqual(self.ask('als-state'), 'dark')
+        self.assertEqual(self.ask('brightness panel 600 300'), 'held')
+        self.ask('undim'); self.assertEqual(self.brightness(), '1563')
+        self.ask('dim')
+        (self.panel / 'brightness').write_text('700\n')
+        self.ask('undim'); self.assertEqual(self.brightness(), '700')
+
+    def test_cover_close_locks_without_automatic_suspend_and_open_wakes(self):
+        self.ask('cover-close')
+        self.wait(lambda: self.daemon.machine.lock_ok)
+        self.assertEqual(self.ask('status'), 'DARK')
+        self.assertEqual(self.brightness(), '0')
+        time.sleep(0.2)
+        self.assertNotIn(('systemctl', 'suspend'), self.requests)
+        self.ask('wake'); self.assertEqual(self.brightness(), '1563')
+
+    def test_automatic_brightness_obeys_power_state_and_manual_changes(self):
+        self.assertEqual(self.ask('brightness panel 1800 1563'), 'ok')
+        self.assertEqual(self.brightness(), '1800')
+        self.assertEqual(self.ask('brightness panel 1900 1563'), 'held')
+        self.assertEqual(self.brightness(), '1800')
+        for request in ('brightness panel 0 1800', 'brightness panel 3001 1800',
+                        'brightness other 1900 1800', 'brightness panel ² 1800'):
+            self.assertEqual(self.ask(request), 'held')
+            self.assertEqual(self.brightness(), '1800')
+        self.press(); self.wait(lambda: self.brightness() == '0')
+        self.assertEqual(self.ask('brightness panel 1800 0'), 'held')
+        self.assertEqual(self.brightness(), '0')
 
     def test_press_sleep_wake(self):
         machine = self.daemon.machine
