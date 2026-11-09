@@ -57,8 +57,11 @@ class GreeterStagingTests(unittest.TestCase):
                              (stage.HERE / 'greeter/greetd.toml').stat().st_mode & 0o777)
             self.assertEqual((target / 'usr/local/libexec/arch-ipad-login-session').stat().st_mode & 0o777, 0o755)
             menu = target / 'home/tablet/.local/share/omarchy-ipad/default/omarchy/omarchy-menu.jsonc'
-            self.assertIn('"system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"systemctl poweroff"}', menu.read_text())
-            self.assertIn('"system.reboot": {"icon":"󰜉","label":"Reboot","action":"systemctl reboot"}', menu.read_text())
+            self.assertIn('"system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system shutdown"}', menu.read_text())
+            self.assertIn('"system.reboot": {"icon":"󰜉","label":"Reboot","action":"omarchy-system reboot"}', menu.read_text())
+            self.assertIn('"label":"Logout","action":"omarchy-system logout"}', menu.read_text())
+            for command in ('omarchy-system', 'omarchy-system-lock', 'omarchy-system-wake'):
+                self.assertTrue((target / 'usr/local/bin' / command).is_symlink(), command)
             greeter = target / 'usr/share/omarchy-greeter'
             self.assertEqual((greeter / 'plugins/lock/LockView.qml').read_bytes(),
                              (stage.PORT / 'shell/plugins/lock/LockView.qml').read_bytes())

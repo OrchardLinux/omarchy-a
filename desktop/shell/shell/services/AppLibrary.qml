@@ -160,6 +160,12 @@ Item {
     try { return ToplevelManager.toplevels.values.length } catch (e) { return 0 }
   }
 
+  // omarchy-hyprland-window-close-all: ask each window to close, as its own close button would.
+  function closeAllToplevels() {
+    var windows = ToplevelManager.toplevels.values
+    for (var i = 0; i < windows.length; i++) windows[i].close()
+  }
+
   function beginLaunchFeedback(name) {
     root.launchSerial++
     root.launchToplevelCount = root.toplevelCount()

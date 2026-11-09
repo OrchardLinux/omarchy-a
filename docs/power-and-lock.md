@@ -46,7 +46,8 @@ measured as 3.36 s); the key timestamps can. It:
   suspend from anywhere else comes through here first (`PrepareForSleep`);
 - takes the session's inputs over `/run/omarchy-powerd.sock` (group `video`):
   `/usr/libexec/omarchy-powerctl idle` (the idle timeouts), `wake`,
-  `input` (lit or dark, for lock-screen taps), `status`.
+  `input` (lit or dark, for lock-screen taps), `status`. Upstream's
+  `omarchy-system-lock` and `omarchy-system-wake` send `idle` and `wake`.
 
 No state is inferred from brightness or files. After a restart the state is
 `ON` and the panel is lit: it fails towards a visible, locked-or-not screen.

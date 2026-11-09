@@ -1797,6 +1797,15 @@ ShellRoot {
       return "ok"
     }
 
+    function closeAllWindows(): string {
+      shell.appLibrary.closeAllToplevels()
+      return "ok"
+    }
+
+    function windowCount(): string {
+      return String(shell.appLibrary.toplevelCount())
+    }
+
     function applyTheme(colorsB64: string, shellB64: string): string {
       if (shell.bootIntro) shell.bootIntro.cancelTheme()
       var background = shell.firstPartyServiceFor("omarchy.background")
