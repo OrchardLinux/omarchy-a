@@ -64,7 +64,7 @@ elif mode == "run":
         if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
             raise ValueError("Invalid Omarchy colour: " + key)
         return value[1:]
-    args = [str(binary), "--hidden", "--no-popup", "-H", "270", "-L", "220",
+    args = [str(binary), "--hidden", "-H", "270", "-L", "220",
             "--bg", color("background"), "--fg", color("lighter_background"),
             "--fg-sp", color("selection"), "--press", color("accent"),
             "--press-sp", color("accent"), "--text", color("foreground"),

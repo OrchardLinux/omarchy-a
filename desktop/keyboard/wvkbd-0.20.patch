@@ -24,7 +24,7 @@
 +    fclose(file);
 +}
 +
-@@ -138,0 +152,138 @@
+@@ -138,0 +152,150 @@
 +/* Drag the actual layer surface, preserving its exclusive zone until hide.
 + * Surface-local motion changes as the surface moves: add the current offset
 + * to recover the finger's position in the original surface coordinates. */
@@ -50,6 +50,16 @@
 +    struct timespec t;
 +    clock_gettime(CLOCK_MONOTONIC, &t);
 +    return (int64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
++}
++
++static int64_t preview_until;
++
++static void release_with_preview(uint32_t time)
++{
++    struct key *key = keyboard.last_press;
++    uint8_t mods = keyboard.mods;
++    kbd_release_key(&keyboard, time);
++    preview_until = kbd_preview_key(&keyboard, key, mods) ? monotonic_ms() + 110 : 0;
 +}
 +
 +static void drag_position(int offset)
@@ -130,6 +140,8 @@
 +    pending_y = y;
 +    pending_time = time;
 +    pending_started = monotonic_ms();
++    preview_until = 0;
++    kbd_preview_key(&keyboard, kbd_get_key(&keyboard, x, y), keyboard.mods);
 +}
 +
 +static void pending_commit(void)
@@ -163,7 +175,7 @@
 +    }
 +}
 +
-@@ -255,16 +406,3 @@
+@@ -255,16 +418,3 @@
 -    struct key *next_key;
 -    uint32_t touch_x, touch_y;
 -
@@ -183,7 +195,8 @@
 +    if (drag_source != DRAG_NONE || animating || pending_source != DRAG_NONE) return;
 +    if (surface == draw_surf.surf)
 +        pending_begin(DRAG_TOUCH, id, wl_fixed_to_int(x), wl_fixed_to_int(y), time);
-@@ -280,0 +419,9 @@
+@@ -281 +431,10 @@
+-    kbd_release_key(&keyboard, time);
 +    if (drag_source == DRAG_TOUCH) {
 +        if (id == drag_touch_id) drag_finish(false, time);
 +        return;
@@ -193,10 +206,11 @@
 +        if (id != pending_id) return;
 +        pending_commit();
 +    } else if (pending_source != DRAG_NONE) return;
-@@ -292 +439 @@
++    release_with_preview(time);
+@@ -292 +451 @@
 -    uint32_t touch_x, touch_y;
 +    int touch_x, touch_y;
-@@ -296,0 +444,10 @@
+@@ -296,0 +456,10 @@
 +    if (drag_source == DRAG_TOUCH) {
 +        if (id == drag_touch_id) drag_motion(touch_y, time);
 +        return;
@@ -207,42 +221,41 @@
 +        return;
 +    }
 +    if (pending_source != DRAG_NONE) return;
-@@ -307,0 +465,3 @@
+@@ -307,0 +477,4 @@
++    preview_until = 0;
 +    if (pending_source == DRAG_TOUCH) pending_source = DRAG_NONE;
 +    if (drag_source == DRAG_TOUCH) drag_finish(true, drag_last_time);
 +    else if (layer_surface_configured) kbd_release_key(&keyboard, 0);
-@@ -326,0 +487,2 @@
+@@ -326,0 +500,2 @@
 +    cur_x = wl_fixed_to_int(surface_x);
 +    cur_y = wl_fixed_to_int(surface_y);
-@@ -347,2 +509,3 @@
+@@ -347,2 +522,7 @@
 -    if (cur_press) {
 -        kbd_motion_key(&keyboard, time, cur_x, cur_y);
 +    if (drag_source == DRAG_POINTER) {
 +        drag_motion(cur_y, time);
 +        return;
-@@ -349,0 +513,4 @@
++    }
 +    if (cur_press && drag_source == DRAG_NONE && !animating) {
 +        if (pending_source == DRAG_POINTER) pending_motion(cur_x, cur_y, time);
 +        else if (pending_source == DRAG_NONE) kbd_motion_key(&keyboard, time, cur_x, cur_y);
-+    }
-@@ -360 +527 @@
+@@ -360 +540 @@
 -    struct key *next_key;
 +    if (button != BTN_LEFT) return;
-@@ -362 +529,5 @@
+@@ -362 +542,5 @@
 -
 +    if (drag_source == DRAG_POINTER) {
 +        if (!cur_press) drag_finish(false, time);
 +        return;
 +    }
 +    if (drag_source != DRAG_NONE || animating) return;
-@@ -364 +535,2 @@
+@@ -364 +548,2 @@
 -        kbd_unpress_key(&keyboard, time);
 +        if (pending_source == DRAG_NONE && cur_x >= 0 && cur_y >= 0)
 +            pending_begin(DRAG_POINTER, 0, cur_x, cur_y, time);
-@@ -365,0 +538,2 @@
-+        if (pending_source == DRAG_POINTER) pending_commit();
-+        else if (pending_source != DRAG_NONE) return;
-@@ -368,11 +541,0 @@
+@@ -366,12 +551,3 @@
+-        kbd_release_key(&keyboard, time);
+-    }
 -
 -    if (cur_press && cur_x >= 0 && cur_y >= 0) {
 -        next_key = kbd_get_key(&keyboard, cur_x, cur_y);
@@ -253,20 +266,180 @@
 -            kbd_switch_layout(&keyboard, keyboard.prevlayout,
 -                              keyboard.last_abc_index);
 -        }
--    }
-@@ -607,0 +771 @@
++        if (pending_source == DRAG_POINTER) pending_commit();
++        else if (pending_source != DRAG_NONE) return;
++        release_with_preview(time);
+@@ -607,0 +784 @@
 +    report_visibility(true);
-@@ -721,0 +886,5 @@
+@@ -718,0 +896,16 @@
++/* A frame callback belongs to its popup surface and cannot survive hiding. */
++static void destroy_popup_surface(void)
++{
++    if (popup_draw_surf.frame_cb) {
++        wl_callback_destroy(popup_draw_surf.frame_cb);
++        popup_draw_surf.frame_cb = NULL;
++    }
++    popup_draw_surf.attached = false;
++    popup_xdg_surface_configured = false;
++    keyboard.last_popup_w = keyboard.last_popup_h = 0;
++    if (popup_draw_surf.surf) {
++        wl_surface_destroy(popup_draw_surf.surf);
++        popup_draw_surf.surf = NULL;
++    }
++}
++
+@@ -721,0 +915,6 @@
 +    animating = false;
++    preview_until = 0;
 +    drag_source = DRAG_NONE;
 +    pending_source = DRAG_NONE;
 +    drag_offset = 0;
 +    cur_press = false;
-@@ -760,0 +930 @@
+@@ -742,4 +941 @@
+-    if (popup_draw_surf.surf) {
+-        wl_surface_destroy(popup_draw_surf.surf);
+-        popup_draw_surf.surf = NULL;
+-    }
++    destroy_popup_surface();
+@@ -760,0 +957 @@
 +    report_visibility(false);
-@@ -1185 +1355,4 @@
+@@ -1185 +1382,8 @@
 -        poll(fds, 2, -1);
-+        poll(fds, 2, (animating || pending_source != DRAG_NONE) ? 16 : -1);
++        poll(fds, 2, (animating || pending_source != DRAG_NONE || preview_until) ? 16 : -1);
 +        animation_tick();
++        if (preview_until && monotonic_ms() >= preview_until) {
++            preview_until = 0;
++            kbd_clear_last_popup(&keyboard);
++        }
 +        if (pending_source != DRAG_NONE && monotonic_ms() - pending_started >= 300)
 +            pending_commit();
+--- a/keyboard.c
++++ b/keyboard.c
+@@ -0,0 +1 @@
++#include "key-preview.h"
+@@ -628,0 +630,33 @@
++/* Show feedback immediately, without emitting a key or changing modifiers. */
++bool
++kbd_preview_key(struct kbd *kb, struct key *k, uint8_t mods)
++{
++    kbd_clear_last_popup(kb);
++    if (!kb->show_popup || !k || (k->type != Code && k->type != Copy) ||
++        (k->type == Code && k->code == KEY_SPACE)) return false;
++    const char *label = ((mods & Shift) || ((mods & CapsLock) &&
++        strlen(k->label) == 1 && isalpha((unsigned char)k->label[0])))
++        ? k->shift_label : k->label;
++    if (!label || !*label) return false;
++    struct key_preview_bounds p = key_preview_place(kb->w, kb->h, k->x, k->y, k->w, k->h);
++    if (p.w < 24 || p.h < 24) return false;
++    struct clr_scheme *scheme = &kb->schemes[k->scheme];
++    Color shadow = {.bgra = {0, 0, 0, 85}};
++    kb->last_popup_x = p.x;
++    kb->last_popup_y = p.y;
++    kb->last_popup_w = p.w + 3;
++    kb->last_popup_h = p.h + 12;
++    drw_fill_rectangle(kb->popup_surf, shadow, p.x + 2, p.y + 3, p.w, p.h, 12);
++    drw_fill_triangle(kb->popup_surf, shadow, p.tip - 4, p.y + p.h + 2, 12, 8);
++    drw_fill_triangle(kb->popup_surf, scheme->high, p.tip - 6, p.y + p.h - 1, 12, 9);
++    drw_fill_rectangle(kb->popup_surf, scheme->high, p.x, p.y, p.w, p.h, 12);
++    drw_fill_rectangle(kb->popup_surf, scheme->fg, p.x + 2, p.y + 2, p.w - 4, p.h - 4, 10);
++    PangoFontDescription *font = pango_font_description_copy(scheme->font_description);
++    int size = pango_font_description_get_size(font);
++    pango_font_description_set_size(font, (size > 0 ? size : 16 * PANGO_SCALE) * 3 / 2);
++    drw_draw_text(kb->popup_surf, scheme->text, p.x + 2, p.y + 2,
++                  p.w - 4, p.h - 4, 2, label, font);
++    pango_font_description_free(font);
++    return true;
++}
++
+@@ -668,2 +702 @@
+-    if (kb->show_popup && (type == Press || type == Unpress)) {
+-        kbd_clear_last_popup(kb);
++    if (type == Press) kbd_preview_key(kb, k, kb->mods);
+@@ -671,16 +703,0 @@
+-        kb->last_popup_x = k->x;
+-        kb->last_popup_y = kb->h + k->y - k->h;
+-        kb->last_popup_w = k->w;
+-        kb->last_popup_h = k->h;
+-
+-        drw_fill_rectangle(kb->popup_surf, scheme->bg, k->x,
+-                           kb->last_popup_y, k->w, k->h, scheme->rounding);
+-        draw_inset(kb->popup_surf, k->x, kb->last_popup_y, k->w, k->h,
+-                   KBD_KEY_BORDER,
+-                   kb->show_highlight ? scheme->high : scheme->fg,
+-                   scheme->rounding);
+-        drw_draw_text(kb->popup_surf,
+-                      kb->show_highlight ? scheme->text_press : scheme->text,
+-                      k->x, kb->last_popup_y, k->w, k->h, KBD_KEY_BORDER, label,
+-                      scheme->font_description);
+-    }
+--- a/keyboard.h
++++ b/keyboard.h
+@@ -147,0 +148 @@
++bool kbd_preview_key(struct kbd *kb, struct key *key, uint8_t mods);
+--- a/drw.c
++++ b/drw.c
+@@ -285,0 +286,20 @@
++
++/* Downward tooltip tip, drawn on the same input-transparent popup as the key. */
++void
++drw_fill_triangle(struct drwsurf *ds, Color color, uint32_t x, uint32_t y,
++                  uint32_t w, uint32_t h)
++{
++    drwsurf_flip(ds);
++    drwsurf_damage(ds, x, y, w + 1, h + 1);
++    cairo_t *cr = ds->back_buffer->cairo;
++    cairo_save(cr);
++    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
++    cairo_set_source_rgba(cr, color.bgra[2] / 255.0, color.bgra[1] / 255.0,
++                         color.bgra[0] / 255.0, color.bgra[3] / 255.0);
++    cairo_move_to(cr, x, y);
++    cairo_line_to(cr, x + w, y);
++    cairo_line_to(cr, x + w / 2.0, y + h);
++    cairo_close_path(cr);
++    cairo_fill(cr);
++    cairo_restore(cr);
++}
+--- a/drw.h
++++ b/drw.h
+@@ -52,0 +53,3 @@
++void drw_fill_triangle(struct drwsurf *ds, Color color, uint32_t x, uint32_t y,
++                       uint32_t w, uint32_t h);
++
+--- /dev/null
++++ b/key-preview.h
+@@ -0,0 +1,35 @@
++#ifndef KEY_PREVIEW_H
++#define KEY_PREVIEW_H
++
++struct key_preview_bounds { int x, y, w, h, tip; };
++
++/* Coordinates are in the two-keyboard-height, input-transparent popup surface. */
++static inline struct key_preview_bounds
++key_preview_place(int width, int height, int key_x, int key_y, int key_w, int key_h)
++{
++    struct key_preview_bounds p = {0};
++    int margin = width >= 16 ? 4 : 0;
++    int available = width - 2 * margin;
++    if (available < 1 || height < 1) return p;
++    p.w = key_w + 18;
++    if (p.w < 56) p.w = 56;
++    if (p.w > 96) p.w = 96;
++    if (p.w > available) p.w = available;
++    p.h = key_h + 14;
++    if (p.h < 40) p.h = 40;
++    if (p.h > 88) p.h = 88;
++    if (p.h > height) p.h = height;
++    p.x = key_x + key_w / 2 - p.w / 2;
++    if (p.x < margin) p.x = margin;
++    if (p.x + p.w > width - margin) p.x = width - margin - p.w;
++    p.y = height + key_y - p.h - 8;
++    if (p.y < 0) p.y = 0;
++    if (p.y + p.h + 8 > height * 2) p.y = height * 2 - p.h - 8;
++    if (p.y < 0) p.y = 0;
++    p.tip = key_x + key_w / 2;
++    int inset = p.w < 24 ? p.w / 2 : 12;
++    if (p.tip < p.x + inset) p.tip = p.x + inset;
++    if (p.tip > p.x + p.w - inset) p.tip = p.x + p.w - inset;
++    return p;
++}
++#endif
