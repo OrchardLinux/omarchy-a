@@ -42,10 +42,10 @@ Item {
     }
   }
 
-  // Up at once, then a long, gentle fade.
+  // Full white at once, then a gentle fade.
   SequentialAnimation {
     id: flashAnimation
-    NumberAnimation { target: white; property: "opacity"; to: 0.95; duration: 60; easing.type: Easing.OutQuad }
+    PropertyAction { target: white; property: "opacity"; value: 0.95 }
     NumberAnimation { target: white; property: "opacity"; to: 0; duration: 500; easing.type: Easing.InOutSine }
     onFinished: root.opened = false
   }
