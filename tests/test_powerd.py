@@ -408,9 +408,9 @@ class Brightness(unittest.TestCase):
     def level(self):
         return int((self.panel / 'brightness').read_text())
 
-    def test_a_boot_without_a_remembered_level_is_half_bright(self):
+    def test_the_first_boot_without_a_remembered_level_is_full_bright(self):
         self.daemon.restore_brightness()
-        self.assertEqual(self.level(), 1000)
+        self.assertEqual(self.level(), 2000)
 
     def test_a_boot_restores_the_level_of_the_last_dark_not_the_dark_itself(self):
         (self.panel / 'brightness').write_text('1200\n')

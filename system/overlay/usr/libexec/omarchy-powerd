@@ -473,7 +473,7 @@ class Daemon:
             log(f'brightness not remembered: {error}')
 
     def restore_brightness(self):
-        """First start of a boot: the remembered level, never too dim to see."""
+        """First start of a boot: the remembered level, never too dim to see; full on the first boot."""
         panel = self.backlight()
         if not panel:
             return
@@ -481,7 +481,7 @@ class Daemon:
         try:
             level = max(int(BRIGHTNESS.read_text()), max(1, maximum // 20))
         except (OSError, ValueError):
-            level = max(1, maximum // 2)
+            level = maximum
         self.saved = min(level, maximum)
         (panel / 'brightness').write_text(f'{self.saved}\n')
 
