@@ -72,8 +72,16 @@ printf '%s' "$payload" > "$request"
 export OMARCHY_PICKER_REQUEST_FILE=$request
 # The inherited QT_QUICK_BACKEND=software prevents Omarchy's shader mask from
 # drawing; llvmpipe executes OpenGL on the CPU without changing the compositor.
-env -u QT_QUICK_BACKEND LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl \
-  qs -p "$config" >"$runtime/omarchy-picker.log" 2>&1 9>&- &
+if [[ ${WLR_RENDERER:-} == gles2 ]]; then
+  # On the GPU session Mesa would pick Zink on the GPU, whose shader backend
+  # lacks derivatives yet: llvmpipe, named explicitly.
+  env -u QT_QUICK_BACKEND -u MESA_LOADER_DRIVER_OVERRIDE LIBGL_ALWAYS_SOFTWARE=1 \
+    GALLIUM_DRIVER=llvmpipe QSG_RHI_BACKEND=opengl \
+    qs -p "$config" >"$runtime/omarchy-picker.log" 2>&1 9>&- &
+else
+  env -u QT_QUICK_BACKEND LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl \
+    qs -p "$config" >"$runtime/omarchy-picker.log" 2>&1 9>&- &
+fi
 child=$!
 ready=false
 for ((i=0; i<60; i++)); do

@@ -19,7 +19,11 @@ PINS = HERE / 'arm64/inputs.json'
 FILES = {
     'omafox_xpi': INPUTS / '@omafox.xpi',
     'omacalc_package': INPUTS / 'omacalc.pkg.tar.zst',
+    'libva_v4l2_request_source': INPUTS / 'libva-v4l2_request-1.2-2-gcac6ece.tar.gz',
 }
+# Source-built on 64-bit boards only: the A10 GPU's Vulkan driver and the VA-API video bridge.
+HARDWARE_PACKAGES = {'vulkan-powervr-orchard.pkg.tar.zst': ('gpu_recipe_sha256', 'packages/vulkan-powervr-orchard'),
+                     'libva-v4l2-request.pkg.tar.zst': ('video_bridge_recipe_sha256', 'packages/libva-v4l2-request')}
 KEYBOARD_PATH = 'home/tablet/.local/share/omarchy-ipad/trials/wvkbd-mobintl-v0.20-font18-special15-state'
 XPI_PATH = 'usr/lib/firefox/distribution/extensions/@omafox.xpi'
 
@@ -56,6 +60,11 @@ def source_metadata(built, architecture='aarch64'):
         expected.add('omacalc.pkg.tar.zst')
         if built.get('omacalc_recipe_sha256') != recipe_sha(HERE / 'packages/omacalc'):
             raise ValueError('Omacalc source-build recipe differs')
+    else:
+        expected.update(HARDWARE_PACKAGES)
+        for key, recipe in HARDWARE_PACKAGES.values():
+            if built.get(key) != recipe_sha(HERE / recipe):
+                raise ValueError('Hardware package source-build recipe differs: ' + recipe)
     if set(built['files']) != expected:
         raise ValueError('Source-build files differ')
     return built['files']
@@ -80,6 +89,10 @@ def verify(directory, architecture=None):
     omacalc_sha = pins['omacalc_package'] if architecture == 'aarch64' else built_files['omacalc.pkg.tar.zst']
     for name in ('omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz', 'omacalc.pkg.tar.zst'):
         check_package(packages / name, architecture)
+    for name in HARDWARE_PACKAGES if architecture == 'aarch64' else ():
+        check_package(packages / name, architecture)
+        if sha(packages / name) != built_files[name]:
+            raise ValueError('Source-built hardware package differs: ' + name)
     if sha(packages / 'omacalc.pkg.tar.zst') != omacalc_sha:
         raise ValueError('Signed Omacalc package differs')
     payload = directory / 'payload'
@@ -171,6 +184,8 @@ def build(output, architecture='aarch64', builder_image=None):
         shutil.copyfile(sources / 'wlroots0.20.pkg.tar.xz', packages / 'wlroots0.20.pkg.tar.xz')
         calculator = FILES['omacalc_package'] if architecture == 'aarch64' else sources / 'omacalc.pkg.tar.zst'
         shutil.copyfile(calculator, packages / 'omacalc.pkg.tar.zst')
+        for name in HARDWARE_PACKAGES if architecture == 'aarch64' else ():
+            shutil.copyfile(sources / name, packages / name)
         meta = {'architecture': architecture, 'omarchy_commit': commit,
                 'inputs': {name: pins[name] for name in files}, 'source_build': built,
                 'payload_manifest_sha256': sha(result_dir / 'payload/arch-ipad-ui-manifest.json')}

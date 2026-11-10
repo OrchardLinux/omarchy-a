@@ -28,7 +28,11 @@ output=$(realpath -m -- "$output")
 mapfile -t requested < <(grep -vE '^\s*(#|$)' "$project/system/packages.txt")
 [[ ${#requested[@]} -gt 0 ]] || exit 1
 printf '%s\n' "${requested[@]}" | grep -Eq '^linux(-aarch64|-armv7|-rpi)?$' && { echo 'Generic kernel is not an input' >&2; exit 1; }
-for package in "$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.pkg.tar.zst" "$desktop/packages/wlroots0.20.pkg.tar.xz"; do
+local_packages=("$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.pkg.tar.zst" "$desktop/packages/wlroots0.20.pkg.tar.xz")
+# 64-bit boards: the A10 GPU's Vulkan driver and the VA-API bridge to the
+# hardware video decoders. Both sit unused on a board without that hardware.
+[[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/vulkan-powervr-orchard.pkg.tar.zst" "$desktop/packages/libva-v4l2-request.pkg.tar.zst")
+for package in "${local_packages[@]}"; do
   bsdtar -xOf "$package" .PKGINFO | grep -x "arch = $architecture" >/dev/null || { echo "Package architecture differs from $architecture: $package" >&2; exit 1; }
 done
 
@@ -45,13 +49,14 @@ mkdir -p "$root/var/lib/pacman" "$root/var/cache/pacman/pkg" "$root/etc"
 "$project/system/pacman-download" --root "$root" --gpgdir /etc/pacman.d/gnupg -Sy --noconfirm "${requested[@]}"
 pacman --root "$root" --gpgdir /etc/pacman.d/gnupg -S --noconfirm "${requested[@]}"
 # wlroots0.20 replaces Arch's build of the same version: fast rotated pixman compositing.
-for package in "$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.pkg.tar.zst" "$desktop/packages/wlroots0.20.pkg.tar.xz"; do
+for package in "${local_packages[@]}"; do
   pacman --root "$root" --gpgdir /etc/pacman.d/gnupg --noconfirm -U "$package"
 done
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
-# Native login needs seatd's socket and DRM/input device access; wheel
+# Native login needs seatd's socket and DRM/input device access (render: the
+# GPU, video: the hardware video decoder, also over SSH); wheel
 # makes the account polkit's admin, so prompts take its password.
-usermod --root "$root" --append --groups seat,video,input,wheel tablet
+usermod --root "$root" --append --groups seat,video,render,input,wheel tablet
 # The greeter (greetd's own user) draws through seatd and wakes the panel.
 usermod --root "$root" --append --groups seat,video,input greeter
 # Normalize only copied desktop ownership. Recursive chown of the installed

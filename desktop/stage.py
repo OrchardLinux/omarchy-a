@@ -111,6 +111,9 @@ def main():
         FORK / "applications/foot.desktop": target / "usr/local/share/applications/foot.desktop",
         XPI: target / "usr/lib/firefox/distribution/extensions/@omafox.xpi",
         CONFIG / "firefox-policies.json": target / "usr/lib/firefox/distribution/policies.json",
+        # Session-dependent Firefox defaults (hardware video decoding), through AutoConfig.
+        CONFIG / "firefox-autoconfig.js": target / "usr/lib/firefox/defaults/pref/omarchy-a.js",
+        CONFIG / "firefox.cfg": target / "usr/lib/firefox/omarchy-a.cfg",
     }
     for src, dst in mapping.items():
         copy(src, dst)
