@@ -10,8 +10,11 @@ orchard `docs/bring-up/suspend.md`); this model decides when.
 ## Requirements
 
 1. Power, released after a short press on its own, requests lock and eases the
-   backlight to dark over 240 ms. Held with Home (the DFU and restart
-   combination) or held for 1.5 s or more, it does nothing. Sleep follows
+   backlight to dark over 240 ms. Home and Power pressed together on a lit
+   screen take a screenshot (`omarchy-capture-screenshot fullscreen`) when the
+   first of them comes up within 1.5 s; Home then does not open the dock
+   (`omarchy-home-button` asks `omarchy-powerctl home`). Held longer (the DFU
+   and restart combination), they do nothing. Sleep follows
    only after the screen stayed dark for a short while. Idle
    screen-off has an eight-second grace period before requesting lock.
 2. **The first press always wakes.** No press is lost or replayed.
@@ -91,7 +94,7 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 
 | Input | Source |
 |---|---|
-| `power`, `home` | gpio-keys, with the kernel timestamp: Home and a Power on a dark screen on key **down**; Power on a lit screen on key **up** after a short lone press |
+| `power`, `home` | gpio-keys, with the kernel timestamp: Home and a Power on a dark screen on key **down**; Power on a lit screen on key **up** after a short lone press. Home + Power is not a machine event: it runs the screenshot in the session |
 | `idle` | shell: idle timeout, or the lock screen's blank timeout |
 | `lock` | the menu's Lock (`omarchy-system-lock`): lock at once, no grace |
 | `wake` | lock screen: input while lit |
