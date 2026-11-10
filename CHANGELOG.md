@@ -20,6 +20,15 @@ work, with an on-screen display.
 
 ### Desktop
 
+- A five-row on-screen keyboard with punctuation on the main layer, double-tap
+  Shift for Caps Lock, immediate key highlight, and a slide in and out.
+- Swipe up from the bottom edge to open the keyboard.
+- Rotation lock in the Display menu; rotation no longer makes the bar and
+  wallpaper flicker, crossfades, and a quick half turn rotates once.
+- Idle screen-off waits eight seconds before locking, so a quick wake needs no
+  PIN; screen off and on fade.
+- Stay Awake in the Display menu, with an icon in the bar while it is on.
+- Login and logout go from one picture to the next without a black screen.
 - Fix the System menu’s Shutdown and Reboot actions.
 - Automatic rotation on the iPad 6 through iio-sensor-proxy, using orchard's
   in-kernel accelerometer driver; rotation waits for the device to settle, and
