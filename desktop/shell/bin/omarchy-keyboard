@@ -8,7 +8,7 @@ import sys
 import time
 import tomllib
 
-root = Path(os.environ["OMARCHY_PATH"])
+root = Path(os.environ.get("OMARCHY_PATH", str(Path.home() / ".local/share/omarchy-ipad")))
 runtime = Path(os.environ["XDG_RUNTIME_DIR"])
 binary = root / "trials/wvkbd-mobintl-v0.20-font18-special15-state"
 pid_file = runtime / "omarchy-keyboard.pid"
@@ -33,7 +33,14 @@ def launch():
 def wait_for_start():
     for _ in range(40):
         if pid := live_pid():
-            return pid
+            try:
+                status = Path(f"/proc/{pid}/status").read_text()
+                mask = int(next(line.split()[1] for line in status.splitlines()
+                                if line.startswith("SigBlk:")), 16)
+                if mask & (1 << (signal.SIGUSR2 - 1)):
+                    return pid
+            except (OSError, StopIteration, ValueError):
+                pass
         time.sleep(0.05)
     raise SystemExit("Keyboard did not start; see " + str(log_file))
 
@@ -45,6 +52,11 @@ if mode == "toggle":
     else:
         launch()
         os.kill(wait_for_start(), signal.SIGUSR2)
+elif mode == "show":
+    if not (pid := live_pid()):
+        launch()
+        pid = wait_for_start()
+    os.kill(pid, signal.SIGUSR2)
 elif mode == "restart":
     if pid := live_pid():
         os.kill(pid, signal.SIGTERM)
@@ -74,4 +86,4 @@ elif mode == "run":
     os.environ["WVKBD_STATE_FILE"] = str(state_file)
     os.execv(str(binary), args)
 else:
-    raise SystemExit("Usage: omarchy-keyboard [run|toggle|restart]")
+    raise SystemExit("Usage: omarchy-keyboard [run|toggle|show|restart]")

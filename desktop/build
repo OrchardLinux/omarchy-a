@@ -51,6 +51,9 @@ def source_metadata(built, architecture='aarch64'):
         raise ValueError('Source-build pins differ')
     if any(built['source_urls'][name] not in entry['urls'] for name, entry in pins.items()):
         raise ValueError('Source-build URL differs')
+    if built.get('keyboard_layout_sha256') != {name: sha(HERE / 'keyboard' / name) for name in
+                                               ('friendly-layout.py', 'apply-shift.py', 'orchard-shift.h')}:
+        raise ValueError('Keyboard layout recipe differs')
     if (built['patch_sha256'] != sha(HERE / 'keyboard/wvkbd-0.20.patch') or
             built['pkgbuild_sha256'] != sha(HERE / 'packages/omafox/PKGBUILD') or
             built.get('wlroots_recipe_sha256') != recipe_sha(HERE / 'packages/wlroots0.20')):
