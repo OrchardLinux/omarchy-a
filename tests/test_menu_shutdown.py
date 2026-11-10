@@ -172,7 +172,7 @@ class WindowCloseAllTests(unittest.TestCase):
 class PowerOwnerTests(unittest.TestCase):
     def test_lock_and_wake_only_feed_omarchy_powerd(self):
         # docs/power-and-lock.md: one owner of the lock, the screen and sleep.
-        for name, verb in (('omarchy-system-lock', 'idle'), ('omarchy-system-wake', 'wake')):
+        for name, verb in (('omarchy-system-lock', 'lock'), ('omarchy-system-wake', 'wake')):
             lines = (BIN / name).read_text().splitlines()
             code = [line for line in lines if line and not line.startswith('#')]
             self.assertEqual(code, ['exec /usr/libexec/omarchy-powerctl %s >/dev/null' % verb])

@@ -6,5 +6,6 @@
 # omarchy:examples=omarchy system lock
 
 # omarchy-powerd owns the lock and the screen (docs/power-and-lock.md): this input
-# darkens the panel and has it run upstream's `omarchy-shell lock lock`.
-exec /usr/libexec/omarchy-powerctl idle >/dev/null
+# darkens the panel and has it run upstream's `omarchy-shell lock lock` at once,
+# like the Power button and unlike the idle timeout, which has a grace period.
+exec /usr/libexec/omarchy-powerctl lock >/dev/null

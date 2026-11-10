@@ -155,8 +155,9 @@ class Scenarios(unittest.TestCase):
     def test_the_lock_screens_blank_timeout_leads_to_sleep(self):
         machine = Machine()
         run(machine, 'power', 'lock-ok', 'power', 'sleep-ended')  # back on the lit lock screen
-        self.assertEqual(machine.handle('idle'), ['dark', 'lock', 'arm-settle'])
-        run(machine, 'lock-ok')
+        self.assertEqual(machine.handle('idle'), ['dark', 'arm-grace'])
+        # An already locked screen stays locked during the grace interval.
+        run(machine, 'grace-ended', 'lock-ok')
         self.assertEqual(machine.handle('settle'), ['suspend'])
 
     def test_a_suspend_from_elsewhere_locks_and_darkens_before_it_is_let_through(self):
@@ -168,6 +169,48 @@ class Scenarios(unittest.TestCase):
     def test_a_suspend_this_daemon_asked_for_needs_nothing_more_from_the_signal(self):
         machine = asleep()
         self.assertEqual(machine.handle('sleep-signal'), [])
+
+
+class IdleGrace(unittest.TestCase):
+    def test_idle_waits_eight_seconds_before_requesting_lock(self):
+        machine = Machine()
+        self.assertEqual(machine.handle('idle'), ['dark', 'arm-grace'])
+        self.assertEqual(machine.state, powerd.GRACE)
+        self.assertEqual(machine.handle('settle'), [])
+        self.assertEqual(machine.handle('playing'), [])
+        self.assertEqual(machine.handle('grace-ended'), ['dark', 'lock', 'arm-settle'])
+        self.assertEqual(machine.state, SETTLING)
+        self.assertEqual(powerd.IDLE_GRACE_SECONDS, 8.0)
+
+    def test_quick_wake_never_requests_lock_or_suspend(self):
+        for event in ('power', 'home', 'wake'):
+            machine = Machine()
+            machine.handle('idle')
+            self.assertEqual(machine.handle(event), ['cancel-grace', 'light', 'woke'])
+            self.assertEqual(machine.handle('grace-ended'), [])
+            self.assertEqual(machine.state, ON)
+
+    def test_explicit_power_and_external_suspend_bypass_grace(self):
+        machine = Machine()
+        self.assertIn('lock', machine.handle('power'))
+        machine = Machine()
+        machine.handle('idle')
+        actions = machine.handle('sleep-signal')
+        self.assertIn('cancel-grace', actions)
+        self.assertIn('lock', actions)
+        self.assertNotIn('release-inhibitor', actions)
+        self.assertEqual(machine.handle('lock-ok'), ['release-inhibitor'])
+
+    def test_menu_lock_locks_at_once_also_during_grace(self):
+        machine = Machine()
+        self.assertEqual(machine.handle('lock'), ['dark', 'lock', 'arm-settle'])
+        self.assertEqual(machine.state, SETTLING)
+        machine = Machine()
+        machine.handle('idle')
+        self.assertEqual(machine.handle('lock'), ['cancel-grace', 'dark', 'lock', 'arm-settle'])
+        self.assertEqual(machine.state, SETTLING)
+        # anywhere else it changes nothing: already dark and locked, or asleep
+        self.assertEqual(machine.handle('lock'), [])
 
 
 class Exhaustive(unittest.TestCase):
@@ -345,6 +388,77 @@ class Integration(unittest.TestCase):
         self.assertIn('ExecStart=/usr/libexec/omarchy-powerd', unit.read_text())
 
 
+class Brightness(unittest.TestCase):
+    def setUp(self):
+        work = tempfile.TemporaryDirectory()
+        self.addCleanup(work.cleanup)
+        work = Path(work.name)
+        self.panel = work / 'backlight/panel'
+        self.panel.mkdir(parents=True)
+        (self.panel / 'brightness').write_text('20\n')
+        (self.panel / 'max_brightness').write_text('2000\n')
+        self.remembered = work / 'state/brightness'
+        for target, value in (('BACKLIGHTS', work / 'backlight'), ('BRIGHTNESS', self.remembered),
+                              ('FADE_SECONDS', 0), ('log', lambda *_: None)):
+            patcher = patch.object(powerd, target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.daemon = powerd.Daemon()
+
+    def level(self):
+        return int((self.panel / 'brightness').read_text())
+
+    def test_a_boot_without_a_remembered_level_is_half_bright(self):
+        self.daemon.restore_brightness()
+        self.assertEqual(self.level(), 1000)
+
+    def test_a_boot_restores_the_level_of_the_last_dark_not_the_dark_itself(self):
+        (self.panel / 'brightness').write_text('1200\n')
+        self.daemon.do_dark(None)
+        self.assertEqual(self.level(), 0)
+        self.assertEqual(self.remembered.read_text(), '1200\n')
+        powerd.Daemon().restore_brightness()
+        self.assertEqual(self.level(), 1200)
+
+    def test_a_remembered_level_too_dim_to_see_is_raised(self):
+        self.remembered.parent.mkdir()
+        self.remembered.write_text('3\n')
+        self.daemon.restore_brightness()
+        self.assertEqual(self.level(), 100)
+
+    def test_fade_is_eased_interruptible_and_keeps_requested_brightness(self):
+        (self.panel / 'brightness').write_text('1200\n')
+        with patch.object(powerd, 'FADE_SECONDS', .24), patch.object(powerd.time, 'monotonic', return_value=10):
+            self.daemon.do_dark(None)
+        self.assertEqual(self.level(), 1200)
+        with patch.object(powerd, 'FADE_SECONDS', .24), patch.object(powerd.time, 'monotonic', return_value=10.12):
+            self.daemon.tick_fade()
+            self.assertAlmostEqual(self.level(), 600, delta=1)
+            self.daemon.key_time = 10.12
+            self.daemon.do_light(SETTLING)
+        with patch.object(powerd, 'FADE_SECONDS', .24), patch.object(powerd.time, 'monotonic', return_value=10.36):
+            self.daemon.tick_fade()
+        self.assertEqual(self.level(), 1200)
+        self.assertEqual(self.daemon.saved, 1200)
+
+    def test_suspend_finishes_a_dark_transition_before_freezing(self):
+        with patch.object(powerd, 'FADE_SECONDS', .24):
+            self.daemon.do_dark(None)
+            self.daemon.finish_dark_fade()
+        self.assertEqual(self.level(), 0)
+        self.assertIsNone(self.daemon.fade)
+
+    def test_shutdown_keeps_a_changed_level_but_never_a_dark_panel(self):
+        (self.panel / 'brightness').write_text('700\n')
+        with self.assertRaises(SystemExit):
+            self.daemon.stop_brightness()
+        self.assertEqual(self.remembered.read_text(), '700\n')
+        (self.panel / 'brightness').write_text('0\n')
+        with self.assertRaises(SystemExit):
+            self.daemon.stop_brightness()
+        self.assertEqual(self.remembered.read_text(), '700\n')
+
+
 class EventLoop(unittest.TestCase):
     """The real loop with a fake sysfs, keys through a pipe and no logind."""
 
@@ -362,7 +476,12 @@ class EventLoop(unittest.TestCase):
         (self.work / 'wakeup_count').write_text('7\n')
         self.requests = []
         self.unit_state = 'activating'
-        for target, value in (('SETTLE_SECONDS', 0.1), ('STATS', self.stats), ('BACKLIGHTS', self.work / 'backlight'),
+        self.remembered = self.work / 'state/brightness'
+        self.remembered.parent.mkdir()
+        self.remembered.write_text('1563\n')
+        for target, value in (('SETTLE_SECONDS', 0.1), ('FADE_SECONDS', 0), ('IDLE_GRACE_SECONDS', 0.1),
+                              ('STATS', self.stats), ('BACKLIGHTS', self.work / 'backlight'),
+                              ('BRIGHTNESS', self.remembered),
                               ('WAKEUP_COUNT', self.work / 'wakeup_count'), ('SOCKET', str(self.work / 'ctl')),
                               ('session_user', lambda: None), ('command', self.fake_command), ('log', lambda *_: None)):
             patcher = patch.object(powerd, target, value)
