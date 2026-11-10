@@ -3,8 +3,8 @@
 # Arch's own Mesa and draw through it. The kernel side is orchard's.
 
 pkgname=vulkan-powervr-orchard
-_commit=9b6c177a64905860da62479fced6115d4fa6b50c
-pkgver=27.0.0.dev.9b6c177a649
+_commit=7446eebebec5722cbdc6d3670e834c08d6ea9607
+pkgver=27.0.0.dev.7446eebebec
 pkgrel=1
 pkgdesc="Vulkan driver for the Apple A10 GPU, from the OrchardLinux Mesa fork"
 url="https://github.com/OrchardLinux/mesa"
@@ -20,7 +20,7 @@ makedepends=('bison' 'clang' 'flex' 'glslang' 'libclc' 'libdisplay-info' 'libelf
 provides=('vulkan-driver')
 conflicts=('vulkan-powervr')
 source=("mesa-${_commit}.tar.gz::${url}/archive/${_commit}.tar.gz")
-sha256sums=('56216cc458ce17700c4950bd5edd451bc71617afb8d3f16dd7cd1416cbf4985d')
+sha256sums=('7aa55f09aae7be33399136311a5b507c0846fb777dc6a1d36ded66d7546480f2')
 
 build() {
 	# Not arch-meson: its --auto-features=enabled turns on Mesa features that
