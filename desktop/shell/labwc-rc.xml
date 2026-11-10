@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <labwc_config>
+  <!-- Session transitions (labwc/0003): take over the previous compositor's
+       last picture, and show ours once the shell says its picture is complete. -->
+  <core>
+    <handoverDirectory>/run/omarchy-handover</handoverDirectory>
+    <startupFade>yes</startupFade>
+    <startupSignal>yes</startupSignal>
+  </core>
   <theme>
     <name>Omarchy-Current</name>
     <cornerRadius>0</cornerRadius>

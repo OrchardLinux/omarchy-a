@@ -364,6 +364,18 @@ Item {
       property int readyFrames: 0
       readonly property bool backgroundReady: base.ready && readyFrames >= 2
 
+      // Orchard: a compositor that holds a session's first picture until the
+      // shell has drawn (Labwc's startup cover) names a file to create once
+      // the wallpaper is on screen.
+      // Once: the compositor removes the file after its fade.
+      readonly property string startupReadyFile: Quickshell.env("LABWC_STARTUP_READY") || ""
+      property bool startupSignalled: false
+      onBackgroundReadyChanged: {
+        if (!backgroundReady || startupSignalled || startupReadyFile === "") return
+        startupSignalled = true
+        Quickshell.execDetached(["touch", startupReadyFile])
+      }
+
       FrameAnimation {
         running: base.ready && panel.readyFrames < 2
         onTriggered: panel.readyFrames += 1

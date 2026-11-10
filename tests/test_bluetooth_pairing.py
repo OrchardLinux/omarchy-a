@@ -100,7 +100,8 @@ class PairingPackagingTests(unittest.TestCase):
             output = root / 'component'
             output.mkdir()
             names = ('labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
-                     '0002-bottom-edge-swipe.patch', 'packages.lock', 'compiler.txt', 'version.txt')
+                     '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
+                     'packages.lock', 'compiler.txt', 'version.txt')
             digests = {}
             for name in names:
                 data = ('fixture ' + name).encode()
@@ -108,7 +109,8 @@ class PairingPackagingTests(unittest.TestCase):
                 digests[name] = hashlib.sha256(data).hexdigest()
             pin = {'version': 'test', 'sha256': digests['source.tar.gz'],
                    'patch_sha256': digests['0001-cancel-super-tap-on-pointer.patch'],
-                   'edge_patch_sha256': digests['0002-bottom-edge-swipe.patch']}
+                   'edge_patch_sha256': digests['0002-bottom-edge-swipe.patch'],
+                   'transitions_patch_sha256': digests['0003-session-transitions.patch']}
             source = root / 'desktop/labwc'
             source.mkdir(parents=True)
             (source / 'source.json').write_text(json.dumps(pin))

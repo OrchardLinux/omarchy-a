@@ -49,6 +49,8 @@ Item {
     : Border.surfaceSpec("lock", "border-active", Commons.Color.lock.borderActive, root.outlineThickness, "border-alpha")
 
   readonly property bool video: Util.isVideoPath(root.backgroundPath)
+  // Orchard: lets the greeter appear with its wallpaper drawn (greeter/shell.qml).
+  readonly property bool backgroundDrawn: !root.loadBackground || wallpaper.ready || wallpaper.failed
   readonly property bool feedActive: root.video && root.loadBackground && !root.displaysBlank && !root.powerSaverActive
 
   signal submitPassword(string password)
