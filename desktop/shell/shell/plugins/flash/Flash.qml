@@ -46,7 +46,7 @@ Item {
   SequentialAnimation {
     id: flashAnimation
     NumberAnimation { target: white; property: "opacity"; to: 0.95; duration: 60; easing.type: Easing.OutQuad }
-    NumberAnimation { target: white; property: "opacity"; to: 0; duration: 1250; easing.type: Easing.InOutSine }
+    NumberAnimation { target: white; property: "opacity"; to: 0; duration: 1000; easing.type: Easing.InOutSine }
     onFinished: root.opened = false
   }
 }
