@@ -308,12 +308,35 @@ class Inhibitor(unittest.TestCase):
 
 
 class Parsing(unittest.TestCase):
-    def test_key_presses_only_power_and_home_going_down(self):
+    def test_key_edges_only_power_and_home_presses_and_releases(self):
         event = powerd.INPUT_EVENT.pack
         data = (event(10, 500000, 1, 116, 1) + event(10, 600000, 1, 116, 0) + event(11, 0, 1, 172, 1) +
                 event(11, 0, 1, 115, 1) + event(12, 0, 0, 0, 0) + event(13, 0, 1, 116, 2))
-        self.assertEqual(powerd.key_presses(data), [('power', 10.5), ('home', 11.0)])
+        self.assertEqual(powerd.key_edges(data), [('power', True, 10.5), ('power', False, 10.6), ('home', True, 11.0)])
         self.assertEqual(powerd.INPUT_EVENT.size, 24)
+
+
+class Buttons(unittest.TestCase):
+    def events(self, edges, lit=True):
+        buttons = powerd.Buttons()
+        return [e for e in (buttons.edge(name, down, when, lit) for name, down, when in edges) if e]
+
+    def test_a_short_press_on_a_lit_screen_darkens_on_release(self):
+        buttons = powerd.Buttons()
+        self.assertIsNone(buttons.edge('power', True, 1.0, True))
+        self.assertEqual(buttons.edge('power', False, 1.2, True), 'power')
+
+    def test_power_with_home_does_nothing_for_dfu_and_restart(self):
+        for edges in ([('power', True, 1.0), ('home', True, 1.1), ('home', False, 11), ('power', False, 11)],
+                      [('power', True, 1.0), ('home', True, 1.1), ('power', False, 1.2)]):
+            with self.subTest(edges=edges):
+                self.assertEqual(self.events(edges), ['home'])
+
+    def test_a_long_hold_does_nothing(self):
+        self.assertEqual(self.events([('power', True, 1.0), ('power', False, 2.6)]), [])
+
+    def test_a_dark_screen_wakes_on_the_press(self):
+        self.assertEqual(self.events([('power', True, 1.0), ('power', False, 1.1)], lit=False), ['power'])
 
     def test_sleep_signal(self):
         signal = {'type': 'signal', 'member': 'PrepareForSleep', 'payload': {'type': 'b', 'data': [True]}}
@@ -528,8 +551,11 @@ class EventLoop(unittest.TestCase):
             os.replace(self.stats / 'new', self.stats / name)
 
     def press(self, code=116, when=None):
+        """A tap: the key goes down and comes up 50 ms later."""
         when = time.monotonic() if when is None else when
-        os.write(self.key_write, powerd.INPUT_EVENT.pack(int(when), int(when % 1 * 1e6), 1, code, 1))
+        up = when + 0.05
+        os.write(self.key_write, powerd.INPUT_EVENT.pack(int(when), int(when % 1 * 1e6), 1, code, 1) +
+                 powerd.INPUT_EVENT.pack(int(up), int(up % 1 * 1e6), 1, code, 0))
 
     def wait(self, condition, seconds=3):
         deadline = time.monotonic() + seconds

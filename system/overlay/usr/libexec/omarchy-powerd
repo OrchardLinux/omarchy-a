@@ -263,13 +263,49 @@ BACKLIGHTS = Path('/sys/class/backlight')
 BRIGHTNESS = Path('/var/lib/omarchy-powerd/brightness')
 
 
-def key_presses(data):
-    """(event name, kernel seconds) of every key press in evdev bytes."""
-    presses = []
+# A longer hold of Power is not a press: it is the start of a forced restart or DFU.
+LONG_HOLD_SECONDS = 1.5
+
+
+def key_edges(data):
+    """(key name, down, kernel seconds) of every Power and Home press and release in evdev bytes."""
+    edges = []
     for sec, usec, kind, code, value in INPUT_EVENT.iter_unpack(data):
-        if kind == EV_KEY and value == 1 and code in (KEY_POWER, KEY_HOMEPAGE):
-            presses.append(('power' if code == KEY_POWER else 'home', sec + usec / 1e6))
-    return presses
+        if kind == EV_KEY and value in (0, 1) and code in (KEY_POWER, KEY_HOMEPAGE):
+            edges.append(('power' if code == KEY_POWER else 'home', value == 1, sec + usec / 1e6))
+    return edges
+
+
+class Buttons:
+    """The machine's key events from Power and Home edges.
+
+    Home and a Power press on a dark screen act at once, so a wake stays as
+    fast as the press. On a lit screen Power darkens on release, and only
+    after a short press alone: held with Home (the DFU and restart
+    combination) or held long, it does nothing.
+    """
+
+    def __init__(self):
+        self.held = None
+        self.spoiled = False
+
+    def edge(self, name, down, when, lit):
+        """The machine event of one edge, or None."""
+        if name == 'home':
+            if down and self.held is not None:
+                self.spoiled = True
+            return 'home' if down else None
+        if down:
+            if not lit:
+                self.held = None
+                return 'power'
+            self.held, self.spoiled = when, False
+            return None
+        if self.held is None:
+            return None
+        short = when - self.held < LONG_HOLD_SECONDS and not self.spoiled
+        self.held = None
+        return 'power' if short else None
 
 
 def command(*argv, timeout=5, **options):
@@ -300,6 +336,7 @@ def as_user(user, *argv, timeout=5):
 class Daemon:
     def __init__(self):
         self.machine = Machine()
+        self.buttons = Buttons()
         self.events = queue.Queue()
         self.wake_read, self.wake_write = os.pipe()
         os.set_blocking(self.wake_read, False)
@@ -740,7 +777,10 @@ class Daemon:
             # Keys first: a press that woke the tablet decides before the sleep's end is seen.
             for fd in [fd for fd in readable if fd in self.keys]:
                 try:
-                    for name, when in key_presses(os.read(fd, INPUT_EVENT.size * 64)):
+                    for key, down, when in key_edges(os.read(fd, INPUT_EVENT.size * 64)):
+                        name = self.buttons.edge(key, down, when, self.machine.state == ON)
+                        if name is None:
+                            continue
                         # Pressed before this wake's panel lit: that wake took care of it.
                         if self.machine.inflight and self.lit_at is not None and when <= self.lit_at:
                             log(f't={when:.6f} {name}: consumed by the wake')

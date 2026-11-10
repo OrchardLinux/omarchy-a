@@ -9,8 +9,10 @@ orchard `docs/bring-up/suspend.md`); this model decides when.
 
 ## Requirements
 
-1. Power requests lock immediately and eases the backlight to dark over 240 ms;
-   sleep follows only after the screen stayed dark for a short while. Idle
+1. Power, released after a short press on its own, requests lock and eases the
+   backlight to dark over 240 ms. Held with Home (the DFU and restart
+   combination) or held for 1.5 s or more, it does nothing. Sleep follows
+   only after the screen stayed dark for a short while. Idle
    screen-off has an eight-second grace period before requesting lock.
 2. **The first press always wakes.** No press is lost or replayed.
 3. **Press to lit well under 1 s** (target ≤ 0.5 s), measured and logged per wake.
@@ -89,7 +91,7 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 
 | Input | Source |
 |---|---|
-| `power`, `home` | key **down** in gpio-keys, with its kernel timestamp |
+| `power`, `home` | gpio-keys, with the kernel timestamp: Home and a Power on a dark screen on key **down**; Power on a lit screen on key **up** after a short lone press |
 | `idle` | shell: idle timeout, or the lock screen's blank timeout |
 | `lock` | the menu's Lock (`omarchy-system-lock`): lock at once, no grace |
 | `wake` | lock screen: input while lit |
