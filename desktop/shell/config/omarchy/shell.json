@@ -6,7 +6,7 @@
     "background": "opaque",
     "layout": {
       "left": [{ "id": "omarchy.menu" }],
-      "centerBegin": [],
+      "centerBegin": [{ "id": "omarchy.indicators", "items": ["StayAwake"] }],
       "center": [{ "id": "omarchy.clock", "format": "HH:mm" }],
       "centerEnd": [],
       "right": [

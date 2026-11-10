@@ -5,7 +5,7 @@ import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
 
-// Labwc brightness and rotation adapter for Omarchy's stock Display bar slot.
+// Labwc brightness, rotation and stay-awake adapter for Omarchy's stock Display bar slot.
 // Hyprland output switching/scaling is deliberately not exposed here.
 Panel {
   id: root
@@ -15,6 +15,9 @@ Panel {
   property bool brightnessAvailable: false
   property int brightnessPercent: 0
   property int queuedPercent: -1
+  // The shell's idle service owns Stay Awake (state file, bar indicator, IPC).
+  readonly property var idleService: bar?.shell?.firstPartyServiceFor("omarchy.idle")
+  readonly property bool stayAwake: idleService ? idleService.stayAwake === true : false
   property bool rotationLocked: false
   property bool rotationLoaded: false
   readonly property string rotationHelper: (Quickshell.env("OMARCHY_PATH") ||
@@ -155,6 +158,17 @@ Panel {
             rotationWrite.command = [root.rotationHelper, root.rotationLocked ? "off" : "on"]
             rotationWrite.running = true
           }
+        }
+        Toggle {
+          width: parent.width
+          label: Commons.I18n.t("bar.stayAwake")
+          description: root.stayAwake ? "The screen stays on; no automatic lock or sleep"
+                                      : "Lock and sleep after the idle timeout"
+          checked: root.stayAwake
+          enabled: !!root.idleService
+          foreground: root.bar.foreground
+          fontFamily: root.bar.fontFamily
+          onClicked: root.idleService.setIdleEnabled(root.stayAwake)
         }
         PanelSlider {
           width: parent.width
