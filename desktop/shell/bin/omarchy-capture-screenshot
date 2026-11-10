@@ -38,8 +38,39 @@ fi
 dir=${OMASNAP_SCREENSHOT_DIR:-${OMARCHY_SCREENSHOT_DIR:-$HOME/Pictures/Screenshots}}
 file=$dir/screenshot-$(date +%Y-%m-%d_%H-%M-%S).png
 mkdir -p "$dir"
-grim "$file"
+# Uncompressed, the capture takes about 80 ms on an iPad 6 (grim's default
+# compression 1.5 s): the flash follows the shot at once, and the file is
+# compressed afterwards in the background.
+grim -l 0 "$file"
 omarchy-shell -q flash show >/dev/null 2>&1 || true
+compress_png() {
+  python3 - "$1" <<'PY' 2>/dev/null || true
+import os, struct, sys, zlib
+path = sys.argv[1]
+data = open(path, 'rb').read()
+if data[:8] != b'\x89PNG\r\n\x1a\n':
+    sys.exit(0)
+chunks, idat, pos = [], b'', 8
+while pos < len(data):
+    length, kind = struct.unpack('>I4s', data[pos:pos + 8])
+    body = data[pos + 8:pos + 8 + length]
+    pos += 12 + length
+    if kind == b'IDAT':
+        idat += body
+        if not any(c[0] == b'IDAT' for c in chunks):
+            chunks.append((b'IDAT', None))
+    else:
+        chunks.append((kind, body))
+packed = zlib.compress(zlib.decompress(idat), 6)
+out = bytearray(data[:8])
+for kind, body in chunks:
+    body = packed if kind == b'IDAT' else body
+    out += struct.pack('>I', len(body)) + kind + body + struct.pack('>I', zlib.crc32(kind + body))
+tmp = path + '.tmp'
+open(tmp, 'wb').write(out)
+os.replace(tmp, path)
+PY
+}
 
 # Without wl-copy a shot can only be kept as a file.
 command -v wl-copy >/dev/null || destination=save
@@ -51,4 +82,5 @@ if [[ $destination == copy ]]; then
   notify-send -a Screenshot -i camera-photo "Screenshot copied" >/dev/null 2>&1 || true
 else
   notify-send -a Screenshot -i "$file" "Screenshot saved" "${file/#$HOME/\~}" >/dev/null 2>&1 || true
+  compress_png "$file" >/dev/null 2>&1 &
 fi
