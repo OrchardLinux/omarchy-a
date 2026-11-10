@@ -281,30 +281,62 @@ class Buttons:
 
     Home and a Power press on a dark screen act at once, so a wake stays as
     fast as the press. On a lit screen Power darkens on release, and only
-    after a short press alone: held with Home (the DFU and restart
-    combination) or held long, it does nothing.
+    after a short press alone. Home and Power pressed together on a lit
+    screen take a screenshot when the first of them comes up, if that is
+    soon: held (the DFU and restart combination), they do nothing, and a
+    restart never releases them at all.
     """
 
     def __init__(self):
-        self.held = None
-        self.spoiled = False
+        self.held = None        # Power down on a lit screen since
+        self.spoiled = False    # that Power press is not a press alone
+        self.home_down = None   # Home down since
+        self.combo = None       # both down on a lit screen since
+        self.combo_spent = False
+        self.home_in_combo = False  # the last Home press was part of a combination
+
+    def _start_combo(self, when):
+        self.spoiled = True
+        self.combo, self.combo_spent, self.home_in_combo = when, False, True
+
+    def _end_combo(self, when):
+        if self.combo is None or self.combo_spent:
+            return None
+        self.combo_spent = True
+        return 'screenshot' if when - self.combo < LONG_HOLD_SECONDS else None
+
+    def _both_up(self):
+        if self.held is None and self.home_down is None:
+            self.combo = None
 
     def edge(self, name, down, when, lit):
-        """The machine event of one edge, or None."""
+        """The event of one edge (a machine event or 'screenshot'), or None."""
         if name == 'home':
-            if down and self.held is not None:
-                self.spoiled = True
-            return 'home' if down else None
+            if down:
+                self.home_down, self.home_in_combo = when, False
+                if self.held is not None:
+                    self._start_combo(when)
+                return 'home'
+            self.home_down = None
+            event = self._end_combo(when)
+            self._both_up()
+            return event
         if down:
             if not lit:
                 self.held = None
                 return 'power'
             self.held, self.spoiled = when, False
+            if self.home_down is not None:
+                self._start_combo(when)
             return None
         if self.held is None:
             return None
+        event = self._end_combo(when)
         short = when - self.held < LONG_HOLD_SECONDS and not self.spoiled
         self.held = None
+        self._both_up()
+        if event or self.combo is not None or self.spoiled:
+            return event
         return 'power' if short else None
 
 
@@ -634,6 +666,9 @@ class Daemon:
                     self.post('lock-ok' if user is None or self.lock_session(user) else 'lock-failed')
                 elif user is not None and job == 'woke':
                     as_user(user, 'omarchy-shell', '-q', 'lock', 'woke')
+                elif user is not None and job == 'screenshot':
+                    # Omarchy's capture service; it flashes the screen once the shot is taken.
+                    as_user(user, 'omarchy-capture-screenshot', 'fullscreen', timeout=15)
                 elif user is not None and job == 'notify':
                     as_user(user, 'notify-send', 'Unable to lock', 'The screen stays on.')
             except (OSError, KeyError, ValueError, subprocess.SubprocessError) as error:
@@ -680,6 +715,9 @@ class Daemon:
                     if self.machine.state == GRACE:
                         self.feed('wake')
                     connection.sendall(b'lit\n' if self.machine.state == ON else b'dark\n')
+                elif request == 'home':
+                    # labwc's Home binding asks: a Home press that took a screenshot opens nothing.
+                    connection.sendall(b'combo\n' if self.buttons.home_in_combo else b'alone\n')
                 elif request == 'status':
                     connection.sendall(self.machine.state.encode() + b'\n')
                 elif request in ('idle', 'wake', 'lock'):
@@ -780,6 +818,10 @@ class Daemon:
                     for key, down, when in key_edges(os.read(fd, INPUT_EVENT.size * 64)):
                         name = self.buttons.edge(key, down, when, self.machine.state == ON)
                         if name is None:
+                            continue
+                        if name == 'screenshot':
+                            log(f't={when:.6f} screenshot')
+                            self.session_jobs.put('screenshot')
                             continue
                         # Pressed before this wake's panel lit: that wake took care of it.
                         if self.machine.inflight and self.lit_at is not None and when <= self.lit_at:

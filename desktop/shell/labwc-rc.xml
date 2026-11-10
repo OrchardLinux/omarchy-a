@@ -45,9 +45,10 @@
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />
     </keybind>
     <!-- J71b Home emits KEY_HOMEPAGE (172), not navigation KEY_HOME. Only this home
-         action is the session's, and only unlocked; waking is omarchy-powerd's. -->
+         action is the session's, and only unlocked; waking is omarchy-powerd's.
+         A Home press that was part of Home + Power took a screenshot instead. -->
     <keybind key="XF86HomePage" onRelease="yes">
-      <action name="Execute" command="omarchy-shell omarchy.dock apps" />
+      <action name="Execute" command="sh -c '[ &quot;$(/usr/libexec/omarchy-powerctl home)&quot; != combo ] &amp;&amp; omarchy-shell omarchy.dock apps'" />
     </keybind>
     <!-- Keyboard shortcuts for a Bluetooth keyboard, after upstream Omarchy (W = Super).
          labwc has no directional focus, so Super+arrows cycle windows; Super+Shift+arrows

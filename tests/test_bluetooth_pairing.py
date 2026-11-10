@@ -81,7 +81,12 @@ class PairingPackagingTests(unittest.TestCase):
             bindings = tree.findall("./keyboard/keybind[@key='%s']" % key)
             self.assertEqual(len(bindings), 1)
             self.assertEqual(bindings[0].get('onRelease'), 'yes')
-            self.assertEqual(bindings[0].find('action').get('command'), command)
+            if key == 'XF86HomePage':
+                # Unless the press was part of Home + Power (a screenshot).
+                self.assertIn('omarchy-powerctl home', bindings[0].find('action').get('command'))
+                self.assertTrue(bindings[0].find('action').get('command').endswith(command + "'"))
+            else:
+                self.assertEqual(bindings[0].find('action').get('command'), command)
         for key in ('XF86AudioRaiseVolume', 'XF86AudioLowerVolume'):
             self.assertIsNone(tree.find("./keyboard/keybind[@key='%s']" % key).get('onRelease'))
 

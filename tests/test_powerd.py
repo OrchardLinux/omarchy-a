@@ -326,11 +326,31 @@ class Buttons(unittest.TestCase):
         self.assertIsNone(buttons.edge('power', True, 1.0, True))
         self.assertEqual(buttons.edge('power', False, 1.2, True), 'power')
 
-    def test_power_with_home_does_nothing_for_dfu_and_restart(self):
+    def test_power_with_home_held_does_nothing_for_dfu_and_restart(self):
         for edges in ([('power', True, 1.0), ('home', True, 1.1), ('home', False, 11), ('power', False, 11)],
-                      [('power', True, 1.0), ('home', True, 1.1), ('power', False, 1.2)]):
+                      [('home', True, 1.0), ('power', True, 1.1), ('power', False, 3.0), ('home', False, 3.1)],
+                      [('power', True, 1.0), ('home', True, 1.1)]):
             with self.subTest(edges=edges):
                 self.assertEqual(self.events(edges), ['home'])
+
+    def test_a_short_home_and_power_press_takes_one_screenshot_on_release(self):
+        for edges in ([('power', True, 1.0), ('home', True, 1.1), ('power', False, 1.3), ('home', False, 1.4)],
+                      [('home', True, 1.0), ('power', True, 1.05), ('home', False, 1.3), ('power', False, 1.35)]):
+            with self.subTest(edges=edges):
+                self.assertEqual(self.events(edges), ['home', 'screenshot'])
+
+    def test_a_screenshot_press_does_not_count_as_a_home_press(self):
+        buttons = powerd.Buttons()
+        for name, down, when in (('power', True, 1.0), ('home', True, 1.1), ('home', False, 1.3), ('power', False, 1.4)):
+            buttons.edge(name, down, when, True)
+        self.assertTrue(buttons.home_in_combo)
+        buttons.edge('home', True, 5.0, True)
+        self.assertFalse(buttons.home_in_combo)
+
+    def test_power_alone_still_darkens_after_a_screenshot(self):
+        edges = [('power', True, 1.0), ('home', True, 1.1), ('home', False, 1.3), ('power', False, 1.4),
+                 ('power', True, 3.0), ('power', False, 3.2)]
+        self.assertEqual(self.events(edges), ['home', 'screenshot', 'power'])
 
     def test_a_long_hold_does_nothing(self):
         self.assertEqual(self.events([('power', True, 1.0), ('power', False, 2.6)]), [])
