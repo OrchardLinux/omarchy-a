@@ -379,8 +379,17 @@ Item {
       // decoded at native size first, and a wallpaper smaller than the screen
       // is decoded at its own size rather than scaled up to cover the screen.
       readonly property bool sized: width > 0 && height > 0
-      readonly property int decodeWidth: sized ? Math.ceil(width * screen.devicePixelRatio) : 0
-      readonly property int decodeHeight: sized ? Math.ceil(height * screen.devicePixelRatio) : 0
+      // On a tablet, swapping width/height must not clear and asynchronously
+      // decode the wallpaper again. Keep one orientation-independent decode.
+      // A high-water mark also ignores intermediate geometry during rotation.
+      readonly property bool tabletRotation: Quickshell.env("OMARCHY_TOUCH_MODE") === "1"
+      readonly property int requestedDecodeEdge: sized ? Math.ceil(Math.max(width, height) * screen.devicePixelRatio) : 0
+      property int stableDecodeEdge: 0
+      onRequestedDecodeEdgeChanged: {
+        if (requestedDecodeEdge > stableDecodeEdge) stableDecodeEdge = requestedDecodeEdge
+      }
+      readonly property int decodeWidth: sized ? (tabletRotation ? Math.max(stableDecodeEdge, requestedDecodeEdge) : Math.ceil(width * screen.devicePixelRatio)) : 0
+      readonly property int decodeHeight: sized ? (tabletRotation ? Math.max(stableDecodeEdge, requestedDecodeEdge) : Math.ceil(height * screen.devicePixelRatio)) : 0
 
       function decodeSize(path) {
         if (!sized || !path) return Qt.size(0, 0)

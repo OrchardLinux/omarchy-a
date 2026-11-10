@@ -5,7 +5,7 @@ import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
 
-// Labwc brightness-only adapter for Omarchy's stock Display bar slot.
+// Labwc brightness and rotation adapter for Omarchy's stock Display bar slot.
 // Hyprland output switching/scaling is deliberately not exposed here.
 Panel {
   id: root
@@ -15,9 +15,14 @@ Panel {
   property bool brightnessAvailable: false
   property int brightnessPercent: 0
   property int queuedPercent: -1
+  property bool rotationLocked: false
+  property bool rotationLoaded: false
+  readonly property string rotationHelper: (Quickshell.env("OMARCHY_PATH") ||
+    Quickshell.env("HOME") + "/.local/share/omarchy-ipad") + "/bin/omarchy-rotation-lock"
 
   function refresh() {
     if (!readProc.running && !writeProc.running) readProc.running = true
+    if (!rotationRead.running && !rotationWrite.running) rotationRead.running = true
   }
   function setBrightness(value) {
     if (!brightnessAvailable) return
@@ -63,6 +68,23 @@ Panel {
         root.setBrightness(next)
       } else root.refresh()
     }
+  }
+
+  Process {
+    id: rotationRead
+    command: [root.rotationHelper, "status"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          root.rotationLocked = JSON.parse(text).locked === true
+          root.rotationLoaded = true
+        } catch (_) { root.rotationLoaded = false }
+      }
+    }
+  }
+  Process {
+    id: rotationWrite
+    onExited: function(exitCode, exitStatus) { root.refresh() }
   }
 
   BarIconButton {
@@ -120,6 +142,19 @@ Panel {
           font.pixelSize: Style.font.caption
           wrapMode: Text.WordWrap
           textFormat: Text.PlainText
+        }
+        Toggle {
+          width: parent.width
+          label: "Rotation lock"
+          description: root.rotationLocked ? "Keep the current orientation" : "Turn the display with the iPad"
+          checked: root.rotationLocked
+          enabled: root.rotationLoaded && !rotationWrite.running
+          foreground: root.bar.foreground
+          fontFamily: root.bar.fontFamily
+          onClicked: {
+            rotationWrite.command = [root.rotationHelper, root.rotationLocked ? "off" : "on"]
+            rotationWrite.running = true
+          }
         }
         PanelSlider {
           width: parent.width
