@@ -98,6 +98,10 @@ def main():
             script = r'''
 set -euo pipefail
 test "$(uname -m)" = "$OMARCHY_MACHINE"
+# The package builds use the builder's own Python: in CI the job's virtual
+# environment comes first on PATH, and Mesa's build needs the system modules.
+unset VIRTUAL_ENV
+PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '/[.]venv/' | paste -sd: -)
 build=$(mktemp -d "$ORCHARD_TMP/desktop.XXXXXX")
 trap 'rm -rf "$build"' EXIT
 mkdir -p "$build/keyboard" "$build/omafox" "$build/result" "$ORCHARD_WORK/result"
