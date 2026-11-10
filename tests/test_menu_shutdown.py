@@ -62,6 +62,11 @@ class MenuShutdownTests(unittest.TestCase):
                              ('lock', 'omarchy-system-lock')):
             self.assertEqual(menu_action(name), action)
 
+    def test_reboot_says_it_leaves_linux(self):
+        # A reboot does not come back into Linux; one entry, no other system's name.
+        entries = re.findall(r'"system\.reboot[^"]*":\s*(\{[^\n]+\})', MENU.read_text())
+        self.assertEqual([json.loads(e)['label'] for e in entries], ['Reboot (leaves Linux)'])
+
     def test_commands_are_shipped(self):
         for name in ('omarchy-system', 'omarchy-system-lock', 'omarchy-system-wake', 'omarchy-osd',
                      'omarchy-i18n', 'omarchy-state', 'omarchy-notification-send',
