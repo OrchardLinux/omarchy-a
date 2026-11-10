@@ -141,7 +141,7 @@ def system_files():
             name = path.relative_to(SYSTEM).as_posix()
             data = path.read_bytes()
             mode = 0o440 if name.startswith('etc/sudoers.d/') else (
-                0o755 if name.startswith('usr/libexec/') else 0o644)
+                0o755 if name.startswith(('usr/libexec/', 'etc/NetworkManager/dispatcher.d/')) else 0o644)
             additions[name] = (data, mode)
     return additions
 

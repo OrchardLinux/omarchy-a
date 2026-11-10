@@ -38,6 +38,14 @@ class WifiCountry(unittest.TestCase):
         self.assertIn("'omarchy-wifi-country.service'", (PROJECT / 'release/public_root.py').read_text())
         self.assertTrue(os.access(HOOK, os.X_OK))
 
+    def test_the_image_installs_the_hook_executable(self):
+        # NetworkManager runs only executable dispatcher scripts.
+        import sys
+        sys.path.insert(0, str(PROJECT))
+        from release import public_root
+        files = public_root.system_files()
+        self.assertEqual(files['etc/NetworkManager/dispatcher.d/60-omarchy-a-wifi-country'][1], 0o755)
+
 
 if __name__ == '__main__':
     unittest.main()
