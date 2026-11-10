@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# omarchy:summary=The iPad's Home button: open the app drawer, unless the press took a screenshot
+# omarchy:hidden=true
+
+# labwc runs this when Home comes up. omarchy-powerd saw the same press and
+# knows whether Home was pressed together with Power (a screenshot).
+answer=$(/usr/libexec/omarchy-powerctl home 2>&1)
+[[ $answer == combo ]] || exec omarchy-shell omarchy.dock apps

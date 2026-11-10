@@ -14,10 +14,10 @@ Item {
   property bool opened: false
 
   function flash() {
-    fade.stop()
-    white.opacity = 0.9
+    flashAnimation.stop()
+    white.opacity = 0
     opened = true
-    fade.start()
+    flashAnimation.start()
   }
 
   ShellIpc {
@@ -42,13 +42,11 @@ Item {
     }
   }
 
-  NumberAnimation {
-    id: fade
-    target: white
-    property: "opacity"
-    to: 0
-    duration: 280
-    easing.type: Easing.OutQuad
+  // Up at once, then a long, gentle fade.
+  SequentialAnimation {
+    id: flashAnimation
+    NumberAnimation { target: white; property: "opacity"; to: 0.95; duration: 60; easing.type: Easing.OutQuad }
+    NumberAnimation { target: white; property: "opacity"; to: 0; duration: 1250; easing.type: Easing.InOutSine }
     onFinished: root.opened = false
   }
 }
