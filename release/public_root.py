@@ -278,7 +278,7 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                 # A login on orchard's USB serial console as well, like minimal-linux.
                 wants = [('multi-user.target.wants/' + unit, unit) for unit in
                          ('omarchy-pacman-init.service', 'orchard-usb-network.service', 'orchard-ssh.service',
-                          'omarchy-powerd.service')]
+                          'omarchy-powerd.service', 'omarchy-wifi-country.service')]
                 wants.append(('getty.target.wants/serial-getty@ttyGS0.service', 'serial-getty@.service'))
                 # BindsTo stops the USB network when usb0 goes; usb0's return starts it again
                 wants.append(('sys-subsystem-net-devices-usb0.device.wants/orchard-usb-network.service',

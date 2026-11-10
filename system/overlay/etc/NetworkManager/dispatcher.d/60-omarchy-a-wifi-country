@@ -1,0 +1,12 @@
+#!/bin/sh
+# Remember the Wi-Fi country that the access points announced, so that the
+# next boot starts in it (omarchy-wifi-country.service). Apple's Wi-Fi firmware
+# joins most 5 GHz channels only once it knows the country, and it learns it
+# only through Linux after a first connection.
+[ "$2" = up ] || exit 0
+[ "$DEVICE_IFACE" = "${DEVICE_IFACE#usb}" ] || exit 0
+country=$(/usr/bin/iw reg get 2>/dev/null | sed -n 's/^country \([A-Z][A-Z]\):.*/\1/p' | head -n 1)
+[ -n "$country" ] || exit 0
+mkdir -p /var/lib/omarchy-a
+[ "$(cat /var/lib/omarchy-a/wifi-country 2>/dev/null)" = "$country" ] && exit 0
+printf '%s\n' "$country" > /var/lib/omarchy-a/wifi-country
