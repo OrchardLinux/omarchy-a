@@ -9,12 +9,14 @@ on:
         description: The successful Build Omarchy A run (workflow_dispatch) to publish
         required: true
 permissions:
-  contents: write
-  actions: read
-  attestations: read
+  contents: read
 jobs:
   publish:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
