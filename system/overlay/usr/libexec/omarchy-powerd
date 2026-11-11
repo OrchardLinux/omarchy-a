@@ -362,8 +362,12 @@ def as_user(user, *argv, timeout=5):
     root = f'{user.pw_dir}/{SHELL_ROOT}'
     env = {'HOME': user.pw_dir, 'USER': user.pw_name, 'XDG_RUNTIME_DIR': f'/run/user/{user.pw_uid}',
            'OMARCHY_PATH': root, 'PATH': f'{root}/bin:/usr/local/bin:/usr/bin'}
-    return command(*argv, timeout=timeout, env=env, user=user.pw_uid, group=user.pw_gid,
-                   extra_groups=os.getgrouplist(user.pw_name, user.pw_gid), cwd='/')
+    # setpriv looks the groups up in the child. In here, os.getgrouplist holds
+    # Python's interpreter lock through NSS, and nss-systemd (group merges
+    # with it) answers only once systemd has finished a sleep: the whole
+    # daemon, the wake's backlight fade included, stood still up to a second.
+    return command('setpriv', f'--reuid={user.pw_uid}', f'--regid={user.pw_gid}', '--init-groups', '--',
+                   *argv, timeout=timeout, env=env, cwd='/')
 
 
 class Daemon:

@@ -4,12 +4,14 @@ import importlib.util
 import json
 from pathlib import Path
 import os
+import pwd
 import socket
 import subprocess
 import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
@@ -346,6 +348,19 @@ class Buttons(unittest.TestCase):
         self.assertTrue(buttons.home_in_combo)
         buttons.edge('home', True, 5.0, True)
         self.assertFalse(buttons.home_in_combo)
+
+    def test_user_commands_look_groups_up_in_the_child(self):
+        # os.getgrouplist would hold the interpreter lock through nss-systemd,
+        # which stalls until systemd has finished a sleep.
+        user = pwd.struct_passwd(('tablet', 'x', 1000, 1000, '', '/home/tablet', '/bin/bash'))
+        with mock.patch.object(powerd, 'command') as command, \
+                mock.patch.object(powerd.os, 'getgrouplist', side_effect=AssertionError('NSS in powerd')):
+            powerd.as_user(user, 'omarchy-shell', 'lock', 'woke')
+        argv, options = command.call_args
+        self.assertEqual(argv[:5], ('setpriv', '--reuid=1000', '--regid=1000', '--init-groups', '--'))
+        self.assertEqual(argv[5:], ('omarchy-shell', 'lock', 'woke'))
+        self.assertNotIn('extra_groups', options)
+        self.assertEqual(options['env']['HOME'], '/home/tablet')
 
     def test_a_home_press_that_wakes_the_screen_opens_nothing(self):
         buttons = powerd.Buttons()
