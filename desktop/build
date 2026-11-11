@@ -26,7 +26,8 @@ HARDWARE_PACKAGES = {'vulkan-powervr-orchard.pkg.tar.zst': ('gpu_recipe_sha256',
                      'libva-v4l2-request.pkg.tar.zst': ('video_bridge_recipe_sha256', 'packages/libva-v4l2-request')}
 # Prebuilt on 64-bit boards: packages published by their own repositories,
 # downloaded at build time and pinned by SHA-256 in arm64/inputs.json.
-DOWNLOADS = {'omactivity.pkg.tar.zst': ('omactivity_url', 'omactivity_package')}
+DOWNLOADS = {'omactivity.pkg.tar.zst': ('omactivity_url', 'omactivity_package'),
+             'folio.pkg.tar.zst': ('folio_url', 'folio_package')}
 KEYBOARD_PATH = 'home/tablet/.local/share/omarchy-ipad/trials/wvkbd-mobintl-v0.20-font18-special15-state'
 XPI_PATH = 'usr/lib/firefox/distribution/extensions/@omafox.xpi'
 

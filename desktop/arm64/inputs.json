@@ -6,5 +6,7 @@
   "libva_v4l2_request_url": "https://xff.cz/git/libva-v4l2_request",
   "libva_v4l2_request_commit": "cac6ece0e23ac1f944dd3af266680aff0c3184df",
   "omactivity_package": "287e85a4637dbcfe3d4641bc5485d19b7e4616ade4462775413f9e8ff0101298",
-  "omactivity_url": "https://github.com/OrchardLinux/omactivity/releases/download/v0.1.0/omactivity-0.1.0-1-aarch64.pkg.tar.zst"
+  "omactivity_url": "https://github.com/OrchardLinux/omactivity/releases/download/v0.1.0/omactivity-0.1.0-1-aarch64.pkg.tar.zst",
+  "folio_package": "ca9cf99dac669130a6fdbc61cdfca9c8a210a5aebba0d6958929b7acb36cf8f6",
+  "folio_url": "https://github.com/OrchardLinux/folio/releases/download/a0.2.0-1/folio-touch-0.2.0-1-aarch64.pkg.tar.zst"
 }

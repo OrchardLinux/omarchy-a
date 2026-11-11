@@ -104,7 +104,6 @@ def main():
         CONFIG / "rotate-output": target / "usr/local/libexec/arch-ipad-rotate-output",
         CONFIG / "touch-output": target / "usr/local/libexec/arch-ipad-touch-output",
         CONFIG / "login-session": target / "usr/local/libexec/arch-ipad-login-session",
-        CONFIG / "org.kde.dolphin.desktop": target / "home/tablet/.local/share/applications/org.kde.dolphin.desktop",
         HERE / "greeter/greetd.toml": target / "etc/greetd/config.toml",
         HERE / "greeter/greetd-seatd.conf": target / "etc/systemd/system/greetd.service.d/seatd.conf",
         CONFIG / "networkmanager.rules": target / "etc/polkit-1/rules.d/40-arch-ipad-networkmanager.rules",
@@ -115,6 +114,11 @@ def main():
         CONFIG / "firefox-autoconfig.js": target / "usr/lib/firefox/defaults/pref/omarchy-a.js",
         CONFIG / "firefox.cfg": target / "usr/lib/firefox/omarchy-a.cfg",
     }
+    # The files app: 64-bit boards get Files (Folio with touch mode), whose
+    # package brings its own launcher entry. It has no ARMv7 build, so those
+    # boards keep Dolphin, with this entry for its wrapper.
+    if args.architecture == "armv7h":
+        mapping[CONFIG / "org.kde.dolphin.desktop"] = target / "home/tablet/.local/share/applications/org.kde.dolphin.desktop"
     for src, dst in mapping.items():
         copy(src, dst)
     # Branding is static; kernel, memory and CPU information use live probes.

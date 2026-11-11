@@ -36,6 +36,14 @@ local_packages=("$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/wlroots
 [[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/vulkan-powervr-orchard.pkg.tar.zst" "$desktop/packages/libva-v4l2-request.pkg.tar.zst")
 # 64-bit boards: Omactivity, the touch task manager, as its repository publishes it.
 [[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/omactivity.pkg.tar.zst")
+# 64-bit boards: Files, upstream Omarchy's file manager (Folio) with the touch
+# mode OrchardLinux/folio adds, as that repository publishes it. It takes
+# Dolphin's place there; ARMv7, which it isn't built for, keeps Dolphin.
+if [[ $architecture == aarch64 ]]; then
+  local_packages+=("$desktop/packages/folio.pkg.tar.zst")
+  for i in "${!requested[@]}"; do [[ ${requested[$i]} != dolphin ]] || unset 'requested[i]'; done
+  requested=("${requested[@]}")
+fi
 for package in "${local_packages[@]}"; do
   bsdtar -xOf "$package" .PKGINFO | grep -x "arch = $architecture" >/dev/null || { echo "Package architecture differs from $architecture: $package" >&2; exit 1; }
 done
