@@ -37,8 +37,18 @@ work, with an on-screen display.
 - Volume starts quiet; the volume keys step in 5% steps and show the shell's
   on-screen display; the mixer is in the bar.
 - No leftover boot splash between the greeter and the desktop.
-- Power locks and darkens the screen at once; the iPad sleeps 10 s later. One
-  press wakes it, in well under a second, and Home wakes it too.
+- Power locks and darkens the screen when released; held, alone or with Home
+  (DFU, restart), it does nothing. The iPad sleeps 10 s later. One press wakes
+  it, in well under a second, and Home wakes it too.
+- Home and Power together take a screenshot, with a flash; it goes to
+  ~/Pictures/Screenshots.
+- Omactivity, a touch task manager: in the bar, the menu and Super+Shift+T.
+- A long press on a saved Wi-Fi network offers Forget and Change passphrase.
+- Wi-Fi remembers its country, so 5 GHz networks connect after a boot.
+- The speakers are called "Speakers"; tapping a bar icon no longer flashes the
+  Stay Awake mug; the first boot starts at full brightness.
+- Omacalc comes from Omarchy's package repository and updates with the system.
+- The installer shows Omarchy's mark at the size it boots with.
 - Plugging in lights the screen.
 - The greeter and the lock screen go dark after 30 s without input, the desktop
   after 5 minutes.
