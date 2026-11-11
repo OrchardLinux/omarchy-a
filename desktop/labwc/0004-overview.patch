@@ -1,18 +1,17 @@
 diff --git a/include/config/rcxml.h b/include/config/rcxml.h
-index 1e0f38f..0cbf9f4 100644
+index 1e0f38f..6062ced 100644
 --- a/include/config/rcxml.h
 +++ b/include/config/rcxml.h
-@@ -89,6 +89,13 @@ struct rcxml {
+@@ -89,6 +89,12 @@ struct rcxml {
  	bool startup_fade;
  	char *handover_dir;
  	bool startup_signal;
 +
-+	/* <overview live="" swipe="" openCommand="" closeCommand="" emptyCommand="" /> */
++	/* <overview live="" swipe="" openCommand="" closeCommand="" /> */
 +	enum lab_tristate overview_live; /* unspecified: by the renderer */
 +	bool overview_swipe;             /* four fingers up and down */
 +	char *overview_open_command;
 +	char *overview_close_command;
-+	char *overview_empty_command;
  	char *prompt_command;
  	char *error_command;
  
@@ -160,7 +159,7 @@ index 0000000..80e4dad
 +#endif /* LABWC_OVERVIEW_MATH_H */
 diff --git a/include/overview.h b/include/overview.h
 new file mode 100644
-index 0000000..9d7248d
+index 0000000..b1dbaf8
 --- /dev/null
 +++ b/include/overview.h
 @@ -0,0 +1,64 @@
@@ -219,7 +218,7 @@ index 0000000..9d7248d
 +
 +/*
 + * Four fingers. @towards_overview is the direction they started in;
-+ * returns false if there is nothing to do with it (no windows).
++ * returns false if there is nothing to do with it.
 + * @travel is how far they have moved towards the overview since, in
 + * logical pixels, negative for away from it.
 + */
@@ -287,10 +286,10 @@ index 31a8fe5..c8d6bdd 100644
  		const char *to = action_get_str(action, "to", "output");
  		const char *x = action_get_str(action, "x", "center");
 diff --git a/src/config/rcxml.c b/src/config/rcxml.c
-index 6e332e4..95b6461 100644
+index 6e332e4..4597d49 100644
 --- a/src/config/rcxml.c
 +++ b/src/config/rcxml.c
-@@ -1169,6 +1169,17 @@ entry(xmlNode *node, char *nodename, char *content)
+@@ -1169,6 +1169,15 @@ entry(xmlNode *node, char *nodename, char *content)
  		set_bool(content, &rc.xwayland_persistence);
  	} else if (!strcasecmp(nodename, "primarySelection.core")) {
  		set_bool(content, &rc.primary_selection);
@@ -303,12 +302,10 @@ index 6e332e4..95b6461 100644
 +		xstrdup_replace(rc.overview_open_command, content);
 +	} else if (!strcasecmp(nodename, "closeCommand.overview")) {
 +		xstrdup_replace(rc.overview_close_command, content);
-+	} else if (!strcasecmp(nodename, "emptyCommand.overview")) {
-+		xstrdup_replace(rc.overview_empty_command, content);
  	} else if (!strcasecmp(nodename, "startupFade.core")) {
  		set_bool(content, &rc.startup_fade);
  	} else if (!strcasecmp(nodename, "startupSignal.core")) {
-@@ -1549,6 +1560,8 @@ rcxml_init(void)
+@@ -1549,6 +1558,8 @@ rcxml_init(void)
  	rc.allowed_interfaces = UINT32_MAX;
  	rc.xwayland_persistence = false;
  	rc.primary_selection = true;
@@ -317,13 +314,12 @@ index 6e332e4..95b6461 100644
  
  	init_font_defaults(&rc.font_activewindow);
  	init_font_defaults(&rc.font_inactivewindow);
-@@ -2075,6 +2088,9 @@ rcxml_finish(void)
+@@ -2075,6 +2086,8 @@ rcxml_finish(void)
  	zfree(rc.font_osd.name);
  	zfree(rc.prompt_command);
  	zfree(rc.handover_dir);
 +	zfree(rc.overview_open_command);
 +	zfree(rc.overview_close_command);
-+	zfree(rc.overview_empty_command);
  	zfree(rc.error_command);
  	zfree(rc.theme_name);
  	zfree(rc.icon_theme_name);
@@ -777,10 +773,10 @@ index 151030a..8c8b997 100644
  	regions_destroy(seat, &output->regions);
 diff --git a/src/overview.c b/src/overview.c
 new file mode 100644
-index 0000000..2b25393
+index 0000000..27ba6fb
 --- /dev/null
 +++ b/src/overview.c
-@@ -0,0 +1,2107 @@
+@@ -0,0 +1,2097 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#include "overview.h"
 +#include <assert.h>
@@ -923,6 +919,7 @@ index 0000000..2b25393
 +
 +	struct wlr_scene_tree *tree, *labels, *cards_tree, *dots;
 +	struct wlr_scene_rect *dim;
++	struct scaled_font_buffer *empty; /* "No open windows" */
 +	struct wl_list cards;
 +	struct card *selected;
 +	struct overview_grid grid;
@@ -1538,17 +1535,6 @@ index 0000000..2b25393
 +	for_each_view(view, &server.views, LAB_VIEW_CRITERIA_CURRENT_WORKSPACE \
 +		| LAB_VIEW_CRITERIA_NO_DIALOG | LAB_VIEW_CRITERIA_NO_SKIP_WINDOW_SWITCHER)
 +
-+static int
-+count_views(void)
-+{
-+	int count = 0;
-+	struct view *view;
-+	for_each_overview_view(view) {
-+		count += view_wanted(view);
-+	}
-+	return count;
-+}
-+
 +static enum lab_edge
 +opposite(enum lab_edge edge)
 +{
@@ -1866,6 +1852,10 @@ index 0000000..2b25393
 +{
 +	int count = nr_cards();
 +	if (!count) {
++		/* Only the dimmed desktop: nothing to place or scroll. */
++		ov.grid = (struct overview_grid){0};
++		ov.scroll = ov.scroll_target = ov.scroll_max = 0;
++		update_dots();
 +		return;
 +	}
 +	double aspect = 0;
@@ -2061,12 +2051,17 @@ index 0000000..2b25393
 +apply(void)
 +{
 +	set_rect_color(ov.dim, (float[4]){ 0, 0, 0, 1 }, (float)(DIM * ov.progress));
++	float extras = ov.live ? clamp((ov.progress - 0.4) / 0.6, 0, 1) : ov.progress;
 +	struct card *card;
 +	wl_list_for_each(card, &ov.cards, link) {
 +		card_apply(card);
 +	}
++	if (ov.empty) {
++		wlr_scene_node_set_enabled(&ov.empty->scene_buffer->node,
++			wl_list_empty(&ov.cards));
++		wlr_scene_buffer_set_opacity(ov.empty->scene_buffer, extras);
++	}
 +	if (ov.dots) {
-+		float extras = ov.live ? clamp((ov.progress - 0.4) / 0.6, 0, 1) : ov.progress;
 +		struct wlr_scene_node *dot;
 +		int index = 0, current = row_index_at(ov.scroll_target);
 +		wl_list_for_each(dot, &ov.dots->children, link) {
@@ -2142,14 +2137,6 @@ index 0000000..2b25393
 +			|| locked() || !output_is_usable(output)) {
 +		return false;
 +	}
-+	if (!count_views()) {
-+		/* Nothing to switch between: let the shell offer its apps. */
-+		if (rc.overview_empty_command && *rc.overview_empty_command) {
-+			spawn_async_no_shell(rc.overview_empty_command);
-+		}
-+		return false;
-+	}
-+
 +	memset(&ov, 0, sizeof(ov));
 +	wl_list_init(&ov.cards);
 +	ov.state = state;
@@ -2173,6 +2160,12 @@ index 0000000..2b25393
 +		ov.dots = lab_wlr_scene_tree_create(ov.tree);
 +	}
 +	ov.cards_tree = lab_wlr_scene_tree_create(ov.tree);
++	ov.empty = scaled_font_buffer_create(ov.tree);
++	scaled_font_buffer_update(ov.empty, _("No open windows"), ov.area.width,
++		&rc.font_osd, rc.theme->osd_label_text_color, (float[4]){0});
++	wlr_scene_node_set_position(&ov.empty->scene_buffer->node,
++		ov.area.x + (ov.area.width - ov.empty->width) / 2,
++		ov.area.y + (ov.area.height - ov.empty->height) / 2);
 +
 +	/* Most recently used first; a snapped pair is one card. */
 +	struct view *view;
@@ -2500,14 +2493,7 @@ index 0000000..2b25393
 +	} else {
 +		card_destroy(card);
 +	}
-+	if (wl_list_empty(&ov.cards)) {
-+		if (ov.state == CLOSING) {
-+			destroy();
-+		} else {
-+			overview_abort();
-+		}
-+		return;
-+	}
++	/* The last one gone leaves the overview open and empty. */
 +	if (ov.state != CLOSING) {
 +		relayout(/*snap*/ false);
 +		if (ov.row) {
@@ -2681,7 +2667,7 @@ index 0000000..2b25393
 +		} else if (velocity > 300 && row_scroll_for(index) >= ov.scroll) {
 +			index--;
 +		}
-+		index = clamp(index, 0, nr_cards() - 1);
++		index = clamp(index, 0, MAX(nr_cards() - 1, 0));
 +		ov.scroll_target = row_scroll_for(index);
 +		if (ov.keyboard) {
 +			ov.selected = card_at_index(index);
@@ -2709,7 +2695,7 @@ index 0000000..2b25393
 +	}
 +	if (ov.row) {
 +		int index = row_index_at(ov.scroll_target) + (delta > 0 ? 1 : -1);
-+		ov.scroll_target = row_scroll_for(clamp(index, 0, nr_cards() - 1));
++		ov.scroll_target = row_scroll_for(clamp(index, 0, MAX(nr_cards() - 1, 0)));
 +		update_dots();
 +	} else {
 +		ov.scroll_target = clamp(ov.scroll_target + delta, 0, ov.scroll_max);
@@ -2762,6 +2748,9 @@ index 0000000..2b25393
 +	default:
 +		return false;
 +	}
++	if (!count) {
++		return true;
++	}
 +	if (!ov.keyboard || index < 0) {
 +		/* The first key only shows where the keys are. */
 +		ov.keyboard = true;
@@ -2770,7 +2759,7 @@ index 0000000..2b25393
 +		index = (index + step + count) % count;
 +	} else if (index + step >= 0 && index + step < count) {
 +		index += step;
-+	} else if (sym == XKB_KEY_Down && index / ov.grid.cols < (count - 1) / ov.grid.cols) {
++	} else if (sym == XKB_KEY_Down && !ov.row && index / ov.grid.cols < (count - 1) / ov.grid.cols) {
 +		/* The last row is short: go to its end. */
 +		index = count - 1;
 +	}
@@ -2810,9 +2799,6 @@ index 0000000..2b25393
 +		}
 +		if (!live) {
 +			/* Opens once the fingers have gone far enough. */
-+			if (!count_views()) {
-+				return begin(output, false, OPENING);
-+			}
 +			ov.output = output;
 +			ov.gesture.pending = true;
 +			ov.gesture.towards = true;

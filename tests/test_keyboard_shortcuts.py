@@ -54,13 +54,13 @@ class KeyboardShortcutTests(unittest.TestCase):
         overview = self.tree.find('./overview')
         self.assertEqual(overview.get('swipe'), 'yes')
         scripts = {p.name for p in (PROJECT / 'desktop/shell/bin').iterdir()}
-        for attribute in ('openCommand', 'closeCommand', 'emptyCommand'):
+        for attribute in ('openCommand', 'closeCommand'):
             self.assertIn(shlex.split(overview.get(attribute))[0], scripts)
-        # Neither command may toggle: both run without knowing the drawer's state.
+        # It opens with no window too (an empty overview), not the app drawer.
+        self.assertIsNone(overview.get('emptyCommand'))
+        # Putting the drawer away must not toggle: it runs without knowing its state.
         shell = (PROJECT / 'desktop/shell/shell/shell.qml').read_text()
-        self.assertIn('function openApps()', shell)
         self.assertIn('function closeApps()', shell)
-        self.assertIn('omarchy.dock openApps', overview.get('emptyCommand'))
         changed = (PROJECT / 'desktop/shell/bin/omarchy-overview-changed').read_text()
         self.assertIn('omarchy.dock closeApps', changed)
         self.assertIn('omarchy-keyboard hide', changed)
@@ -79,6 +79,7 @@ class KeyboardShortcutTests(unittest.TestCase):
         self.assertIn('omarchy-overview-open', (PROJECT / 'desktop/configuration/labwc-autostart').read_text())
         patch = (PROJECT / 'desktop/labwc/0004-overview.patch').read_text()
         self.assertNotIn('XKB_KEY_XF86HomePage', patch)
+        self.assertNotIn('emptyCommand', patch)
         # The greeter has nothing to switch between.
         self.assertNotIn('overview', (PROJECT / 'desktop/greeter/labwc/rc.xml').read_text())
 

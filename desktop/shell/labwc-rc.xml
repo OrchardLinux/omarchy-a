@@ -23,14 +23,13 @@
   </theme>
   <!-- The overview (labwc/0004): every window side by side, to pick one.
        Four fingers up, Home pressed twice (omarchy-home-button) or Super+Tab.
-       Opening it puts the app drawer and the keyboard away; with no window
-       open there is nothing to show, and the app drawer opens instead.
+       Opening it puts the app drawer and the keyboard away. It opens with no
+       window as well: the dimmed desktop, which a tap or Home closes.
        Home closes it: labwc leaves that key to omarchy-home-button, which
        knows from these commands that the overview is open. -->
   <overview swipe="yes"
     openCommand="omarchy-overview-changed opened"
-    closeCommand="omarchy-overview-changed closed"
-    emptyCommand="omarchy-shell -q omarchy.dock openApps" />
+    closeCommand="omarchy-overview-changed closed" />
   <keyboard>
     <default />
     <!-- Startup-only reserved chord; leave ordinary Alt+H to applications. -->

@@ -30,7 +30,10 @@ int main(void)
     struct overview_grid twenty = grid(20, 1024, 730), more = grid(27, 1024, 730);
     assert(more.cols == twenty.cols && more.pic_width == twenty.pic_width);
     assert(more.rows == (27 + more.cols - 1) / more.cols && more.rows > twenty.rows);
-    assert(grid(0, 1024, 730).cols == 0);
+    /* No windows: an empty overview, nothing to place. */
+    g = grid(0, 1024, 730);
+    assert(g.cols == 0 && g.rows == 0 && g.pic_width == 0 && g.pic_height == 0);
+    assert(overview_grid_row_length(&g, 0, 0) == 0);
 
     /* Four fingers: up or down together, not sideways, not a pinch. */
     assert(overview_swipe_decide(2, -10, 1) == OVERVIEW_SWIPE_WAIT);

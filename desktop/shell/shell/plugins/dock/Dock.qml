@@ -350,7 +350,6 @@ Item {
     // The layout commands call this after changing a workspace's mode.
     function refresh(): void { root.refresh() }
     function apps(): void { appGrid.toggle() }
-    function openApps(): void { if (!appGrid.opened) appGrid.open() }
     function closeApps(): void { if (appGrid.opened) appGrid.close() }
   }
 
