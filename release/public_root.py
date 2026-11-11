@@ -201,10 +201,11 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
         temporary = Path(temp)
         archive = temporary / 'rootfs.tar.zst'
         with archive.open('wb') as raw, subprocess.Popen(
-                # -19 --long: 39% smaller than -1 for the same root (704 vs 1154 MiB), so
-                # 39% less to send over the device's ~12 MB/s USB link; decompression
-                # stays fast and needs no option (the window stays at zstd's default limit).
-                ['zstd', '-T0', '-19', '--long', '--check', '-q', '-c'], stdin=subprocess.PIPE, stdout=raw) as compressor:
+                # zstd's default level: this archive only carries the root to the block
+                # image (orchard.image.root_image), the audit and the smoke test; it is
+                # never published. What the device downloads is root.blocks.zst, compressed
+                # there. -19 --long here cost about five and a half minutes per build.
+                ['zstd', '-T0', '--check', '-q', '-c'], stdin=subprocess.PIPE, stdout=raw) as compressor:
             with tarfile.open(fileobj=compressor.stdin, mode='w|') as target:
                 def add(member, data=None):
                     nonlocal expanded, count
