@@ -20,6 +20,9 @@ work, with an on-screen display.
 
 ### Desktop
 
+- Files: Omarchy's file manager, now with a touch mode, replaces Dolphin on
+  64-bit boards.
+- Qt apps (Files, Omactivity, Omacalc) draw on the GPU on the GPU desktop.
 - App switcher: four fingers up, Home pressed twice or Super+Tab show every
   open window side by side, minimised ones included. Tap one to bring it back,
   flick it up to close it.
