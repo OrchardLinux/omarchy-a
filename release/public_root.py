@@ -105,7 +105,7 @@ def labwc_files(directory, architecture='aarch64'):
         raise ValueError('Labwc component architecture differs from root')
     expected = {'labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
                 '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
-                'packages.lock', 'compiler.txt', 'version.txt'}
+                '0004-overview.patch', 'packages.lock', 'compiler.txt', 'version.txt'}
     if record.get('files', {}).keys() != expected:
         raise ValueError('Incomplete Labwc component')
     files = {}
@@ -121,7 +121,8 @@ def labwc_files(directory, architecture='aarch64'):
     if (record['files']['source.tar.gz'] != pin['sha256']
             or record['files']['0001-cancel-super-tap-on-pointer.patch'] != pin['patch_sha256']
             or record['files']['0002-bottom-edge-swipe.patch'] != pin['edge_patch_sha256']
-            or record['files']['0003-session-transitions.patch'] != pin['transitions_patch_sha256']):
+            or record['files']['0003-session-transitions.patch'] != pin['transitions_patch_sha256']
+            or record['files']['0004-overview.patch'] != pin['overview_patch_sha256']):
         raise ValueError('Labwc corresponding source differs from pin')
     files['etc/omarchy/labwc-helper.json'] = (json.dumps(record, sort_keys=True).encode(), 0o644)
     return files

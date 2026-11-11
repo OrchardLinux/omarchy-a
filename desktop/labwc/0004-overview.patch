@@ -1,0 +1,3041 @@
+diff --git a/include/config/rcxml.h b/include/config/rcxml.h
+index 1e0f38f..0cbf9f4 100644
+--- a/include/config/rcxml.h
++++ b/include/config/rcxml.h
+@@ -89,6 +89,13 @@ struct rcxml {
+ 	bool startup_fade;
+ 	char *handover_dir;
+ 	bool startup_signal;
++
++	/* <overview live="" swipe="" openCommand="" closeCommand="" emptyCommand="" /> */
++	enum lab_tristate overview_live; /* unspecified: by the renderer */
++	bool overview_swipe;             /* four fingers up and down */
++	char *overview_open_command;
++	char *overview_close_command;
++	char *overview_empty_command;
+ 	char *prompt_command;
+ 	char *error_command;
+ 
+diff --git a/include/labwc.h b/include/labwc.h
+index d0c55cf..dcf2a43 100644
+--- a/include/labwc.h
++++ b/include/labwc.h
+@@ -20,6 +20,7 @@ enum input_mode {
+ 	LAB_INPUT_STATE_RESIZE,
+ 	LAB_INPUT_STATE_MENU,
+ 	LAB_INPUT_STATE_CYCLE, /* a.k.a. window switching */
++	LAB_INPUT_STATE_OVERVIEW, /* all windows side by side */
+ };
+ 
+ struct seat {
+@@ -172,6 +173,7 @@ struct server {
+ 	struct wl_event_source *sigint_source;
+ 	struct wl_event_source *sigterm_source;
+ 	struct wl_event_source *sigchld_source;
++	struct wl_event_source *sigusr2_source;
+ 
+ 	struct wlr_xdg_shell *xdg_shell;
+ 	struct wlr_layer_shell_v1 *layer_shell;
+diff --git a/include/overview-math.h b/include/overview-math.h
+new file mode 100644
+index 0000000..80e4dad
+--- /dev/null
++++ b/include/overview-math.h
+@@ -0,0 +1,116 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#ifndef LABWC_OVERVIEW_MATH_H
++#define LABWC_OVERVIEW_MATH_H
++#include <math.h>
++#include <stdbool.h>
++
++/*
++ * The parts of the overview that are plain arithmetic: where the cards go
++ * and when four fingers mean it. Kept free of compositor state so they can
++ * be tested on their own.
++ */
++
++/* Past this many windows the grid stops shrinking and scrolls instead. */
++#define OVERVIEW_MAX_FIT 20
++
++struct overview_grid {
++	int cols, rows;
++	/* The picture area of one cell; the label sits below it. */
++	double pic_width, pic_height;
++};
++
++/*
++ * The grid that shows @count windows of the usual @aspect (width / height)
++ * as large as possible in @width x @height. Every cell needs @gap around it
++ * and @label_height below its picture.
++ */
++static inline struct overview_grid
++overview_grid(int count, double width, double height, double aspect,
++		double gap, double label_height)
++{
++	struct overview_grid best = {0};
++	if (count <= 0 || aspect <= 0) {
++		return best;
++	}
++	int fit = count < OVERVIEW_MAX_FIT ? count : OVERVIEW_MAX_FIT;
++	for (int cols = 1; cols <= fit; cols++) {
++		int rows = (fit + cols - 1) / cols;
++		double cell_w = (width - (cols + 1) * gap) / cols;
++		double cell_h = (height - (rows + 1) * gap) / rows - label_height;
++		if (cell_w <= 0 || cell_h <= 0) {
++			continue;
++		}
++		double pic_w = fmin(cell_w, cell_h * aspect);
++		/* One or two windows are not blown up to the whole screen. */
++		pic_w = fmin(pic_w, fmin(width * 0.6, height * 0.6 * aspect));
++		/* On a tie the wider grid wins: fewer rows to read. */
++		if (pic_w > best.pic_width + 0.5) {
++			best = (struct overview_grid){
++				.cols = cols, .rows = rows,
++				.pic_width = pic_w, .pic_height = pic_w / aspect,
++			};
++		}
++	}
++	if (best.cols) {
++		best.rows = (count + best.cols - 1) / best.cols;
++	}
++	return best;
++}
++
++/* How many cells row @row of the grid holds; the last row may be short. */
++static inline int
++overview_grid_row_length(const struct overview_grid *grid, int count, int row)
++{
++	int before = row * grid->cols;
++	int left = count - before;
++	return left < grid->cols ? left : grid->cols;
++}
++
++enum overview_swipe {
++	OVERVIEW_SWIPE_WAIT,   /* not decided yet */
++	OVERVIEW_SWIPE_UP,     /* four fingers moved up together */
++	OVERVIEW_SWIPE_DOWN,   /* four fingers moved down together */
++	OVERVIEW_SWIPE_REJECT, /* something else: a sideways swipe, a pinch */
++};
++
++/* The move that makes a four-finger touch ours, in logical pixels. */
++#define OVERVIEW_SWIPE_CLAIM 16.0
++/* Software look: how far the fingers travel before the overview opens. */
++#define OVERVIEW_SWIPE_COMMIT 60.0
++
++/*
++ * @dx, @dy: how far the middle of the four fingers has moved (down is
++ * positive). @spread: how much the fingers' distance from that middle has
++ * changed, which is what tells a pinch from a swipe.
++ */
++static inline enum overview_swipe
++overview_swipe_decide(double dx, double dy, double spread)
++{
++	if (fabs(spread) > 40 || fabs(dx) > 40) {
++		return OVERVIEW_SWIPE_REJECT;
++	}
++	if (fabs(dy) < OVERVIEW_SWIPE_CLAIM || fabs(dy) < fabs(dx) * 1.5) {
++		return OVERVIEW_SWIPE_WAIT;
++	}
++	return dy < 0 ? OVERVIEW_SWIPE_UP : OVERVIEW_SWIPE_DOWN;
++}
++
++/*
++ * Where a released gesture settles: 1 is the overview, 0 the desktop.
++ * @progress: where the fingers left it; @velocity: progress per second at
++ * release, positive towards the overview. A flick decides; without one the
++ * nearer end wins.
++ */
++static inline int
++overview_swipe_settle(double progress, double velocity)
++{
++	if (velocity > 1.0) {
++		return 1;
++	}
++	if (velocity < -1.0) {
++		return 0;
++	}
++	return progress >= 0.5;
++}
++
++#endif /* LABWC_OVERVIEW_MATH_H */
+diff --git a/include/overview.h b/include/overview.h
+new file mode 100644
+index 0000000..9d7248d
+--- /dev/null
++++ b/include/overview.h
+@@ -0,0 +1,64 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#ifndef LABWC_OVERVIEW_H
++#define LABWC_OVERVIEW_H
++#include <stdbool.h>
++#include <stdint.h>
++#include <xkbcommon/xkbcommon.h>
++
++struct output;
++struct view;
++
++/*
++ * The overview: every window of the workspace side by side, to pick one.
++ *
++ * Opened by the ToggleOverview action, by `labwc --overview` and by a
++ * four-finger swipe up. It takes the keys that move in it and leaves every
++ * other one to its binding: a session that wants a button to close the
++ * overview binds it, and learns from openCommand and closeCommand whether
++ * the overview is open. With a hardware renderer the windows are live and
++ * shrink out of their places, following the fingers; with the software
++ * renderer they are pictures taken once, and desktop and overview crossfade.
++ */
++
++/* Open, or close if open. @keyboard: opened from a key, so mark a card. */
++void overview_toggle(bool keyboard);
++
++/* True while the overview takes the input (server.input_mode). */
++bool overview_active(void);
++
++/* Close at once without choosing a window: lock, reconfigure, rotation. */
++void overview_abort(void);
++
++/* Called for the output's every frame. */
++void overview_tick(struct output *output);
++
++/* A view was unmapped or destroyed / a new one was mapped. */
++void overview_on_view_gone(struct view *view);
++void overview_on_view_mapped(struct view *view);
++
++/* Returns true if the key was the overview's. */
++bool overview_handle_key(xkb_keysym_t sym);
++
++/*
++ * One finger (or the mouse button) in the open overview, in layout
++ * coordinates. overview_press() returns false if the point is not on the
++ * overview (a shell panel above it): the overview closes and the press is
++ * the panel's.
++ */
++bool overview_press(double lx, double ly, uint32_t time_msec);
++void overview_motion(double lx, double ly, uint32_t time_msec);
++void overview_release(uint32_t time_msec);
++void overview_press_cancel(void);
++void overview_scroll(double delta);
++
++/*
++ * Four fingers. @towards_overview is the direction they started in;
++ * returns false if there is nothing to do with it (no windows).
++ * @travel is how far they have moved towards the overview since, in
++ * logical pixels, negative for away from it.
++ */
++bool overview_gesture_begin(struct output *output, bool towards_overview);
++void overview_gesture_update(double travel, uint32_t time_msec);
++void overview_gesture_end(void);
++
++#endif /* LABWC_OVERVIEW_H */
+diff --git a/include/theme.h b/include/theme.h
+index 2fb499a..9383adf 100644
+--- a/include/theme.h
++++ b/include/theme.h
+@@ -165,6 +165,9 @@ struct theme {
+ 	float osd_border_color[4];
+ 	float osd_label_text_color[4];
+ 
++	/* overview: the frame of a window that asks before it closes */
++	float overview_attention_color[4];
++
+ 	struct window_switcher_classic_theme {
+ 		int width;
+ 		int padding;
+diff --git a/include/view.h b/include/view.h
+index 46943ab..5d11465 100644
+--- a/include/view.h
++++ b/include/view.h
+@@ -594,6 +594,9 @@ void view_move_to_back(struct view *view);
+ 
+ bool view_is_modal_dialog(struct view *view);
+ 
++/* The toplevel a dialog belongs to; the view itself if it is one. */
++struct view *view_get_root(struct view *view);
++
+ /**
+  * view_get_modal_dialog() - returns any modal dialog found among this
+  * view's children or siblings (or possibly this view itself). Applies
+diff --git a/src/action.c b/src/action.c
+index 31a8fe5..c8d6bdd 100644
+--- a/src/action.c
++++ b/src/action.c
+@@ -27,6 +27,7 @@
+ #include "magnifier.h"
+ #include "menu/menu.h"
+ #include "output.h"
++#include "overview.h"
+ #include "output-virtual.h"
+ #include "regions.h"
+ #include "show-desktop.h"
+@@ -138,6 +139,7 @@ struct action_arg_list {
+ 	X(ZOOM_IN, "ZoomIn") \
+ 	X(ZOOM_OUT, "ZoomOut") \
+ 	X(TOGGLE_SHOW_DESKTOP, "ToggleShowDesktop") \
++	X(TOGGLE_OVERVIEW, "ToggleOverview") \
+ 	X(WARP_CURSOR, "WarpCursor") \
+ 	X(HIDE_CURSOR, "HideCursor") \
+ 	X(DEBUG_TOGGLE_KEY_STATE_INDICATOR, "DebugToggleKeyStateIndicator")
+@@ -1587,6 +1589,9 @@ run_action(struct view *view, struct action *action,
+ 	case ACTION_TYPE_TOGGLE_SHOW_DESKTOP:
+ 		show_desktop_toggle();
+ 		break;
++	case ACTION_TYPE_TOGGLE_OVERVIEW:
++		overview_toggle(/*keyboard*/ true);
++		break;
+ 	case ACTION_TYPE_WARP_CURSOR: {
+ 		const char *to = action_get_str(action, "to", "output");
+ 		const char *x = action_get_str(action, "x", "center");
+diff --git a/src/config/rcxml.c b/src/config/rcxml.c
+index 6e332e4..95b6461 100644
+--- a/src/config/rcxml.c
++++ b/src/config/rcxml.c
+@@ -1169,6 +1169,17 @@ entry(xmlNode *node, char *nodename, char *content)
+ 		set_bool(content, &rc.xwayland_persistence);
+ 	} else if (!strcasecmp(nodename, "primarySelection.core")) {
+ 		set_bool(content, &rc.primary_selection);
++	} else if (!strcasecmp(nodename, "live.overview")) {
++		rc.overview_live = !strcasecmp(content, "auto")
++			? LAB_STATE_UNSPECIFIED : parse_tristate(content);
++	} else if (!strcasecmp(nodename, "swipe.overview")) {
++		set_bool(content, &rc.overview_swipe);
++	} else if (!strcasecmp(nodename, "openCommand.overview")) {
++		xstrdup_replace(rc.overview_open_command, content);
++	} else if (!strcasecmp(nodename, "closeCommand.overview")) {
++		xstrdup_replace(rc.overview_close_command, content);
++	} else if (!strcasecmp(nodename, "emptyCommand.overview")) {
++		xstrdup_replace(rc.overview_empty_command, content);
+ 	} else if (!strcasecmp(nodename, "startupFade.core")) {
+ 		set_bool(content, &rc.startup_fade);
+ 	} else if (!strcasecmp(nodename, "startupSignal.core")) {
+@@ -1549,6 +1560,8 @@ rcxml_init(void)
+ 	rc.allowed_interfaces = UINT32_MAX;
+ 	rc.xwayland_persistence = false;
+ 	rc.primary_selection = true;
++	rc.overview_live = LAB_STATE_UNSPECIFIED;
++	rc.overview_swipe = false;
+ 
+ 	init_font_defaults(&rc.font_activewindow);
+ 	init_font_defaults(&rc.font_inactivewindow);
+@@ -2075,6 +2088,9 @@ rcxml_finish(void)
+ 	zfree(rc.font_osd.name);
+ 	zfree(rc.prompt_command);
+ 	zfree(rc.handover_dir);
++	zfree(rc.overview_open_command);
++	zfree(rc.overview_close_command);
++	zfree(rc.overview_empty_command);
+ 	zfree(rc.error_command);
+ 	zfree(rc.theme_name);
+ 	zfree(rc.icon_theme_name);
+diff --git a/src/desktop.c b/src/desktop.c
+index 57ef9e3..ff9401d 100644
+--- a/src/desktop.c
++++ b/src/desktop.c
+@@ -121,7 +121,8 @@ desktop_focus_view_internal(struct view *view, bool raise, bool allow_delay)
+ 		return;
+ 	}
+ 
+-	if (server.input_mode == LAB_INPUT_STATE_CYCLE) {
++	if (server.input_mode == LAB_INPUT_STATE_CYCLE
++			|| server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
+ 		wlr_log(WLR_DEBUG, "not focusing window while window switching");
+ 		return;
+ 	}
+diff --git a/src/input/cursor.c b/src/input/cursor.c
+index 89cc365..032d51f 100644
+--- a/src/input/cursor.c
++++ b/src/input/cursor.c
+@@ -32,6 +32,7 @@
+ #include "layers.h"
+ #include "menu/menu.h"
+ #include "output.h"
++#include "overview.h"
+ #include "resistance.h"
+ #include "resize-outlines.h"
+ #include "ssd.h"
+@@ -633,6 +634,9 @@ cursor_process_motion(uint32_t time, double *sx, double *sy)
+ 	} else if (server.input_mode == LAB_INPUT_STATE_RESIZE) {
+ 		process_cursor_resize(time);
+ 		return false;
++	} else if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
++		overview_motion(server.seat.cursor->x, server.seat.cursor->y, time);
++		return false;
+ 	}
+ 
+ 	/* Otherwise, find view under the pointer and send the event along */
+@@ -1140,6 +1144,12 @@ bool
+ cursor_process_button_press(struct seat *seat, uint32_t button, uint32_t time_msec)
+ {
+ 	keyboard_cancel_super_release();
++	/* A press beside the overview (on a panel) closes it and goes on. */
++	if (server.input_mode == LAB_INPUT_STATE_OVERVIEW
++			&& overview_press(seat->cursor->x, seat->cursor->y, time_msec)) {
++		lab_set_add(&seat->bound_buttons, button);
++		return false;
++	}
+ 	struct cursor_context ctx = get_cursor_context();
+ 
+ 	/* Used on next button release to check if it can close menu or select menu item */
+@@ -1237,6 +1247,10 @@ cursor_process_button_release(struct seat *seat, uint32_t button,
+ 		}
+ 		return notify;
+ 	}
++	if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
++		overview_release(time_msec);
++		return notify;
++	}
+ 
+ 	if (server.input_mode != LAB_INPUT_STATE_PASSTHROUGH) {
+ 		return notify;
+@@ -1371,6 +1385,12 @@ static bool
+ process_cursor_axis(enum wl_pointer_axis orientation,
+ 		double delta, double delta_discrete)
+ {
++	if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
++		if (orientation == WL_POINTER_AXIS_VERTICAL_SCROLL) {
++			overview_scroll(delta * 4);
++		}
++		return false;
++	}
+ 	struct cursor_context ctx = get_cursor_context();
+ 	uint32_t modifiers = keyboard_get_all_modifiers(&server.seat);
+ 
+diff --git a/src/input/keyboard.c b/src/input/keyboard.c
+index 84aca8c..b5403cd 100644
+--- a/src/input/keyboard.c
++++ b/src/input/keyboard.c
+@@ -18,6 +18,7 @@
+ #include "input/key-state.h"
+ #include "labwc.h"
+ #include "menu/menu.h"
++#include "overview.h"
+ #include "session-lock.h"
+ #include "view.h"
+ #include "workspaces.h"
+@@ -556,6 +557,16 @@ handle_compositor_keybindings(struct keyboard *keyboard,
+ 				key_state_store_pressed_key_as_bound(event->keycode);
+ 				return LAB_KEY_HANDLED_TRUE;
+ 			}
++		} else if (server.input_mode == LAB_INPUT_STATE_OVERVIEW
++				&& !keyinfo.is_modifier) {
++			for (int i = 0; i < keyinfo.translated.nr_syms; i++) {
++				if (overview_handle_key(keyinfo.translated.syms[i])) {
++					/* Its release must not run a binding either. */
++					cur_keybind = NULL;
++					key_state_store_pressed_key_as_bound(event->keycode);
++					return LAB_KEY_HANDLED_TRUE;
++				}
++			}
+ 		}
+ 	}
+ 
+diff --git a/src/input/touch.c b/src/input/touch.c
+index 4788557..16c97dd 100644
+--- a/src/input/touch.c
++++ b/src/input/touch.c
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: GPL-2.0-only
+ #include "input/touch.h"
++#include <math.h>
+ #include <string.h>
+ #include <wayland-util.h>
+ #include <wlr/types/wlr_cursor.h>
+@@ -24,6 +25,8 @@
+ #include "layers.h"
+ #include "node.h"
+ #include "output.h"
++#include "overview.h"
++#include "overview-math.h"
+ #include "session-lock.h"
+ #include "ssd.h"
+ #include "view.h"
+@@ -41,8 +44,24 @@ struct touch_point {
+ 	bool mouse_deferred;
+ 	double start_x, start_y; /* device-normalized coordinates for mouse replay */
+ 	uint32_t start_time;
++	double lx, ly;           /* where the finger is now, in layout coordinates */
++	double four_lx, four_ly; /* where it was when the fourth finger landed */
+ };
+ 
++/* Four fingers moving up or down together open and close the overview. */
++static struct {
++	bool tracking; /* four fingers are down and may still mean it */
++	bool claimed;  /* they do: the overview follows them */
++	bool towards;  /* started upwards, towards the overview */
++	struct output *output;
++} four;
++
++/* The one finger that taps, drags or flicks in the open overview. */
++static struct {
++	bool active;
++	int32_t touch_id;
++} overview_finger;
++
+ static struct wlr_surface *
+ touch_get_coords(struct seat *seat, struct wlr_touch *touch, double x, double y,
+ 		double *x_offset, double *y_offset)
+@@ -172,6 +191,120 @@ cancel_touch_client(struct seat *seat, struct touch_point *point)
+ 	point->mouse_deferred = false;
+ }
+ 
++static void
++four_middle(struct seat *seat, bool start, double *x, double *y, double *spread)
++{
++	*x = *y = *spread = 0;
++	struct touch_point *point;
++	wl_list_for_each(point, &seat->touch_points, link) {
++		*x += (start ? point->four_lx : point->lx) / 4;
++		*y += (start ? point->four_ly : point->ly) / 4;
++	}
++	wl_list_for_each(point, &seat->touch_points, link) {
++		*spread += hypot((start ? point->four_lx : point->lx) - *x,
++			(start ? point->four_ly : point->ly) - *y) / 4;
++	}
++}
++
++static void
++four_fingers_stop(void)
++{
++	if (four.claimed) {
++		overview_gesture_end();
++	}
++	four.tracking = false;
++	four.claimed = false;
++}
++
++/*
++ * Take the touch from whoever has it. This happens as soon as the fourth
++ * finger is down, not when the fingers have shown where they are going: an
++ * application would use the way there for a gesture of its own (a browser
++ * zooms its page).
++ */
++static void
++four_fingers_claim(struct seat *seat, uint32_t time_msec)
++{
++	struct touch_point *point;
++	wl_list_for_each(point, &seat->touch_points, link) {
++		if (point->consumed) {
++			continue;
++		}
++		if (point->surface) {
++			cancel_touch_client(seat, point);
++			continue;
++		}
++		if (!point->mouse_deferred) {
++			cursor_emulate_button(seat, BTN_LEFT,
++				WL_POINTER_BUTTON_STATE_RELEASED, time_msec);
++			ssd_update_hovered_button(NULL);
++		}
++		point->consumed = true;
++		point->swipe.pending = false;
++		point->mouse_deferred = false;
++	}
++}
++
++/* Called with the new finger already in seat->touch_points. */
++static void
++four_fingers_down(struct seat *seat, struct touch_point *newest, uint32_t time_msec)
++{
++	int count = wl_list_length(&seat->touch_points);
++	if (count != 4) {
++		/* A fifth finger, or fewer again: not this gesture. */
++		if (count > 4) {
++			four_fingers_stop();
++		}
++		return;
++	}
++	if (!rc.overview_swipe || bottom_swipe_locked()
++			|| (server.input_mode != LAB_INPUT_STATE_PASSTHROUGH
++				&& server.input_mode != LAB_INPUT_STATE_OVERVIEW)) {
++		return;
++	}
++	struct touch_point *point;
++	wl_list_for_each(point, &seat->touch_points, link) {
++		point->four_lx = point->lx;
++		point->four_ly = point->ly;
++	}
++	four.tracking = true;
++	four.claimed = false;
++	overview_finger.active = false;
++	/* The fourth finger has not been shown to anyone yet. */
++	newest->consumed = true;
++	four_fingers_claim(seat, time_msec);
++}
++
++/* Returns true while the four fingers are the overview's. */
++static bool
++four_fingers_motion(struct seat *seat, uint32_t time_msec)
++{
++	if (!four.tracking || wl_list_length(&seat->touch_points) != 4) {
++		return false;
++	}
++	double x0, y0, spread0, x, y, spread;
++	four_middle(seat, true, &x0, &y0, &spread0);
++	four_middle(seat, false, &x, &y, &spread);
++	if (!four.claimed) {
++		enum overview_swipe swipe =
++			overview_swipe_decide(x - x0, y - y0, spread - spread0);
++		if (swipe == OVERVIEW_SWIPE_WAIT) {
++			return false;
++		}
++		bottom_swipe_output(x0, y0, &four.output);
++		four.towards = swipe == OVERVIEW_SWIPE_UP;
++		if (swipe == OVERVIEW_SWIPE_REJECT || !four.output || bottom_swipe_locked()
++				|| !overview_gesture_begin(four.output, four.towards)) {
++			four.tracking = false;
++			return false;
++		}
++		four.claimed = true;
++	}
++	/* Up is towards the overview. */
++	overview_gesture_update(y0 - y, time_msec);
++	return true;
++}
++
+ static bool
+ handle_bottom_swipe_motion(struct seat *seat, struct touch_point *point,
+ 		struct wlr_touch_motion_event *event)
+@@ -218,13 +351,22 @@ handle_touch_motion(struct wl_listener *listener, void *data)
+ 		if (touch_point->touch_id != event->touch_id) {
+ 			continue;
+ 		}
++		double lx, ly;
++		wlr_cursor_absolute_to_layout_coords(seat->cursor,
++			&event->touch->base, event->x, event->y, &lx, &ly);
++		touch_point->lx = lx;
++		touch_point->ly = ly;
++		if (four_fingers_motion(seat, event->time_msec)) {
++			return;
++		}
++		if (overview_finger.active && overview_finger.touch_id == event->touch_id) {
++			overview_motion(lx, ly, event->time_msec);
++			return;
++		}
+ 		if (handle_bottom_swipe_motion(seat, touch_point, event)) {
+ 			return;
+ 		}
+ 		if (touch_point->surface) {
+-			double lx, ly;
+-			wlr_cursor_absolute_to_layout_coords(seat->cursor,
+-				&event->touch->base, event->x, event->y, &lx, &ly);
+ 			double sx = lx - touch_point->x_offset;
+ 			double sy = ly - touch_point->y_offset;
+ 			if (touch_point_count == 1) {
+@@ -270,6 +412,24 @@ handle_touch_down(struct wl_listener *listener, void *data)
+ 			flush_deferred_mouse(seat, other);
+ 		}
+ 	}
++	double lx, ly;
++	wlr_cursor_absolute_to_layout_coords(seat->cursor, &event->touch->base,
++		event->x, event->y, &lx, &ly);
++	if (consumed && overview_finger.active) {
++		/* A second finger: the first is no tap or drag any more. */
++		overview_finger.active = false;
++		overview_press_cancel();
++	} else if (!consumed && overview_active()) {
++		/* The overview's, unless it lands beside it (on a panel): then
++		 * the overview closes and the touch goes where it landed. */
++		if (!wl_list_empty(&seat->touch_points)) {
++			consumed = true;
++		} else if (overview_press(lx, ly, event->time_msec)) {
++			consumed = true;
++			overview_finger.active = true;
++			overview_finger.touch_id = event->touch_id;
++		}
++	}
+ 	struct touch_point *touch_point = znew(*touch_point);
+ 	touch_point->device = event->touch;
+ 	touch_point->start_x = event->x;
+@@ -277,6 +437,8 @@ handle_touch_down(struct wl_listener *listener, void *data)
+ 	touch_point->start_time = event->time_msec;
+ 	touch_point->touch_id = event->touch_id;
+ 	touch_point->consumed = consumed;
++	touch_point->lx = lx;
++	touch_point->ly = ly;
+ 
+ 	double x_offset = 0, y_offset = 0;
+ 	if (!consumed) {
+@@ -288,13 +450,11 @@ handle_touch_down(struct wl_listener *listener, void *data)
+ 	wl_list_insert(&seat->touch_points, &touch_point->link);
+ 	int touch_point_count = wl_list_length(&seat->touch_points);
+ 	cursor_set_visible(seat, false);
+-	if (consumed) {
++	four_fingers_down(seat, touch_point, event->time_msec);
++	if (touch_point->consumed) {
+ 		return;
+ 	}
+ 
+-	double lx, ly;
+-	wlr_cursor_absolute_to_layout_coords(seat->cursor, &event->touch->base,
+-		event->x, event->y, &lx, &ly);
+ 	struct output *output;
+ 	struct bottom_swipe_box box = bottom_swipe_output(lx, ly, &output);
+ 	struct touch_config_entry *config = bottom_swipe_config(event->touch);
+@@ -342,6 +502,12 @@ handle_touch_up(struct wl_listener *listener, void *data)
+ 		if (touch_point->touch_id != event->touch_id) {
+ 			continue;
+ 		}
++		/* The first of the four fingers to lift ends their gesture. */
++		four_fingers_stop();
++		if (overview_finger.active && overview_finger.touch_id == event->touch_id) {
++			overview_finger.active = false;
++			overview_release(event->time_msec);
++		}
+ 		if (touch_point->swipe.pending && bottom_swipe_locked()) {
+ 			cancel_touch_client(seat, touch_point);
+ 		}
+@@ -370,6 +536,11 @@ handle_touch_cancel(struct wl_listener *listener, void *data)
+ 		if (point->device != event->touch || point->touch_id != event->touch_id) {
+ 			continue;
+ 		}
++		four_fingers_stop();
++		if (overview_finger.active && overview_finger.touch_id == event->touch_id) {
++			overview_finger.active = false;
++			overview_press_cancel();
++		}
+ 		if (point->surface) {
+ 			cancel_touch_client(seat, point);
+ 		} else if (!point->consumed && !point->mouse_deferred) {
+diff --git a/src/main.c b/src/main.c
+index ae0e061..8066179 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -36,6 +36,7 @@ static const struct option long_options[] = {
+ 	{"exit", no_argument, NULL, 'e'},
+ 	{"help", no_argument, NULL, 'h'},
+ 	{"merge-config", no_argument, NULL, 'm'},
++	{"overview", no_argument, NULL, 'O'},
+ 	{"reconfigure", no_argument, NULL, 'r'},
+ 	{"startup", required_argument, NULL, 's'},
+ 	{"session", required_argument, NULL, 'S'},
+@@ -53,6 +54,7 @@ static const char labwc_usage[] =
+ "  -e, --exit               Exit the compositor\n"
+ "  -h, --help               Show help message and quit\n"
+ "  -m, --merge-config       Merge user config files/theme in all XDG Base Dirs\n"
++"  -O, --overview           Open the overview of all windows, or close it\n"
+ "  -r, --reconfigure        Reload the compositor configuration\n"
+ "  -s, --startup <command>  Run command on startup\n"
+ "  -S, --session <command>  Run command on startup and terminate on exit\n"
+@@ -182,7 +184,7 @@ main(int argc, char *argv[])
+ 	int c;
+ 	while (1) {
+ 		int index = 0;
+-		c = getopt_long(argc, argv, "c:C:dehmrs:S:t:vV", long_options, &index);
++		c = getopt_long(argc, argv, "c:C:dehmOrs:S:t:vV", long_options, &index);
+ 		if (c == -1) {
+ 			break;
+ 		}
+@@ -202,6 +204,9 @@ main(int argc, char *argv[])
+ 		case 'm':
+ 			rc.merge_config = true;
+ 			break;
++		case 'O':
++			send_signal_to_labwc_pid(SIGUSR2);
++			exit(0);
+ 		case 'r':
+ 			send_signal_to_labwc_pid(SIGHUP);
+ 			exit(0);
+diff --git a/src/meson.build b/src/meson.build
+index 05163cf..727206f 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -15,6 +15,7 @@ labwc_sources = files(
+   'output-state.c',
+   'output-virtual.c',
+   'overlay.c',
++  'overview.c',
+   'placement.c',
+   'regions.c',
+   'resistance.c',
+diff --git a/src/output.c b/src/output.c
+index 151030a..8c8b997 100644
+--- a/src/output.c
++++ b/src/output.c
+@@ -47,6 +47,7 @@
+ #include "node.h"
+ #include "output-state.h"
+ #include "output-virtual.h"
++#include "overview.h"
+ #include "regions.h"
+ #include "session-lock.h"
+ #include "view.h"
+@@ -837,6 +838,7 @@ handle_output_frame(struct wl_listener *listener, void *data)
+ 
+ 	pending->tearing_page_flip = output_get_tearing_allowance(output);
+ 	rotation_tick(output);
++	overview_tick(output);
+ 
+ 	startup_tick(output);
+ 
+@@ -860,6 +862,7 @@ static void
+ handle_output_destroy(struct wl_listener *listener, void *data)
+ {
+ 	struct output *output = wl_container_of(listener, output, destroy);
++	overview_abort();
+ 	struct seat *seat = &server.seat;
+ 	regions_evacuate_output(output);
+ 	regions_destroy(seat, &output->regions);
+diff --git a/src/overview.c b/src/overview.c
+new file mode 100644
+index 0000000..2b25393
+--- /dev/null
++++ b/src/overview.c
+@@ -0,0 +1,2107 @@
++// SPDX-License-Identifier: GPL-2.0-only
++#include "overview.h"
++#include <assert.h>
++#include <cairo.h>
++#include <math.h>
++#include <string.h>
++#include <time.h>
++#include <wlr/render/allocator.h>
++#include <wlr/render/pixman.h>
++#include <wlr/render/swapchain.h>
++#include <wlr/types/wlr_buffer.h>
++#include <wlr/types/wlr_compositor.h>
++#include <wlr/types/wlr_output_layout.h>
++#include <wlr/types/wlr_scene.h>
++#include <wlr/util/log.h>
++#include <xkbcommon/xkbcommon-keysyms.h>
++#include "buffer.h"
++#include "common/list.h"
++#include "common/macros.h"
++#include "common/mem.h"
++#include "common/scene-helpers.h"
++#include "common/spawn.h"
++#include "config/rcxml.h"
++#include "desktop-entry.h"
++#include "labwc.h"
++#include "output.h"
++#include "overview-math.h"
++#include "scaled-buffer/scaled-font-buffer.h"
++#include "scaled-buffer/scaled-icon-buffer.h"
++#include "session-lock.h"
++#include "ssd.h"
++#include "ssd-internal.h"
++#include "theme.h"
++#include "translate.h"
++#include "view.h"
++
++/* Logical pixels */
++#define GAP 24
++#define ROW_GAP 16
++#define LABEL_HEIGHT 44
++#define LABEL_OFFSET 12
++#define TILE 24
++#define ICON 16
++#define SHADOW 16
++#define TITLES_FROM_WIDTH 220
++#define DIM 0.65
++#define MAX_MIRRORS 64
++
++/* Seconds */
++#define CROSSFADE 0.2
++#define CLOSE_WAIT 0.9
++
++enum state {
++	CLOSED = 0,
++	OPENING,  /* on its way to the overview */
++	OPEN,
++	TRACKING, /* follows four fingers */
++	CLOSING,  /* on its way back to the desktop; input is released */
++};
++
++struct frame {
++	struct wlr_scene_tree *tree;
++	struct wlr_scene_rect *side[4];
++	float color[4];
++	int thickness, outset;
++};
++
++/*
++ * One piece of a live window (a surface, or a part of its title bar and
++ * border), shown a second time at card size.
++ */
++struct mirror {
++	struct wlr_scene_buffer *node;   /* a picture, or */
++	struct wlr_scene_rect *rect;     /* a plain rectangle */
++	struct wlr_scene_node *source;   /* compared, never dereferenced */
++	struct wlr_buffer *shown;        /* likewise */
++	uint32_t seq;
++	float color[4];
++	int x, y, width, height;         /* within the window */
++	int buffer_width, buffer_height;
++	struct wlr_fbox src;
++	enum wl_output_transform transform;
++};
++
++/* One window's picture. A card has two for a pair snapped side by side. */
++struct part {
++	struct view *view;
++	double fx, fy, fw, fh; /* its place in the card, as fractions */
++	int view_width, view_height; /* with title bar and border */
++	struct wlr_scene_tree *tree;
++	struct wlr_scene_buffer *snapshot;
++	int snapshot_width, snapshot_height;
++	struct mirror mirrors[MAX_MIRRORS];
++	int nr_mirrors;
++	bool dirty;
++};
++
++struct card {
++	struct wl_list link;
++	struct part parts[2];
++	int nr_parts;
++
++	struct wlr_box from;       /* where the window really is */
++	double tx, ty, tw, th;     /* its place in the grid */
++	double sx, sy, sw, sh;     /* the same, eased when the grid changes */
++	bool placed;
++	int width, height;         /* as last drawn */
++	float alpha;
++
++	bool minimized;
++	bool closing;              /* asked to close, hidden meanwhile */
++	bool attention;            /* did not close: the app asks something */
++	bool flying;
++	double close_deadline;
++	double lift;               /* pulled up this far by a finger */
++	double lift_velocity;
++
++	struct wlr_scene_tree *tree;
++	struct wlr_scene_buffer *shadow;
++	struct wlr_scene_tree *pictures;
++	struct wlr_scene_rect *shade; /* minimised: the picture at half strength */
++	struct frame hairline, marker;
++	struct wlr_scene_tree *tag;
++	struct wlr_scene_rect *tag_bg;
++	struct scaled_font_buffer *tag_text;
++
++	struct wlr_scene_tree *label;
++	int label_width;
++};
++
++static struct {
++	enum state state;
++	struct output *output;
++	struct wlr_box box;  /* the output, in layout coordinates */
++	struct wlr_box area; /* what the shell leaves free of it */
++	bool live;           /* live windows that move, or pictures that fade */
++	bool row;            /* a phone: one row of large cards */
++	bool keyboard;       /* show which card the keys are on */
++	bool titles;
++
++	struct wlr_scene_tree *tree, *labels, *cards_tree, *dots;
++	struct wlr_scene_rect *dim;
++	struct wl_list cards;
++	struct card *selected;
++	struct overview_grid grid;
++
++	double progress, target; /* 0: the desktop, 1: the overview */
++	double scroll, scroll_target, scroll_max;
++	double last_tick;
++
++	struct {
++		bool pending;        /* software look: fingers down, not far enough yet */
++		bool towards;
++		double base;
++		double velocity;
++		double last_progress;
++		uint32_t last_time;
++	} gesture;
++
++	struct {
++		bool down, moved;
++		enum { DRAG_UNDECIDED, DRAG_NONE, DRAG_SCROLL, DRAG_LIFT } drag;
++		struct card *card;
++		double x0, y0, x, y;
++		double scroll0;
++		double velocity; /* along the drag, logical pixels per second */
++		double last_pos;
++		uint32_t last_time;
++	} press;
++} ov;
++
++/*
++ * Software look: the change between desktop and overview is one crossfade.
++ * The picture that was on screen stays on top and fades away over the new
++ * one, which is complete below it from the start. Moving and scaling every
++ * window for every frame is more than a processor can draw smoothly; one
++ * picture at its own size with a changing opacity it can.
++ */
++static struct {
++	struct wlr_scene_buffer *node;
++	struct output *output;
++	double began; /* 0 until its first frame: preparing must not eat the fade */
++} cover;
++
++static void finish(struct view *chosen);
++static void destroy(void);
++
++static bool
++cover_accepts_input(struct wlr_scene_buffer *buffer, double *x, double *y)
++{
++	return false;
++}
++
++static void
++cover_remove(void)
++{
++	if (cover.node) {
++		wlr_scene_node_destroy(&cover.node->node);
++	}
++	cover.node = NULL;
++	cover.output = NULL;
++}
++
++/* Keep what @output shows now on screen, just above @above in the scene. */
++static void
++cover_begin(struct output *output, struct wlr_scene_node *above)
++{
++	cover_remove();
++	if (!output->rotation_last_frame) {
++		return;
++	}
++	struct wlr_box box;
++	wlr_output_layout_get_box(server.output_layout, output->wlr_output, &box);
++	cover.node = wlr_scene_buffer_create(&server.scene->tree,
++		output->rotation_last_frame);
++	if (!cover.node) {
++		return;
++	}
++	cover.output = output;
++	cover.began = 0;
++	cover.node->point_accepts_input = cover_accepts_input;
++	wlr_scene_node_place_above(&cover.node->node, above);
++	wlr_scene_node_set_position(&cover.node->node, box.x, box.y);
++	wlr_scene_buffer_set_dest_size(cover.node, box.width, box.height);
++	/* As for the rotation cover: the scene inverts this when it draws. */
++	wlr_scene_buffer_set_transform(cover.node, output->wlr_output->transform);
++	wlr_output_schedule_frame(output->wlr_output);
++}
++
++static void
++cover_tick(struct output *output, double time)
++{
++	if (!cover.node || cover.output != output) {
++		return;
++	}
++	if (!cover.began) {
++		cover.began = time;
++	}
++	double t = (time - cover.began) / CROSSFADE;
++	if (t >= 1 || (server.session_lock_manager && server.session_lock_manager->locked)) {
++		cover_remove();
++	} else {
++		wlr_scene_buffer_set_opacity(cover.node, (float)(1 - t * t * (3 - 2 * t)));
++	}
++	wlr_output_schedule_frame(output->wlr_output);
++}
++
++static double
++now(void)
++{
++	struct timespec ts;
++	clock_gettime(CLOCK_MONOTONIC, &ts);
++	return ts.tv_sec + ts.tv_nsec / 1000000000.0;
++}
++
++static double
++clamp(double value, double low, double high)
++{
++	return value < low ? low : value > high ? high : value;
++}
++
++static double
++approach(double value, double target, double dt, double rate)
++{
++	double next = value + (target - value) * (1 - exp(-dt * rate));
++	return fabs(target - next) < 0.002 * fmax(1, fabs(target)) ? target : next;
++}
++
++static void
++redraw(void)
++{
++	if (ov.output) {
++		wlr_output_schedule_frame(ov.output->wlr_output);
++	}
++}
++
++static bool
++locked(void)
++{
++	return server.session_lock_manager && server.session_lock_manager->locked;
++}
++
++static void
++set_rect_color(struct wlr_scene_rect *rect, const float color[4], float alpha)
++{
++	float faded[4] = {
++		color[0] * alpha, color[1] * alpha, color[2] * alpha, color[3] * alpha,
++	};
++	wlr_scene_rect_set_color(rect, faded);
++}
++
++/* Every picture below @node gets @alpha. */
++static void
++set_tree_opacity(struct wlr_scene_node *node, float alpha)
++{
++	if (node->type == WLR_SCENE_NODE_BUFFER) {
++		wlr_scene_buffer_set_opacity(wlr_scene_buffer_from_node(node), alpha);
++	} else if (node->type == WLR_SCENE_NODE_TREE) {
++		struct wlr_scene_node *child;
++		wl_list_for_each(child, &wlr_scene_tree_from_node(node)->children, link) {
++			set_tree_opacity(child, alpha);
++		}
++	}
++}
++
++/*
++ * A rectangular outline around a box, @outset pixels outside it.
++ */
++static void
++frame_create(struct frame *frame, struct wlr_scene_tree *parent,
++		const float color[4], int thickness, int outset)
++{
++	frame->tree = lab_wlr_scene_tree_create(parent);
++	frame->thickness = thickness;
++	frame->outset = outset;
++	memcpy(frame->color, color, sizeof(frame->color));
++	for (int i = 0; i < 4; i++) {
++		frame->side[i] = lab_wlr_scene_rect_create(frame->tree, 1, 1, color);
++	}
++}
++
++static void
++frame_set(struct frame *frame, int width, int height, float alpha)
++{
++	int t = frame->thickness, o = frame->outset;
++	int w = width + 2 * o, h = height + 2 * o;
++	struct wlr_box sides[4] = {
++		{ -o, -o, w, t },             /* top */
++		{ -o, height + o - t, w, t }, /* bottom */
++		{ -o, -o + t, t, h - 2 * t }, /* left */
++		{ width + o - t, -o + t, t, h - 2 * t },
++	};
++	for (int i = 0; i < 4; i++) {
++		wlr_scene_node_set_position(&frame->side[i]->node, sides[i].x, sides[i].y);
++		wlr_scene_rect_set_size(frame->side[i],
++			MAX(1, sides[i].width), MAX(1, sides[i].height));
++		set_rect_color(frame->side[i], frame->color, alpha);
++	}
++}
++
++static void
++frame_set_color(struct frame *frame, const float color[4])
++{
++	memcpy(frame->color, color, sizeof(frame->color));
++}
++
++/*
++ * Window pictures
++ */
++
++struct source {
++	struct wlr_scene_buffer *buffer; /* or */
++	struct wlr_scene_rect *rect;
++	struct wlr_buffer *content;      /* what the buffer node shows */
++	int x, y;
++};
++
++/*
++ * A hardware renderer keeps only the texture of a picture that is the
++ * compositor's own and lets go of the buffer; the scene node then has none
++ * to copy. That happens to the title bar's background (its text and buttons
++ * are held elsewhere), which the theme still has.
++ */
++static struct wlr_buffer *
++released_content(struct view *view, struct wlr_scene_buffer *buffer)
++{
++	if (!view->ssd) {
++		return NULL;
++	}
++	enum ssd_active_state active;
++	FOR_EACH_ACTIVE_STATE(active) {
++		struct ssd_titlebar_subtree *subtree = &view->ssd->titlebar.subtrees[active];
++		struct lab_data_buffer *held = NULL;
++		if (buffer == subtree->bar) {
++			held = rc.theme->window[active].titlebar_fill;
++		} else if (buffer == subtree->corner_left) {
++			held = rc.theme->window[active].corner_top_left_normal;
++		} else if (buffer == subtree->corner_right) {
++			held = rc.theme->window[active].corner_top_right_normal;
++		}
++		if (held) {
++			return &held->base;
++		}
++	}
++	return NULL;
++}
++
++/* What a window is made of, back to front, in window coordinates. */
++static void
++collect_sources(struct view *view, struct wlr_scene_node *node, int x, int y,
++		struct source *sources, int *count)
++{
++	if (!node->enabled || *count >= MAX_MIRRORS) {
++		return;
++	}
++	if (node->type == WLR_SCENE_NODE_TREE) {
++		struct wlr_scene_node *child;
++		wl_list_for_each(child, &wlr_scene_tree_from_node(node)->children, link) {
++			collect_sources(view, child, x + child->x, y + child->y,
++				sources, count);
++		}
++	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
++		struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
++		struct wlr_buffer *content = buffer->buffer
++			? buffer->buffer : released_content(view, buffer);
++		if (content) {
++			sources[(*count)++] = (struct source){
++				.buffer = buffer, .content = content, .x = x, .y = y,
++			};
++		}
++	} else if (node->type == WLR_SCENE_NODE_RECT) {
++		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
++		if (rect->color[3] > 0 && rect->width > 0 && rect->height > 0) {
++			sources[(*count)++] = (struct source){ .rect = rect, .x = x, .y = y };
++		}
++	}
++}
++
++/* The window as it is drawn: its contents with title bar and border. */
++static struct wlr_box
++view_extents(struct view *view)
++{
++	struct wlr_box box = ssd_max_extents(view);
++	if (box.width <= 0 || box.height <= 0) {
++		box = view->current;
++	}
++	return box;
++}
++
++static int
++view_sources(struct view *view, struct source *sources)
++{
++	int count = 0;
++	/* The view's own tree is disabled while it is minimised: start below. */
++	struct wlr_box box = view_extents(view);
++	int x = view->current.x - box.x, y = view->current.y - box.y;
++	struct wlr_scene_node *child;
++	wl_list_for_each(child, &view->scene_tree->children, link) {
++		collect_sources(view, child, x + child->x, y + child->y, sources, &count);
++	}
++	return count;
++}
++
++static void
++source_size(const struct source *source, int *width, int *height)
++{
++	struct wlr_scene_buffer *buffer = source->buffer;
++	*width = buffer->dst_width;
++	*height = buffer->dst_height;
++	if (*width <= 0 || *height <= 0) {
++		bool turned = buffer->transform & WL_OUTPUT_TRANSFORM_90;
++		*width = turned ? source->content->height : source->content->width;
++		*height = turned ? source->content->width : source->content->height;
++	}
++}
++
++/*
++ * Software look: the window drawn once, at the size of its card, so that
++ * showing it afterwards is a plain copy.
++ */
++static struct wlr_buffer *
++render_snapshot(struct view *view, int width, int height)
++{
++	struct wlr_swapchain *swapchain = ov.output->wlr_output->swapchain;
++	struct wlr_box box = view_extents(view);
++	if (!swapchain || width <= 0 || height <= 0) {
++		return NULL;
++	}
++	struct wlr_buffer *buffer = wlr_allocator_create_buffer(server.allocator,
++		width, height, &swapchain->format);
++	if (!buffer) {
++		wlr_log(WLR_ERROR, "overview: no buffer for a window picture");
++		return NULL;
++	}
++	struct wlr_render_pass *pass =
++		wlr_renderer_begin_buffer_pass(server.renderer, buffer, NULL);
++	if (!pass) {
++		wlr_buffer_drop(buffer);
++		return NULL;
++	}
++	float *bg = rc.theme->osd_bg_color;
++	wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
++		.box = { 0, 0, width, height },
++		.color = { bg[0], bg[1], bg[2], 1.0f },
++		.blend_mode = WLR_RENDER_BLEND_MODE_NONE,
++	});
++	double kx = (double)width / box.width;
++	double ky = (double)height / box.height;
++	struct source sources[MAX_MIRRORS];
++	struct wlr_texture *made[MAX_MIRRORS];
++	int count = view_sources(view, sources), nr_made = 0;
++	for (int i = 0; i < count; i++) {
++		int w, h;
++		if (sources[i].rect) {
++			w = sources[i].rect->width;
++			h = sources[i].rect->height;
++		} else {
++			source_size(&sources[i], &w, &h);
++		}
++		int x0 = lround(sources[i].x * kx), y0 = lround(sources[i].y * ky);
++		int x1 = lround((sources[i].x + w) * kx), y1 = lround((sources[i].y + h) * ky);
++		struct wlr_box dst = { x0, y0, MAX(1, x1 - x0), MAX(1, y1 - y0) };
++		if (sources[i].rect) {
++			float *c = sources[i].rect->color;
++			wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
++				.box = dst, .color = { c[0], c[1], c[2], c[3] },
++			});
++			continue;
++		}
++		struct wlr_scene_buffer *source = sources[i].buffer;
++		struct wlr_buffer *content = sources[i].content;
++		struct wlr_client_buffer *client = wlr_client_buffer_get(content);
++		struct wlr_texture *texture = client ? client->texture : NULL;
++		if (!client) {
++			/* The compositor's own: title text, buttons, icons. */
++			texture = wlr_texture_from_buffer(server.renderer, content);
++			if (texture) {
++				made[nr_made++] = texture;
++			}
++		}
++		if (!texture) {
++			continue;
++		}
++		wlr_render_pass_add_texture(pass, &(struct wlr_render_texture_options){
++			.texture = texture,
++			.src_box = source->src_box,
++			.dst_box = dst,
++			.transform = source->transform,
++			.filter_mode = WLR_SCALE_FILTER_BILINEAR,
++		});
++	}
++	bool ok = wlr_render_pass_submit(pass);
++	for (int i = 0; i < nr_made; i++) {
++		wlr_texture_destroy(made[i]);
++	}
++	if (!ok) {
++		wlr_buffer_drop(buffer);
++		return NULL;
++	}
++	return buffer;
++}
++
++static void
++part_snapshot(struct part *part, int width, int height)
++{
++	float scale = ov.output->wlr_output->scale;
++	int w = lround(width * scale), h = lround(height * scale);
++	if (part->snapshot && part->snapshot_width == w && part->snapshot_height == h) {
++		return;
++	}
++	struct wlr_buffer *buffer = render_snapshot(part->view, w, h);
++	if (!buffer) {
++		return;
++	}
++	if (!part->snapshot) {
++		part->snapshot = lab_wlr_scene_buffer_create(part->tree, buffer);
++	} else {
++		wlr_scene_buffer_set_buffer(part->snapshot, buffer);
++	}
++	wlr_buffer_drop(buffer);
++	part->snapshot_width = w;
++	part->snapshot_height = h;
++	part->dirty = true;
++}
++
++/* Hardware look: keep the card's copies of the window's pieces current. */
++static void
++part_sync_mirrors(struct part *part)
++{
++	struct source sources[MAX_MIRRORS];
++	int count = view_sources(part->view, sources);
++	bool same = count == part->nr_mirrors;
++	for (int i = 0; same && i < count; i++) {
++		same = part->mirrors[i].source == (sources[i].rect
++			? &sources[i].rect->node : &sources[i].buffer->node);
++	}
++	if (!same) {
++		for (int i = 0; i < part->nr_mirrors; i++) {
++			struct mirror *old = &part->mirrors[i];
++			wlr_scene_node_destroy(old->rect ? &old->rect->node : &old->node->node);
++		}
++		memset(part->mirrors, 0, sizeof(part->mirrors));
++		for (int i = 0; i < count; i++) {
++			struct mirror *mirror = &part->mirrors[i];
++			if (sources[i].rect) {
++				mirror->rect = lab_wlr_scene_rect_create(part->tree, 1, 1,
++					sources[i].rect->color);
++				mirror->source = &sources[i].rect->node;
++			} else {
++				mirror->node = lab_wlr_scene_buffer_create(part->tree, NULL);
++				mirror->source = &sources[i].buffer->node;
++			}
++		}
++		part->nr_mirrors = count;
++		part->dirty = true;
++	}
++	for (int i = 0; i < count; i++) {
++		struct mirror *mirror = &part->mirrors[i];
++		if (mirror->rect) {
++			struct wlr_scene_rect *source = sources[i].rect;
++			if (mirror->x != sources[i].x || mirror->y != sources[i].y
++					|| mirror->width != source->width
++					|| mirror->height != source->height
++					|| memcmp(mirror->color, source->color, sizeof(mirror->color))) {
++				mirror->x = sources[i].x;
++				mirror->y = sources[i].y;
++				mirror->width = source->width;
++				mirror->height = source->height;
++				memcpy(mirror->color, source->color, sizeof(mirror->color));
++				part->dirty = true;
++			}
++			continue;
++		}
++		struct wlr_scene_buffer *source = sources[i].buffer;
++		struct wlr_scene_surface *scene_surface =
++			wlr_scene_surface_try_from_buffer(source);
++		uint32_t seq = scene_surface ? scene_surface->surface->current.seq : 0;
++		struct wlr_buffer *content = sources[i].content;
++		if (mirror->shown != content || mirror->seq != seq) {
++			wlr_scene_buffer_set_buffer_with_damage(mirror->node, content, NULL);
++			mirror->shown = content;
++			mirror->seq = seq;
++		}
++		int w, h;
++		source_size(&sources[i], &w, &h);
++		if (mirror->x != sources[i].x || mirror->y != sources[i].y
++				|| mirror->width != w || mirror->height != h
++				|| mirror->transform != source->transform
++				|| memcmp(&mirror->src, &source->src_box, sizeof(mirror->src))
++				|| mirror->buffer_width != content->width
++				|| mirror->buffer_height != content->height) {
++			mirror->x = sources[i].x;
++			mirror->y = sources[i].y;
++			mirror->width = w;
++			mirror->height = h;
++			mirror->transform = source->transform;
++			mirror->src = source->src_box;
++			mirror->buffer_width = content->width;
++			mirror->buffer_height = content->height;
++			wlr_scene_buffer_set_transform(mirror->node, mirror->transform);
++			part->dirty = true;
++		}
++	}
++	struct wlr_box box = view_extents(part->view);
++	if (part->view_width != box.width || part->view_height != box.height) {
++		part->view_width = box.width;
++		part->view_height = box.height;
++		part->dirty = true;
++	}
++}
++
++/* Draw the part's pictures into a box of @width x @height. */
++static void
++part_place(struct part *part, int width, int height)
++{
++	if (part->snapshot) {
++		wlr_scene_buffer_set_dest_size(part->snapshot, width, height);
++	}
++	if (part->view_width <= 0 || part->view_height <= 0) {
++		return;
++	}
++	double kx = (double)width / part->view_width;
++	double ky = (double)height / part->view_height;
++	for (int i = 0; i < part->nr_mirrors; i++) {
++		struct mirror *mirror = &part->mirrors[i];
++		/* Only what lies inside the window: no client-side shadows. */
++		int x0 = MAX(mirror->x, 0), y0 = MAX(mirror->y, 0);
++		int x1 = MIN(mirror->x + mirror->width, part->view_width);
++		int y1 = MIN(mirror->y + mirror->height, part->view_height);
++		bool visible = x1 > x0 && y1 > y0 && mirror->width > 0 && mirror->height > 0;
++		struct wlr_scene_node *shown = mirror->rect
++			? &mirror->rect->node : &mirror->node->node;
++		wlr_scene_node_set_enabled(shown, visible);
++		if (!visible) {
++			continue;
++		}
++		if (mirror->rect) {
++			int left = lround(x0 * kx), top = lround(y0 * ky);
++			wlr_scene_node_set_position(shown, left, top);
++			wlr_scene_rect_set_size(mirror->rect,
++				MAX(1, (int)lround(x1 * kx) - left),
++				MAX(1, (int)lround(y1 * ky) - top));
++			continue;
++		}
++		struct wlr_fbox src = mirror->src;
++		bool cropped = x0 != mirror->x || y0 != mirror->y
++			|| x1 != mirror->x + mirror->width || y1 != mirror->y + mirror->height;
++		if (cropped && mirror->transform == WL_OUTPUT_TRANSFORM_NORMAL) {
++			if (wlr_fbox_empty(&src)) {
++				src = (struct wlr_fbox){
++					0, 0, mirror->buffer_width, mirror->buffer_height,
++				};
++			}
++			double px = src.width / mirror->width, py = src.height / mirror->height;
++			src.x += (x0 - mirror->x) * px;
++			src.y += (y0 - mirror->y) * py;
++			src.width = (x1 - x0) * px;
++			src.height = (y1 - y0) * py;
++		} else if (cropped) {
++			x0 = mirror->x;
++			y0 = mirror->y;
++			x1 = x0 + mirror->width;
++			y1 = y0 + mirror->height;
++		}
++		wlr_scene_buffer_set_source_box(mirror->node, &src);
++		int left = lround(x0 * kx), top = lround(y0 * ky);
++		wlr_scene_node_set_position(&mirror->node->node, left, top);
++		wlr_scene_buffer_set_dest_size(mirror->node,
++			MAX(1, (int)lround(x1 * kx) - left), MAX(1, (int)lround(y1 * ky) - top));
++	}
++}
++
++static void
++send_frame_done(struct wlr_surface *surface, int sx, int sy, void *data)
++{
++	wlr_surface_send_frame_done(surface, data);
++}
++
++/*
++ * Cards
++ */
++
++static struct wlr_scene_buffer *
++create_shadow(struct wlr_scene_tree *parent, int width, int height)
++{
++	struct lab_data_buffer *buffer = buffer_create_cairo(width + 2 * SHADOW,
++		height + 2 * SHADOW, ov.output->wlr_output->scale);
++	if (!buffer) {
++		return NULL;
++	}
++	cairo_t *cairo = cairo_create(buffer->surface);
++	cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
++	for (int ring = 0; ring < SHADOW; ring++) {
++		double strength = (ring + 1) / (double)SHADOW;
++		cairo_set_source_rgba(cairo, 0, 0, 0, 0.4 * strength * strength);
++		cairo_rectangle(cairo, ring, ring, width + 2 * (SHADOW - ring),
++			height + 2 * (SHADOW - ring));
++		cairo_fill(cairo);
++	}
++	cairo_surface_flush(buffer->surface);
++	cairo_destroy(cairo);
++	struct wlr_scene_buffer *shadow = lab_wlr_scene_buffer_create(parent, &buffer->base);
++	wlr_buffer_drop(&buffer->base);
++	return shadow;
++}
++
++static bool
++view_wanted(struct view *view)
++{
++	return view->mapped && view->surface && view->content_tree
++		&& view->current.width > 0 && view->current.height > 0;
++}
++
++#define for_each_overview_view(view) \
++	for_each_view(view, &server.views, LAB_VIEW_CRITERIA_CURRENT_WORKSPACE \
++		| LAB_VIEW_CRITERIA_NO_DIALOG | LAB_VIEW_CRITERIA_NO_SKIP_WINDOW_SWITCHER)
++
++static int
++count_views(void)
++{
++	int count = 0;
++	struct view *view;
++	for_each_overview_view(view) {
++		count += view_wanted(view);
++	}
++	return count;
++}
++
++static enum lab_edge
++opposite(enum lab_edge edge)
++{
++	switch (edge) {
++	case LAB_EDGE_LEFT: return LAB_EDGE_RIGHT;
++	case LAB_EDGE_RIGHT: return LAB_EDGE_LEFT;
++	case LAB_EDGE_TOP: return LAB_EDGE_BOTTOM;
++	case LAB_EDGE_BOTTOM: return LAB_EDGE_TOP;
++	default: return LAB_EDGE_NONE;
++	}
++}
++
++static bool
++view_snapped(struct view *view)
++{
++	return !view->minimized && !view->fullscreen && !view->shaded
++		&& opposite(view->tiled) != LAB_EDGE_NONE;
++}
++
++static struct card *
++card_of(struct view *view, int *index)
++{
++	struct card *card;
++	wl_list_for_each(card, &ov.cards, link) {
++		for (int i = 0; i < card->nr_parts; i++) {
++			if (card->parts[i].view == view) {
++				if (index) {
++					*index = i;
++				}
++				return card;
++			}
++		}
++	}
++	return NULL;
++}
++
++/* Where the card's windows are on the desktop, and each one's share of it. */
++static void
++card_measure(struct card *card)
++{
++	struct wlr_box box = view_extents(card->parts[0].view);
++	for (int i = 1; i < card->nr_parts; i++) {
++		struct wlr_box geo = view_extents(card->parts[i].view);
++		int x1 = MAX(box.x + box.width, geo.x + geo.width);
++		int y1 = MAX(box.y + box.height, geo.y + geo.height);
++		box.x = MIN(box.x, geo.x);
++		box.y = MIN(box.y, geo.y);
++		box.width = x1 - box.x;
++		box.height = y1 - box.y;
++	}
++	card->from = box;
++	for (int i = 0; i < card->nr_parts; i++) {
++		struct part *part = &card->parts[i];
++		struct wlr_box geo = view_extents(part->view);
++		part->fx = (double)(geo.x - box.x) / box.width;
++		part->fy = (double)(geo.y - box.y) / box.height;
++		part->fw = (double)geo.width / box.width;
++		part->fh = (double)geo.height / box.height;
++		part->view_width = geo.width;
++		part->view_height = geo.height;
++		part->dirty = true;
++	}
++}
++
++static void
++card_add_part(struct card *card, struct view *view)
++{
++	struct part *part = &card->parts[card->nr_parts++];
++	*part = (struct part){ .view = view };
++	part->tree = lab_wlr_scene_tree_create(card->pictures);
++}
++
++static struct card *
++card_create(struct view *view, struct view *partner)
++{
++	struct theme *theme = rc.theme;
++	struct card *card = znew(*card);
++	wl_list_append(&ov.cards, &card->link);
++	card->minimized = view->minimized;
++	card->alpha = -1;
++
++	card->tree = lab_wlr_scene_tree_create(ov.cards_tree);
++	/* Cards come most recent first, and that one is in front. */
++	wlr_scene_node_lower_to_bottom(&card->tree->node);
++	/* Shadow first: everything else of the card is drawn over it. */
++	frame_create(&card->marker, card->tree, theme->osd_border_color, 2, 4);
++	wlr_scene_node_set_enabled(&card->marker.tree->node, false);
++	card->pictures = lab_wlr_scene_tree_create(card->tree);
++	card->shade = lab_wlr_scene_rect_create(card->tree, 1, 1, (float[4]){0});
++	wlr_scene_node_set_enabled(&card->shade->node, card->minimized);
++	frame_create(&card->hairline, card->tree,
++		theme->window[SSD_INACTIVE].border_color, 1, 1);
++
++	card_add_part(card, view);
++	if (partner) {
++		card_add_part(card, partner);
++	}
++	card_measure(card);
++
++	if (card->minimized) {
++		card->tag = lab_wlr_scene_tree_create(card->tree);
++		card->tag_bg = lab_wlr_scene_rect_create(card->tag, 1, 1, theme->osd_bg_color);
++		card->tag_text = scaled_font_buffer_create(card->tag);
++		scaled_font_buffer_update(card->tag_text, _("Minimised"), 400,
++			&rc.font_osd, theme->osd_label_text_color, (float[4]){0});
++		wlr_scene_rect_set_size(card->tag_bg, card->tag_text->width + 16,
++			card->tag_text->height + 8);
++		wlr_scene_node_set_position(&card->tag_text->scene_buffer->node, 8, 4);
++	}
++
++	card->label = lab_wlr_scene_tree_create(ov.labels);
++	return card;
++}
++
++static void
++card_destroy(struct card *card)
++{
++	if (ov.selected == card) {
++		ov.selected = NULL;
++	}
++	if (ov.press.card == card) {
++		ov.press.card = NULL;
++		ov.press.drag = DRAG_NONE;
++	}
++	wl_list_remove(&card->link);
++	wlr_scene_node_destroy(&card->tree->node);
++	wlr_scene_node_destroy(&card->label->node);
++	free(card);
++}
++
++static const char *
++app_name(struct view *view)
++{
++	const char *name = NULL;
++#if HAVE_LIBSFDO
++	name = desktop_entry_name_lookup(view->app_id);
++#endif
++	if (!name || !*name) {
++		name = view->app_id;
++	}
++	return name && *name ? name : view->title;
++}
++
++static int
++label_add_text(struct card *card, int x, const char *text, int max_width,
++		struct font *font, const float *color)
++{
++	if (max_width < 24 || !text || !*text) {
++		return x;
++	}
++	struct scaled_font_buffer *buffer = scaled_font_buffer_create(card->label);
++	scaled_font_buffer_update(buffer, text, max_width, font, color, (float[4]){0});
++	wlr_scene_node_set_position(&buffer->scene_buffer->node, x,
++		(TILE - buffer->height) / 2);
++	return x + buffer->width;
++}
++
++static int
++label_add_app(struct card *card, int x, struct view *view, int max_width)
++{
++	struct theme *theme = rc.theme;
++	struct wlr_scene_rect *tile =
++		lab_wlr_scene_rect_create(card->label, TILE, TILE, theme->osd_bg_color);
++	wlr_scene_node_set_position(&tile->node, x, 0);
++	struct scaled_icon_buffer *icon = scaled_icon_buffer_create(card->label, ICON, ICON);
++	scaled_icon_buffer_set_view(icon, view);
++	wlr_scene_node_set_position(&icon->scene_buffer->node,
++		x + (TILE - ICON) / 2, (TILE - ICON) / 2);
++	x += TILE + 10;
++	struct font bold = rc.font_osd;
++	bold.weight = PANGO_WEIGHT_BOLD;
++	return label_add_text(card, x, app_name(view), max_width - TILE - 10, &bold,
++		theme->osd_label_text_color);
++}
++
++/* The line under (on a phone: over) a card: icon, app name, maybe the title. */
++static void
++card_build_label(struct card *card, int max_width)
++{
++	struct theme *theme = rc.theme;
++	struct wlr_scene_node *child, *tmp;
++	wl_list_for_each_safe(child, tmp, &card->label->children, link) {
++		wlr_scene_node_destroy(child);
++	}
++	float soft[4];
++	for (int i = 0; i < 4; i++) {
++		soft[i] = theme->osd_label_text_color[i] * 0.6f;
++	}
++	int share = max_width / card->nr_parts;
++	int x = 0;
++	for (int i = 0; i < card->nr_parts; i++) {
++		if (i > 0) {
++			x = label_add_text(card, x + 12, "+", 40, &rc.font_osd, soft) + 12;
++		}
++		x = label_add_app(card, x, card->parts[i].view, share - (i > 0 ? 40 : 0));
++	}
++	const char *title = card->nr_parts == 1 ? card->parts[0].view->title : NULL;
++	if (card->attention) {
++		struct view *dialog = view_get_modal_dialog(card->parts[0].view);
++		char text[256];
++		if (dialog && *dialog->title && ov.titles) {
++			snprintf(text, sizeof(text), "· %s  %s", dialog->title,
++				_("Tap to answer"));
++		} else {
++			snprintf(text, sizeof(text), "· %s", _("Tap to answer"));
++		}
++		x = label_add_text(card, x + 10, text, max_width - x - 10, &rc.font_osd,
++			theme->overview_attention_color);
++	} else if (ov.titles && title && *title && strcmp(title, app_name(card->parts[0].view))) {
++		char text[256];
++		snprintf(text, sizeof(text), "· %s", title);
++		x = label_add_text(card, x + 10, text, max_width - x - 10, &rc.font_osd, soft);
++	}
++	card->label_width = x;
++	card->alpha = -1;
++}
++
++/*
++ * Layout
++ */
++
++static int
++nr_cards(void)
++{
++	return wl_list_length(&ov.cards);
++}
++
++static int
++card_index(struct card *wanted)
++{
++	int index = 0;
++	struct card *card;
++	wl_list_for_each(card, &ov.cards, link) {
++		if (card == wanted) {
++			return index;
++		}
++		index++;
++	}
++	return -1;
++}
++
++static struct card *
++card_at_index(int index)
++{
++	struct card *card;
++	wl_list_for_each(card, &ov.cards, link) {
++		if (index-- == 0) {
++			return card;
++		}
++	}
++	return NULL;
++}
++
++/* Row layout: how far to scroll to have card @index in the middle. */
++static double
++row_scroll_for(int index)
++{
++	struct card *card = card_at_index(index);
++	return card ? card->tx + card->tw / 2 - (ov.area.x + ov.area.width / 2.0) : 0;
++}
++
++static int
++row_index_at(double scroll)
++{
++	int index = 0, best = 0;
++	double distance = INFINITY;
++	struct card *card;
++	wl_list_for_each(card, &ov.cards, link) {
++		double d = fabs(row_scroll_for(index) - scroll);
++		if (d < distance) {
++			distance = d;
++			best = index;
++		}
++		index++;
++	}
++	return best;
++}
++
++static void
++update_dots(void)
++{
++	if (!ov.dots) {
++		return;
++	}
++	struct wlr_scene_node *child, *tmp;
++	wl_list_for_each_safe(child, tmp, &ov.dots->children, link) {
++		wlr_scene_node_destroy(child);
++	}
++	int count = nr_cards(), current = row_index_at(ov.scroll_target);
++	if (count < 2) {
++		return;
++	}
++	float *color = rc.theme->osd_label_text_color;
++	float dimmed[4];
++	for (int i = 0; i < 4; i++) {
++		dimmed[i] = color[i] * 0.35f;
++	}
++	int x = 0;
++	for (int i = 0; i < count; i++) {
++		int width = i == current ? 18 : 6;
++		struct wlr_scene_rect *dot = lab_wlr_scene_rect_create(ov.dots, width, 6,
++			i == current ? color : dimmed);
++		wlr_scene_node_set_position(&dot->node, x, 0);
++		x += width + 6;
++	}
++	struct card *first = card_at_index(0);
++	wlr_scene_node_set_position(&ov.dots->node,
++		ov.area.x + (ov.area.width - (x - 6)) / 2,
++		first ? (int)(first->ty + ov.area.height * 0.62 + 28) : ov.area.y);
++}
++
++/* Give every card its place. @snap: no easing from the old place. */
++static void
++relayout(bool snap)
++{
++	int count = nr_cards();
++	if (!count) {
++		return;
++	}
++	double aspect = 0;
++	struct card *card;
++	wl_list_for_each(card, &ov.cards, link) {
++		aspect += (double)card->from.width / card->from.height;
++	}
++	aspect /= count;
++
++	int label_width;
++	if (ov.row) {
++		double height = floor(ov.area.height * 0.62);
++		double top = ov.area.y + (ov.area.height - height) / 2 + LABEL_HEIGHT / 4.0;
++		double x = 0;
++		wl_list_for_each(card, &ov.cards, link) {
++			double a = (double)card->from.width / card->from.height;
++			card->tw = fmin(height * a, ov.area.width * 0.72);
++			card->th = card->tw / a;
++			card->tx = x;
++			card->ty = top + (height - card->th) / 2;
++			x += card->tw + ROW_GAP;
++		}
++		/* Scroll 0 has the first card in the middle. */
++		struct card *first = card_at_index(0);
++		double shift = ov.area.x + (ov.area.width - first->tw) / 2;
++		wl_list_for_each(card, &ov.cards, link) {
++			card->tx += shift;
++		}
++		ov.scroll_max = row_scroll_for(count - 1);
++		ov.titles = false;
++		label_width = 0;
++	} else {
++		ov.grid = overview_grid(count, ov.area.width, ov.area.height, aspect,
++			GAP, LABEL_HEIGHT);
++		struct overview_grid *grid = &ov.grid;
++		double row_height = grid->pic_height + LABEL_HEIGHT + GAP;
++		double content = grid->rows * row_height + GAP;
++		double top = ov.area.y + GAP;
++		if (content <= ov.area.height) {
++			top += (ov.area.height - content) / 2;
++			ov.scroll_max = 0;
++		} else {
++			ov.scroll_max = content - ov.area.height;
++		}
++		int index = 0;
++		wl_list_for_each(card, &ov.cards, link) {
++			int row = index / grid->cols, col = index % grid->cols;
++			int length = overview_grid_row_length(grid, count, row);
++			double row_width = length * grid->pic_width + (length - 1) * GAP;
++			double x = ov.area.x + (ov.area.width - row_width) / 2
++				+ col * (grid->pic_width + GAP);
++			double y = top + row * row_height;
++			double a = (double)card->from.width / card->from.height;
++			card->tw = fmin(grid->pic_width, grid->pic_height * a);
++			card->th = card->tw / a;
++			card->tx = x + (grid->pic_width - card->tw) / 2;
++			card->ty = y + grid->pic_height - card->th;
++			index++;
++		}
++		ov.titles = grid->pic_width >= TITLES_FROM_WIDTH;
++		label_width = grid->pic_width + GAP / 2;
++	}
++	ov.scroll_target = clamp(ov.scroll_target, 0, ov.scroll_max);
++	ov.scroll = clamp(ov.scroll, 0, ov.scroll_max);
++
++	wl_list_for_each(card, &ov.cards, link) {
++		if (snap || !card->placed || !ov.live) {
++			card->sx = card->tx;
++			card->sy = card->ty;
++			card->sw = card->tw;
++			card->sh = card->th;
++			card->placed = true;
++		}
++		card_build_label(card, ov.row ? (int)card->tw : label_width);
++		if (card->shadow) {
++			wlr_scene_node_destroy(&card->shadow->node);
++		}
++		card->shadow = create_shadow(card->tree, lround(card->tw), lround(card->th));
++		if (card->shadow) {
++			wlr_scene_node_lower_to_bottom(&card->shadow->node);
++		}
++		if (!ov.live) {
++			for (int i = 0; i < card->nr_parts; i++) {
++				struct part *part = &card->parts[i];
++				part_snapshot(part, lround(card->tw * part->fw),
++					lround(card->th * part->fh));
++			}
++		}
++		card->width = card->height = 0;
++	}
++	update_dots();
++}
++
++/*
++ * Drawing
++ */
++
++static void
++card_apply(struct card *card)
++{
++	double p = ov.progress;
++	/* Windows travel from their place; what has none (minimised) fades. */
++	bool travels = ov.live && !card->minimized;
++	double e = travels ? p : 1;
++	double scroll_x = ov.row ? ov.scroll : 0, scroll_y = ov.row ? 0 : ov.scroll;
++	double sx = card->sx - scroll_x, sy = card->sy - scroll_y;
++	double x = card->from.x + (sx - card->from.x) * e;
++	double y = card->from.y + (sy - card->from.y) * e - card->lift;
++	int width = MAX(1, (int)lround(card->from.width + (card->sw - card->from.width) * e));
++	int height = MAX(1, (int)lround(card->from.height + (card->sh - card->from.height) * e));
++	float alpha = travels ? 1.0f : (float)p;
++	float extras = ov.live ? (float)clamp((p - 0.4) / 0.6, 0, 1) : (float)p;
++
++	wlr_scene_node_set_position(&card->tree->node, lround(x), lround(y));
++
++	bool resized = width != card->width || height != card->height;
++	bool refaded = fabsf(alpha * 2 + extras - card->alpha) > 0.0005f;
++	for (int i = 0; i < card->nr_parts; i++) {
++		struct part *part = &card->parts[i];
++		if (!resized && !part->dirty) {
++			continue;
++		}
++		int px = lround(part->fx * width), py = lround(part->fy * height);
++		int pw = (int)lround((part->fx + part->fw) * width) - px;
++		int ph = (int)lround((part->fy + part->fh) * height) - py;
++		wlr_scene_node_set_position(&part->tree->node, px, py);
++		part_place(part, MAX(1, pw), MAX(1, ph));
++		part->dirty = false;
++		refaded = true;
++	}
++	if (resized) {
++		card->width = width;
++		card->height = height;
++		wlr_scene_rect_set_size(card->shade, width, height);
++		if (card->shadow) {
++			wlr_scene_node_set_position(&card->shadow->node, -SHADOW, -SHADOW + 4);
++			wlr_scene_buffer_set_dest_size(card->shadow,
++				width + 2 * SHADOW, height + 2 * SHADOW);
++		}
++		if (card->tag) {
++			wlr_scene_node_set_position(&card->tag->node, 8,
++				height - card->tag_text->height - 16);
++		}
++		refaded = true;
++	}
++	if (refaded) {
++		card->alpha = alpha * 2 + extras;
++		set_tree_opacity(&card->pictures->node, alpha);
++		for (int i = 0; i < card->nr_parts; i++) {
++			struct part *part = &card->parts[i];
++			for (int j = 0; j < part->nr_mirrors; j++) {
++				struct mirror *mirror = &part->mirrors[j];
++				if (mirror->rect) {
++					set_rect_color(mirror->rect, mirror->color, alpha);
++				}
++			}
++		}
++		set_rect_color(card->shade, (float[4]){ 0, 0, 0, 0.5f }, alpha);
++		frame_set(&card->hairline, width, height, extras);
++		frame_set(&card->marker, width, height, extras);
++		if (card->shadow) {
++			wlr_scene_buffer_set_opacity(card->shadow, extras);
++		}
++		if (card->tag) {
++			set_rect_color(card->tag_bg, rc.theme->osd_bg_color, 0.9f * extras);
++			wlr_scene_buffer_set_opacity(card->tag_text->scene_buffer, extras);
++		}
++		struct wlr_scene_node *child;
++		wl_list_for_each(child, &card->label->children, link) {
++			if (child->type == WLR_SCENE_NODE_RECT) {
++				set_rect_color(wlr_scene_rect_from_node(child),
++					rc.theme->osd_bg_color, 0.9f * extras);
++			} else {
++				set_tree_opacity(child, extras);
++			}
++		}
++	}
++
++	bool marked = card->attention || (ov.keyboard && ov.selected == card);
++	wlr_scene_node_set_enabled(&card->marker.tree->node, marked);
++	wlr_scene_node_set_enabled(&card->tree->node, !card->closing || card->flying);
++	wlr_scene_node_set_enabled(&card->label->node, !card->closing);
++
++	/* The label keeps its place in the grid while the window travels. */
++	int label_x = ov.row ? lround(sx)
++		: lround(sx + card->sw / 2 - card->label_width / 2.0);
++	int label_y = ov.row ? lround(sy - TILE - LABEL_OFFSET)
++		: lround(sy + card->sh + LABEL_OFFSET);
++	wlr_scene_node_set_position(&card->label->node, label_x, label_y);
++}
++
++static void
++apply(void)
++{
++	set_rect_color(ov.dim, (float[4]){ 0, 0, 0, 1 }, (float)(DIM * ov.progress));
++	struct card *card;
++	wl_list_for_each(card, &ov.cards, link) {
++		card_apply(card);
++	}
++	if (ov.dots) {
++		float extras = ov.live ? clamp((ov.progress - 0.4) / 0.6, 0, 1) : ov.progress;
++		struct wlr_scene_node *dot;
++		int index = 0, current = row_index_at(ov.scroll_target);
++		wl_list_for_each(dot, &ov.dots->children, link) {
++			float *color = rc.theme->osd_label_text_color;
++			set_rect_color(wlr_scene_rect_from_node(dot), color,
++				(index == current ? 1.0f : 0.35f) * extras);
++			index++;
++		}
++	}
++}
++
++/*
++ * Opening and closing
++ */
++
++static void
++hide_desktop(bool hide)
++{
++	wlr_scene_node_set_enabled(&server.workspace_tree->node, !hide);
++	wlr_scene_node_set_enabled(&server.xdg_popup_tree->node, !hide);
++#if HAVE_XWAYLAND
++	wlr_scene_node_set_enabled(&server.unmanaged_tree->node, !hide);
++#endif
++}
++
++static void
++destroy(void)
++{
++	if (ov.state == CLOSED) {
++		return;
++	}
++	struct output *output = ov.output;
++	struct card *card, *tmp;
++	wl_list_for_each_safe(card, tmp, &ov.cards, link) {
++		card_destroy(card);
++	}
++	wlr_scene_node_destroy(&ov.tree->node);
++	hide_desktop(false);
++	memset(&ov, 0, sizeof(ov));
++	wlr_output_schedule_frame(output->wlr_output);
++	cursor_update_focus();
++}
++
++static void
++select_card(struct card *card)
++{
++	ov.selected = card;
++	if (!card) {
++		return;
++	}
++	if (ov.row) {
++		ov.scroll_target = row_scroll_for(card_index(card));
++		update_dots();
++	} else if (ov.scroll_max > 0) {
++		double top = card->ty - GAP - ov.area.y;
++		double bottom = card->ty + card->th + LABEL_HEIGHT + GAP
++			- (ov.area.y + ov.area.height);
++		ov.scroll_target = clamp(ov.scroll_target, bottom, top);
++		ov.scroll_target = clamp(ov.scroll_target, 0, ov.scroll_max);
++	}
++	if (!ov.live) {
++		ov.scroll = ov.scroll_target;
++	}
++}
++
++static bool
++begin(struct output *output, bool keyboard, enum state state)
++{
++	if (ov.state == CLOSING) {
++		destroy();
++	}
++	if (ov.state != CLOSED || server.input_mode != LAB_INPUT_STATE_PASSTHROUGH
++			|| locked() || !output_is_usable(output)) {
++		return false;
++	}
++	if (!count_views()) {
++		/* Nothing to switch between: let the shell offer its apps. */
++		if (rc.overview_empty_command && *rc.overview_empty_command) {
++			spawn_async_no_shell(rc.overview_empty_command);
++		}
++		return false;
++	}
++
++	memset(&ov, 0, sizeof(ov));
++	wl_list_init(&ov.cards);
++	ov.state = state;
++	ov.output = output;
++	ov.keyboard = keyboard;
++	ov.live = rc.overview_live == LAB_STATE_ENABLED
++		|| (rc.overview_live != LAB_STATE_DISABLED
++			&& !wlr_renderer_is_pixman(server.renderer));
++	wlr_output_layout_get_box(server.output_layout, output->wlr_output, &ov.box);
++	ov.area = output_usable_area_in_layout_coords(output);
++	ov.row = MIN(ov.box.width, ov.box.height) < 500;
++	ov.last_tick = now();
++
++	ov.tree = lab_wlr_scene_tree_create(&server.scene->tree);
++	wlr_scene_node_place_above(&ov.tree->node, &server.workspace_tree->node);
++	ov.dim = lab_wlr_scene_rect_create(ov.tree, ov.box.width, ov.box.height,
++		(float[4]){0});
++	wlr_scene_node_set_position(&ov.dim->node, ov.box.x, ov.box.y);
++	ov.labels = lab_wlr_scene_tree_create(ov.tree);
++	if (ov.row) {
++		ov.dots = lab_wlr_scene_tree_create(ov.tree);
++	}
++	ov.cards_tree = lab_wlr_scene_tree_create(ov.tree);
++
++	/* Most recently used first; a snapped pair is one card. */
++	struct view *view;
++	for_each_overview_view(view) {
++		if (!view_wanted(view) || card_of(view, NULL)) {
++			continue;
++		}
++		struct view *partner = NULL, *other;
++		if (view_snapped(view)) {
++			for_each_overview_view(other) {
++				if (other != view && view_wanted(other) && view_snapped(other)
++						&& other->output == view->output
++						&& other->tiled == opposite(view->tiled)
++						&& !card_of(other, NULL)) {
++					partner = other;
++					break;
++				}
++			}
++		}
++		/* Left (or top) half first, whichever was used last. */
++		if (partner && (view->tiled == LAB_EDGE_RIGHT || view->tiled == LAB_EDGE_BOTTOM)) {
++			card_create(partner, view);
++		} else {
++			card_create(view, partner);
++		}
++	}
++
++	if (ov.live) {
++		struct card *card;
++		wl_list_for_each(card, &ov.cards, link) {
++			for (int i = 0; i < card->nr_parts; i++) {
++				part_sync_mirrors(&card->parts[i]);
++			}
++		}
++	}
++	relayout(/*snap*/ true);
++
++	/* As with Alt-Tab, start on the window before this one. */
++	struct card *start = card_at_index(nr_cards() > 1 ? 1 : 0);
++	if (keyboard || ov.row) {
++		select_card(start);
++		ov.scroll = ov.scroll_target;
++	}
++	if (!keyboard) {
++		ov.selected = NULL;
++	}
++
++	seat_focus_override_begin(&server.seat, LAB_INPUT_STATE_OVERVIEW,
++		LAB_CURSOR_DEFAULT);
++	if (!ov.live) {
++		cover_begin(output, &ov.tree->node);
++		ov.progress = 1;
++		if (ov.state == OPENING) {
++			ov.state = OPEN;
++		}
++	}
++	hide_desktop(true);
++	ov.target = 1;
++	apply();
++	if (rc.overview_open_command && *rc.overview_open_command) {
++		spawn_async_no_shell(rc.overview_open_command);
++	}
++	cursor_update_focus();
++	redraw();
++	return true;
++}
++
++/* Tell the session that the overview is no longer what is on screen. */
++static void
++announce_close(void)
++{
++	if (rc.overview_close_command && *rc.overview_close_command) {
++		spawn_async_no_shell(rc.overview_close_command);
++	}
++}
++
++/* Leave for the desktop; @chosen comes to the front, if any. */
++static void
++finish(struct view *chosen)
++{
++	if (ov.state == CLOSED || ov.state == CLOSING) {
++		return;
++	}
++	announce_close();
++	int index = 0;
++	struct card *card = chosen ? card_of(chosen, &index) : NULL;
++	ov.press.down = false;
++	ov.gesture.pending = false;
++
++	seat_focus_override_end(&server.seat, /*restore_focus*/ !chosen);
++	if (chosen) {
++		/* A pair comes back as a pair. */
++		if (card && card->nr_parts == 2) {
++			desktop_focus_view(card->parts[!index].view, /*raise*/ true);
++		}
++		desktop_focus_view(chosen, /*raise*/ true);
++	}
++	if (!ov.live) {
++		struct output *output = ov.output;
++		destroy();
++		cover_begin(output, &server.workspace_tree->node);
++		return;
++	}
++	ov.state = CLOSING;
++	ov.target = 0;
++	struct card *other;
++	wl_list_for_each(other, &ov.cards, link) {
++		other->lift = 0;
++		other->flying = false;
++	}
++	if (card) {
++		/* It is a window again: it grows back to where it is. */
++		if (card->minimized) {
++			card->minimized = false;
++			wlr_scene_node_set_enabled(&card->shade->node, false);
++			if (card->tag) {
++				wlr_scene_node_set_enabled(&card->tag->node, false);
++			}
++		}
++		card_measure(card);
++		card->alpha = -1;
++		wlr_scene_node_raise_to_top(&card->tree->node);
++	}
++	cursor_update_focus();
++	redraw();
++}
++
++void
++overview_toggle(bool keyboard)
++{
++	if (ov.state == OPEN || ov.state == OPENING || ov.state == TRACKING) {
++		finish(NULL);
++		return;
++	}
++	struct output *output = server.active_view && output_is_usable(server.active_view->output)
++		? server.active_view->output : output_nearest_to_cursor();
++	begin(output, keyboard, OPENING);
++}
++
++bool
++overview_active(void)
++{
++	return server.input_mode == LAB_INPUT_STATE_OVERVIEW;
++}
++
++void
++overview_abort(void)
++{
++	cover_remove();
++	if (ov.state == CLOSED) {
++		return;
++	}
++	if (overview_active()) {
++		seat_focus_override_end(&server.seat, /*restore_focus*/ true);
++	}
++	if (ov.state != CLOSING) {
++		announce_close();
++	}
++	destroy();
++}
++
++static void
++choose(struct card *card, int part)
++{
++	finish(card->parts[part < card->nr_parts ? part : 0].view);
++}
++
++static void
++close_card(struct card *card)
++{
++	if (card->closing) {
++		return;
++	}
++	card->closing = true;
++	card->attention = false;
++	card->close_deadline = now() + CLOSE_WAIT;
++	card->flying = ov.live;
++	if (card->lift_velocity < 1800) {
++		card->lift_velocity = 1800;
++	}
++	if (ov.selected == card) {
++		struct card *next = card_at_index(card_index(card) + 1);
++		ov.selected = next ? next : card_at_index(card_index(card) - 1);
++	}
++	for (int i = 0; i < card->nr_parts; i++) {
++		view_close(card->parts[i].view);
++	}
++	redraw();
++}
++
++void
++overview_tick(struct output *output)
++{
++	cover_tick(output, now());
++	if (ov.state == CLOSED || output != ov.output) {
++		return;
++	}
++	struct wlr_box box;
++	wlr_output_layout_get_box(server.output_layout, output->wlr_output, &box);
++	if (locked() || !wlr_box_equal(&box, &ov.box)) {
++		/* Locked or turned: nothing here is in the right place any more. */
++		overview_abort();
++		return;
++	}
++	double time = now();
++	double dt = clamp(time - ov.last_tick, 0, 0.1);
++	ov.last_tick = time;
++	bool moving = false;
++
++	if (ov.state == OPENING || ov.state == CLOSING) {
++		ov.progress = approach(ov.progress, ov.target, dt, 14);
++		if (ov.progress == ov.target) {
++			if (ov.state == CLOSING) {
++				destroy();
++				return;
++			}
++			ov.state = OPEN;
++		}
++		moving = true;
++	}
++
++	if (ov.scroll != ov.scroll_target) {
++		ov.scroll = ov.live ? approach(ov.scroll, ov.scroll_target, dt, 16)
++			: ov.scroll_target;
++		if (fabs(ov.scroll - ov.scroll_target) < 0.5) {
++			ov.scroll = ov.scroll_target;
++		}
++		moving = true;
++	}
++
++	bool regrid = false;
++	struct card *card, *tmp;
++	wl_list_for_each_safe(card, tmp, &ov.cards, link) {
++		if (card->sx != card->tx || card->sy != card->ty
++				|| card->sw != card->tw || card->sh != card->th) {
++			card->sx = approach(card->sx, card->tx, dt, 14);
++			card->sy = approach(card->sy, card->ty, dt, 14);
++			card->sw = approach(card->sw, card->tw, dt, 14);
++			card->sh = approach(card->sh, card->th, dt, 14);
++			moving = true;
++		}
++		bool held = ov.press.down && ov.press.card == card && ov.press.drag == DRAG_LIFT;
++		if (card->flying) {
++			card->lift += card->lift_velocity * dt;
++			if (card->sy - card->lift + card->sh < ov.box.y - SHADOW) {
++				card->flying = false;
++			}
++			moving = true;
++		} else if (card->lift > 0 && !held && !card->closing) {
++			card->lift = ov.live ? approach(card->lift, 0, dt, 18) : 0;
++			if (card->lift < 0.5) {
++				card->lift = 0;
++			}
++			moving = true;
++		}
++		if (card->closing && time >= card->close_deadline) {
++			/* Still there: the app wants an answer first. */
++			card->closing = false;
++			card->flying = false;
++			card->attention = true;
++			card->lift = 0;
++			frame_set_color(&card->marker, rc.theme->overview_attention_color);
++			if (!ov.live) {
++				for (int i = 0; i < card->nr_parts; i++) {
++					card->parts[i].snapshot_width = 0;
++				}
++			}
++			regrid = true;
++		}
++		moving |= card->closing;
++	}
++	if (regrid) {
++		relayout(/*snap*/ false);
++	}
++
++	if (ov.live) {
++		struct timespec stamp;
++		clock_gettime(CLOCK_MONOTONIC, &stamp);
++		wl_list_for_each(card, &ov.cards, link) {
++			for (int i = 0; i < card->nr_parts; i++) {
++				struct part *part = &card->parts[i];
++				if (!view_wanted(part->view)) {
++					continue;
++				}
++				part_sync_mirrors(part);
++				/* Hidden windows get no frame callbacks; ours keep them drawing. */
++				wlr_surface_for_each_surface(part->view->surface,
++					send_frame_done, &stamp);
++			}
++		}
++		moving = true;
++	}
++
++	apply();
++	if (moving) {
++		wlr_output_schedule_frame(output->wlr_output);
++	}
++}
++
++/*
++ * Windows coming and going
++ */
++
++void
++overview_on_view_gone(struct view *view)
++{
++	if (ov.state == CLOSED) {
++		return;
++	}
++	int index;
++	struct card *card = card_of(view, &index);
++	if (!card) {
++		return;
++	}
++	if (card->nr_parts == 2) {
++		/* Half of a pair is left: it is a card of its own now. */
++		struct part *gone = &card->parts[index];
++		wlr_scene_node_destroy(&gone->tree->node);
++		if (index == 0) {
++			card->parts[0] = card->parts[1];
++		}
++		card->nr_parts = 1;
++		card_measure(card);
++		card->parts[0].snapshot_width = 0;
++	} else {
++		card_destroy(card);
++	}
++	if (wl_list_empty(&ov.cards)) {
++		if (ov.state == CLOSING) {
++			destroy();
++		} else {
++			overview_abort();
++		}
++		return;
++	}
++	if (ov.state != CLOSING) {
++		relayout(/*snap*/ false);
++		if (ov.row) {
++			ov.scroll_target = row_scroll_for(row_index_at(ov.scroll_target));
++			update_dots();
++		}
++	}
++	redraw();
++}
++
++void
++overview_on_view_mapped(struct view *view)
++{
++	if (ov.state == CLOSED || ov.state == CLOSING) {
++		return;
++	}
++	struct view *root = view_get_root(view);
++	struct card *card = root != view ? card_of(root, NULL) : NULL;
++	if (card) {
++		/* A dialog of a window here: most likely "Save changes?". */
++		if (card->closing) {
++			card->close_deadline = 0;
++			redraw();
++		}
++		return;
++	}
++	/* A new window is what the user asked for last: show it. */
++	overview_abort();
++}
++
++/*
++ * Input
++ */
++
++static bool
++on_overview(double lx, double ly)
++{
++	double sx, sy;
++	struct wlr_scene_node *node =
++		wlr_scene_node_at(&server.scene->tree.node, lx, ly, &sx, &sy);
++	while (node) {
++		if (node == &ov.tree->node) {
++			return true;
++		}
++		node = node->parent ? &node->parent->node : NULL;
++	}
++	return false;
++}
++
++static struct card *
++card_at(double lx, double ly, int *part)
++{
++	struct card *card;
++	wl_list_for_each_reverse(card, &ov.cards, link) {
++		if (card->closing) {
++			continue;
++		}
++		int x, y;
++		wlr_scene_node_coords(&card->tree->node, &x, &y);
++		if (lx < x || ly < y || lx >= x + card->width || ly >= y + card->height) {
++			continue;
++		}
++		*part = 0;
++		for (int i = 0; i < card->nr_parts; i++) {
++			struct part *p = &card->parts[i];
++			if (lx >= x + p->fx * card->width && ly >= y + p->fy * card->height) {
++				*part = i;
++			}
++		}
++		return card;
++	}
++	return NULL;
++}
++
++bool
++overview_press(double lx, double ly, uint32_t time_msec)
++{
++	if (!overview_active()) {
++		return false;
++	}
++	if (!on_overview(lx, ly)) {
++		finish(NULL);
++		return false;
++	}
++	int part;
++	ov.press.down = true;
++	ov.press.moved = false;
++	ov.press.drag = DRAG_UNDECIDED;
++	ov.press.card = ov.state == TRACKING ? NULL : card_at(lx, ly, &part);
++	ov.press.x0 = ov.press.x = lx;
++	ov.press.y0 = ov.press.y = ly;
++	ov.press.scroll0 = ov.scroll;
++	ov.press.velocity = 0;
++	ov.press.last_time = time_msec;
++	return true;
++}
++
++void
++overview_motion(double lx, double ly, uint32_t time_msec)
++{
++	if (!ov.press.down) {
++		return;
++	}
++	ov.press.x = lx;
++	ov.press.y = ly;
++	double dx = lx - ov.press.x0, dy = ly - ov.press.y0;
++	if (ov.press.drag == DRAG_UNDECIDED) {
++		if (hypot(dx, dy) < 10) {
++			return;
++		}
++		ov.press.moved = true;
++		bool vertical = fabs(dy) > fabs(dx);
++		bool scrolls = ov.scroll_max > 0 && vertical != ov.row;
++		if (scrolls) {
++			ov.press.drag = DRAG_SCROLL;
++		} else if (ov.press.card && vertical && dy < 0) {
++			ov.press.drag = DRAG_LIFT;
++			wlr_scene_node_raise_to_top(&ov.press.card->tree->node);
++		} else {
++			ov.press.drag = DRAG_NONE;
++		}
++		ov.press.last_pos = ov.row == (ov.press.drag == DRAG_SCROLL) ? lx : ly;
++		ov.press.last_time = time_msec;
++	}
++	double pos = ov.row == (ov.press.drag == DRAG_SCROLL) ? lx : ly;
++	uint32_t elapsed = time_msec - ov.press.last_time;
++	if (elapsed > 0) {
++		double v = (pos - ov.press.last_pos) * 1000.0 / elapsed;
++		ov.press.velocity = ov.press.velocity * 0.5 + v * 0.5;
++		ov.press.last_pos = pos;
++		ov.press.last_time = time_msec;
++	}
++	if (ov.press.drag == DRAG_SCROLL) {
++		ov.scroll = clamp(ov.press.scroll0 - (ov.row ? dx : dy), 0, ov.scroll_max);
++		ov.scroll_target = ov.scroll;
++	} else if (ov.press.drag == DRAG_LIFT && ov.press.card) {
++		ov.press.card->lift = fmax(0, -dy);
++	}
++	redraw();
++}
++
++void
++overview_release(uint32_t time_msec)
++{
++	if (!ov.press.down) {
++		return;
++	}
++	ov.press.down = false;
++	struct card *card = ov.press.card;
++	if (!ov.press.moved) {
++		int part = 0;
++		struct card *hit = card_at(ov.press.x, ov.press.y, &part);
++		if (hit && hit == card) {
++			choose(hit, part);
++		} else if (!card) {
++			finish(NULL);
++		}
++		return;
++	}
++	/* A finger that rested before lifting has no speed left. */
++	double velocity = time_msec - ov.press.last_time > 80 ? 0 : ov.press.velocity;
++	if (ov.press.drag == DRAG_LIFT && card) {
++		if (card->lift > card->height * 0.3 || (velocity < -500 && card->lift > 20)) {
++			card->lift_velocity = fmax(-velocity, 0);
++			close_card(card);
++		}
++	} else if (ov.press.drag == DRAG_SCROLL && ov.row) {
++		int index = row_index_at(ov.scroll);
++		if (velocity < -300 && row_scroll_for(index) <= ov.scroll) {
++			index++;
++		} else if (velocity > 300 && row_scroll_for(index) >= ov.scroll) {
++			index--;
++		}
++		index = clamp(index, 0, nr_cards() - 1);
++		ov.scroll_target = row_scroll_for(index);
++		if (ov.keyboard) {
++			ov.selected = card_at_index(index);
++		}
++		update_dots();
++	}
++	redraw();
++}
++
++void
++overview_press_cancel(void)
++{
++	ov.press.down = false;
++	if (ov.row && ov.state != CLOSED) {
++		ov.scroll_target = row_scroll_for(row_index_at(ov.scroll));
++	}
++	redraw();
++}
++
++void
++overview_scroll(double delta)
++{
++	if (ov.state != OPEN && ov.state != OPENING) {
++		return;
++	}
++	if (ov.row) {
++		int index = row_index_at(ov.scroll_target) + (delta > 0 ? 1 : -1);
++		ov.scroll_target = row_scroll_for(clamp(index, 0, nr_cards() - 1));
++		update_dots();
++	} else {
++		ov.scroll_target = clamp(ov.scroll_target + delta, 0, ov.scroll_max);
++	}
++	redraw();
++}
++
++bool
++overview_handle_key(xkb_keysym_t sym)
++{
++	if (!overview_active() || ov.state == TRACKING) {
++		return false;
++	}
++	int count = nr_cards();
++	int index = ov.selected ? card_index(ov.selected) : -1;
++	int step = 0;
++	switch (sym) {
++	case XKB_KEY_Escape:
++		finish(NULL);
++		return true;
++	case XKB_KEY_Return:
++	case XKB_KEY_KP_Enter:
++	case XKB_KEY_space:
++		if (ov.selected && ov.keyboard) {
++			choose(ov.selected, 0);
++		} else {
++			finish(NULL);
++		}
++		return true;
++	case XKB_KEY_Delete:
++	case XKB_KEY_BackSpace:
++		if (ov.selected && ov.keyboard) {
++			close_card(ov.selected);
++		}
++		return true;
++	case XKB_KEY_Right:
++	case XKB_KEY_Tab:
++		step = 1;
++		break;
++	case XKB_KEY_Left:
++	case XKB_KEY_ISO_Left_Tab:
++		step = -1;
++		break;
++	case XKB_KEY_Down:
++		step = ov.row ? 1 : ov.grid.cols;
++		break;
++	case XKB_KEY_Up:
++		step = ov.row ? -1 : -ov.grid.cols;
++		break;
++	default:
++		return false;
++	}
++	if (!ov.keyboard || index < 0) {
++		/* The first key only shows where the keys are. */
++		ov.keyboard = true;
++		index = ov.row ? row_index_at(ov.scroll_target) : 0;
++	} else if (sym == XKB_KEY_Tab || sym == XKB_KEY_ISO_Left_Tab) {
++		index = (index + step + count) % count;
++	} else if (index + step >= 0 && index + step < count) {
++		index += step;
++	} else if (sym == XKB_KEY_Down && index / ov.grid.cols < (count - 1) / ov.grid.cols) {
++		/* The last row is short: go to its end. */
++		index = count - 1;
++	}
++	select_card(card_at_index(index));
++	redraw();
++	return true;
++}
++
++/*
++ * Four fingers
++ */
++
++static double
++gesture_distance(void)
++{
++	return fmax(120, ov.box.height * 0.3);
++}
++
++bool
++overview_gesture_begin(struct output *output, bool towards_overview)
++{
++	bool open = ov.state == OPEN || ov.state == OPENING;
++	ov.gesture.pending = false;
++	if (ov.state == TRACKING || (open && towards_overview)
++			|| (!open && !towards_overview)) {
++		return false;
++	}
++	bool live = open ? ov.live : rc.overview_live == LAB_STATE_ENABLED
++		|| (rc.overview_live != LAB_STATE_DISABLED
++			&& !wlr_renderer_is_pixman(server.renderer));
++	if (!open) {
++		if (ov.state == CLOSING) {
++			destroy();
++		}
++		if (server.input_mode != LAB_INPUT_STATE_PASSTHROUGH || locked()) {
++			return false;
++		}
++		if (!live) {
++			/* Opens once the fingers have gone far enough. */
++			if (!count_views()) {
++				return begin(output, false, OPENING);
++			}
++			ov.output = output;
++			ov.gesture.pending = true;
++			ov.gesture.towards = true;
++			return true;
++		}
++		if (!begin(output, false, TRACKING)) {
++			return false;
++		}
++	} else if (!live) {
++		ov.gesture.pending = true;
++		ov.gesture.towards = false;
++		return true;
++	}
++	overview_press_cancel();
++	ov.state = TRACKING;
++	ov.gesture.base = ov.progress;
++	ov.gesture.velocity = 0;
++	ov.gesture.last_progress = ov.progress;
++	ov.gesture.last_time = 0;
++	return true;
++}
++
++void
++overview_gesture_update(double travel, uint32_t time_msec)
++{
++	if (ov.gesture.pending) {
++		if (ov.gesture.towards && travel >= OVERVIEW_SWIPE_COMMIT) {
++			struct output *output = ov.output;
++			ov.gesture.pending = false;
++			ov.output = NULL;
++			begin(output, false, OPENING);
++		} else if (!ov.gesture.towards && travel <= -OVERVIEW_SWIPE_COMMIT) {
++			ov.gesture.pending = false;
++			finish(NULL);
++		}
++		return;
++	}
++	if (ov.state != TRACKING) {
++		return;
++	}
++	ov.progress = clamp(ov.gesture.base + travel / gesture_distance(), 0, 1);
++	if (ov.gesture.last_time && time_msec != ov.gesture.last_time) {
++		double v = (ov.progress - ov.gesture.last_progress) * 1000.0
++			/ (uint32_t)(time_msec - ov.gesture.last_time);
++		ov.gesture.velocity = ov.gesture.velocity * 0.5 + v * 0.5;
++	}
++	ov.gesture.last_progress = ov.progress;
++	ov.gesture.last_time = time_msec;
++	redraw();
++}
++
++void
++overview_gesture_end(void)
++{
++	if (ov.gesture.pending) {
++		ov.gesture.pending = false;
++		if (ov.state == CLOSED) {
++			ov.output = NULL;
++		}
++		return;
++	}
++	if (ov.state != TRACKING) {
++		return;
++	}
++	if (overview_swipe_settle(ov.progress, ov.gesture.velocity)) {
++		ov.state = OPENING;
++		ov.target = 1;
++		ov.last_tick = now();
++	} else {
++		ov.state = OPEN;
++		finish(NULL);
++		ov.last_tick = now();
++	}
++	redraw();
++}
+diff --git a/src/server.c b/src/server.c
+index e1a91ec..a9b63d8 100644
+--- a/src/server.c
++++ b/src/server.c
+@@ -67,6 +67,7 @@
+ #include "magnifier.h"
+ #include "menu/menu.h"
+ #include "output.h"
++#include "overview.h"
+ #include "output-virtual.h"
+ #include "regions.h"
+ #include "resize-indicator.h"
+@@ -115,6 +116,7 @@ reload_config_and_theme(void)
+ 	}
+ 
+ 	cycle_finish(/*switch_focus*/ false);
++	overview_abort();
+ 	menu_reconfigure();
+ 	seat_reconfigure();
+ 	regions_reconfigure();
+@@ -135,6 +137,14 @@ handle_sighup(int signal, void *data)
+ 	return 0;
+ }
+ 
++/* `labwc --overview`: for what cannot be a key binding, like a double press */
++static int
++handle_sigusr2(int signal, void *data)
++{
++	overview_toggle(/*keyboard*/ false);
++	return 0;
++}
++
+ static int
+ handle_sigterm(int signal, void *data)
+ {
+@@ -502,6 +512,8 @@ server_init(void)
+ 		server.wl_event_loop, SIGTERM, handle_sigterm, server.wl_display);
+ 	server.sigchld_source = wl_event_loop_add_signal(
+ 		server.wl_event_loop, SIGCHLD, handle_sigchld, NULL);
++	server.sigusr2_source = wl_event_loop_add_signal(
++		server.wl_event_loop, SIGUSR2, handle_sigusr2, NULL);
+ 
+ 	/*
+ 	 * Prevent wayland clients that request the X11 clipboard but closing
+@@ -883,6 +895,7 @@ server_finish(void)
+ 	desktop_entry_finish();
+ #endif
+ 	wl_event_source_remove(server.sighup_source);
++	wl_event_source_remove(server.sigusr2_source);
+ 	wl_event_source_remove(server.sigint_source);
+ 	wl_event_source_remove(server.sigterm_source);
+ 	wl_event_source_remove(server.sigchld_source);
+diff --git a/src/session-lock.c b/src/session-lock.c
+index 4e5eb8a..957c8d9 100644
+--- a/src/session-lock.c
++++ b/src/session-lock.c
+@@ -10,6 +10,7 @@
+ #include "labwc.h"
+ #include "node.h"
+ #include "output.h"
++#include "overview.h"
+ 
+ struct session_lock_output {
+ 	struct wlr_scene_tree *tree;
+@@ -310,6 +311,8 @@ handle_new_session_lock(struct wl_listener *listener, void *data)
+ 		wl_container_of(listener, manager, new_lock);
+ 	struct wlr_session_lock_v1 *lock = data;
+ 
++	overview_abort();
++
+ 	if (manager->lock) {
+ 		wlr_log(WLR_ERROR, "session already locked");
+ 		wlr_session_lock_v1_destroy(lock);
+diff --git a/src/theme.c b/src/theme.c
+index 71e577c..6d5c30c 100644
+--- a/src/theme.c
++++ b/src/theme.c
+@@ -633,6 +633,7 @@ theme_builtin(struct theme *theme)
+ 	theme->osd_border_width = INT_MIN;
+ 	theme->osd_border_color[0] = FLT_MIN;
+ 	theme->osd_label_text_color[0] = FLT_MIN;
++	parse_hexstr("#e0af68", theme->overview_attention_color);
+ 
+ 	if (wlr_renderer_is_pixman(server.renderer)) {
+ 		/* Draw only outlined overlay by default to save CPU resource */
+@@ -962,6 +963,9 @@ entry(struct theme *theme, const char *key, const char *value)
+ 	if (match_glob(key, "osd.border.color")) {
+ 		parse_color(value, theme->osd_border_color);
+ 	}
++	if (match_glob(key, "overview.attention.color")) {
++		parse_color(value, theme->overview_attention_color);
++	}
+ 	/* classic window switcher */
+ 	if (match_glob(key, "osd.window-switcher.style-classic.width")
+ 			|| match_glob(key, "osd.window-switcher.width")) {
+diff --git a/src/view-impl-common.c b/src/view-impl-common.c
+index 092ca55..cda29bf 100644
+--- a/src/view-impl-common.c
++++ b/src/view-impl-common.c
+@@ -3,12 +3,14 @@
+ #include "view-impl-common.h"
+ #include "foreign-toplevel/foreign.h"
+ #include "labwc.h"
++#include "overview.h"
+ #include "view.h"
+ #include "window-rules.h"
+ 
+ void
+ view_impl_map(struct view *view)
+ {
++	overview_on_view_mapped(view);
+ 	view_update_visibility(view);
+ 
+ 	/* Leave minimized, if minimized before map */
+@@ -44,6 +46,7 @@ view_impl_map(struct view *view)
+ void
+ view_impl_unmap(struct view *view)
+ {
++	overview_on_view_gone(view);
+ 	view_update_visibility(view);
+ 
+ 	/*
+diff --git a/src/view.c b/src/view.c
+index 21005f2..9f62e4a 100644
+--- a/src/view.c
++++ b/src/view.c
+@@ -22,6 +22,7 @@
+ #include "labwc.h"
+ #include "menu/menu.h"
+ #include "output.h"
++#include "overview.h"
+ #include "placement.h"
+ #include "regions.h"
+ #include "resize-indicator.h"
+@@ -253,7 +254,7 @@ view_matches_query(struct view *view, struct view_query *query)
+ 	return true;
+ }
+ 
+-static struct view *
++struct view *
+ view_get_root(struct view *view)
+ {
+ 	assert(view);
+@@ -2542,6 +2543,7 @@ view_destroy(struct view *view)
+ 
+ 	/* TODO: call this on map/unmap instead */
+ 	cycle_reinitialize();
++	overview_on_view_gone(view);
+ 
+ 	undecorate(view);
+ 

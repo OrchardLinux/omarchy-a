@@ -18,7 +18,19 @@
     </titlebar>
     <font place="ActiveWindow" name="monospace" size="9" />
     <font place="InactiveWindow" name="monospace" size="9" />
+    <!-- The names under the cards of the overview. -->
+    <font place="OnScreenDisplay" name="monospace" size="11" />
   </theme>
+  <!-- The overview (labwc/0004): every window side by side, to pick one.
+       Four fingers up, Home pressed twice (omarchy-home-button) or Super+Tab.
+       Opening it puts the app drawer and the keyboard away; with no window
+       open there is nothing to show, and the app drawer opens instead.
+       Home closes it: labwc leaves that key to omarchy-home-button, which
+       knows from these commands that the overview is open. -->
+  <overview swipe="yes"
+    openCommand="omarchy-overview-changed opened"
+    closeCommand="omarchy-overview-changed closed"
+    emptyCommand="omarchy-shell -q omarchy.dock openApps" />
   <keyboard>
     <default />
     <!-- Startup-only reserved chord; leave ordinary Alt+H to applications. -->
@@ -46,18 +58,26 @@
     </keybind>
     <!-- J71b Home emits KEY_HOMEPAGE (172), not navigation KEY_HOME. Only this home
          action is the session's, and only unlocked; waking is omarchy-powerd's.
-         A Home press that was part of Home + Power took a screenshot instead. -->
+         A Home press that was part of Home + Power took a screenshot instead;
+         a second press right after the first opens the overview, which is
+         why the drawer waits a moment after one press. -->
     <keybind key="XF86HomePage" onRelease="yes">
       <action name="Execute" command="omarchy-home-button" />
     </keybind>
     <!-- Keyboard shortcuts for a Bluetooth keyboard, after upstream Omarchy (W = Super).
          labwc has no directional focus, so Super+arrows cycle windows; Super+Shift+arrows
          snap the window to that half (top/bottom suit the portrait screen). -->
+    <!-- Apps start through uwsm-app, as upstream's do: each in its own systemd
+         user scope, which Omactivity groups processes by. -->
     <keybind key="W-Return">
-      <action name="Execute" command="foot" />
+      <action name="Execute" command="uwsm-app -- foot" />
     </keybind>
     <keybind key="W-S-b">
-      <action name="Execute" command="firefox" />
+      <action name="Execute" command="uwsm-app -- firefox" />
+    </keybind>
+    <!-- Activity: upstream opens btop here, which has no touch path. -->
+    <keybind key="W-S-t">
+      <action name="Execute" command="omarchy-launch-or-focus omactivity" />
     </keybind>
     <keybind key="W-space">
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />
@@ -100,6 +120,9 @@
     </keybind>
     <keybind key="W-S-Right">
       <action name="SnapToEdge" direction="right" />
+    </keybind>
+    <keybind key="W-Tab">
+      <action name="ToggleOverview" />
     </keybind>
     <keybind key="A-Tab">
       <action name="NextWindow" />

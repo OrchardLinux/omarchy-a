@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# omarchy:summary=Start an app in its own systemd user scope
+# omarchy:args=[-a <app-id>] -- <command> [args...]
+# omarchy:hidden=true
+
+# Labwc port, under the name upstream Omarchy launches apps with. Labwc has no
+# UWSM, so this takes the one part of uwsm-app the desktop uses: the command
+# runs in a scope of the user manager, named the way systemd's desktop
+# integration names them, app-<app-id>-<random>.scope in app.slice. The app id
+# is the desktop file's id (the command's name without -a), escaped as
+# systemd-escape does, so a "-" in it reads \x2d. Omactivity groups processes
+# into apps by these scopes, and Force Quit ends a whole scope.
+#
+# Starting an app must not depend on any of this: without a user manager, or
+# when systemd-run cannot make the scope, the command runs as it is.
+# Unlike UWSM's, this takes commands only, not desktop entry ids, and returns
+# once the app has started instead of becoming it.
+
+usage='Usage: uwsm-app [-a <app-id>] -- <command> [args...]'
+app=
+while (( $# )); do
+  case $1 in
+    -a)
+      (( $# >= 2 )) || { echo "$usage" >&2; exit 2; }
+      app=$2
+      shift 2
+      ;;
+    --) shift; break ;;
+    -*) echo "$usage" >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
+(( $# )) || { echo "$usage" >&2; exit 2; }
+[[ -n $app ]] || app=${1##*/}
+
+# systemd-escape's rule for one unit name part, without starting a process.
+escape_unit() {
+  local LC_ALL=C text=${1:0:200} out='' char code i
+  for (( i = 0; i < ${#text}; i++ )); do
+    char=${text:i:1}
+    if [[ $char == [A-Za-z0-9:_.] && ! ( $i == 0 && $char == . ) ]]; then
+      out+=$char
+    else
+      printf -v code '%d' "'$char"
+      printf -v char '\\x%02x' $(( code & 255 ))
+      out+=$char
+    fi
+  done
+  escaped=$out
+}
+
+if [[ -n ${XDG_RUNTIME_DIR:-} ]] && command -v systemd-run >/dev/null; then
+  escape_unit "$app"
+  printf -v unit 'app-%s-%04x%04x.scope' "$escaped" "$RANDOM" "$RANDOM"
+  # systemd-run becomes the app once the scope exists, so its exit status alone
+  # cannot tell a scope that failed from an app that did. The app's side says
+  # that it got there; only then is the command not run again below.
+  # Job control keeps the app's interrupt and quit signals at their defaults,
+  # which a script's background job would otherwise start with ignored.
+  set -m
+  trap 'exit 0' USR1
+  # shellcheck disable=SC2016
+  systemd-run --user --scope --quiet --collect --slice=app.slice --unit="$unit" -- \
+    /bin/sh -c 'kill -USR1 "$0" 2>/dev/null; exec "$@"' "$$" "$@" &
+  wait "$!"
+  trap - USR1
+  set +m
+fi
+
+exec "$@"

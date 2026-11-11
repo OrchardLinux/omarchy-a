@@ -28,10 +28,14 @@ output=$(realpath -m -- "$output")
 mapfile -t requested < <(grep -vE '^\s*(#|$)' "$project/system/packages.txt")
 [[ ${#requested[@]} -gt 0 ]] || exit 1
 printf '%s\n' "${requested[@]}" | grep -Eq '^linux(-aarch64|-armv7|-rpi)?$' && { echo 'Generic kernel is not an input' >&2; exit 1; }
-local_packages=("$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/omacalc.pkg.tar.zst" "$desktop/packages/wlroots0.20.pkg.tar.xz")
+local_packages=("$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/wlroots0.20.pkg.tar.xz")
+# Omacalc: upstream Omarchy publishes it for aarch64 only; ARMv7 builds it from source.
+[[ $architecture == aarch64 ]] || local_packages+=("$desktop/packages/omacalc.pkg.tar.zst")
 # 64-bit boards: the A10 GPU's Vulkan driver and the VA-API bridge to the
 # hardware video decoders. Both sit unused on a board without that hardware.
 [[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/vulkan-powervr-orchard.pkg.tar.zst" "$desktop/packages/libva-v4l2-request.pkg.tar.zst")
+# 64-bit boards: Omactivity, the touch task manager, as its repository publishes it.
+[[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/omactivity.pkg.tar.zst")
 for package in "${local_packages[@]}"; do
   bsdtar -xOf "$package" .PKGINFO | grep -x "arch = $architecture" >/dev/null || { echo "Package architecture differs from $architecture: $package" >&2; exit 1; }
 done
@@ -44,13 +48,36 @@ umask 022
 mkdir -p "$root/var/lib/pacman" "$root/var/cache/pacman/pkg" "$root/etc"
 # The image's mirror order was measured when it was built: measure again.
 "$project/system/rank-mirrors"
+# 64-bit images use upstream Omarchy's package repository the way upstream's
+# aarch64 platforms do: listed before Arch Linux ARM's, signed with Omarchy's
+# key, and kept in the installed system's pacman.conf, so its apps (Omacalc)
+# update with the system. The build uses its own copies of pacman.conf and the
+# keyring, so a native build host keeps its own.
+omarchy_repo() { # SOURCE TARGET: SOURCE with [omarchy] before [core]
+  grep -qx '\[omarchy\]' "$1" && { echo "Already lists [omarchy]: $1" >&2; return 1; }
+  [[ $(grep -cx '\[core\]' "$1") == 1 ]] || { echo "Expected one [core]: $1" >&2; return 1; }
+  awk '$0 == "[core]" { print "[omarchy]"; print "Server = https://pkgs.omarchy.org/stable/$arch"; print "" } { print }' \
+    "$1" > "$2.new" && mv "$2.new" "$2"
+}
+config=/etc/pacman.conf gpgdir=/etc/pacman.d/gnupg
+if [[ $architecture == aarch64 ]]; then
+  build_pacman=$(mktemp -d)
+  trap 'rm -rf -- "$build_pacman"' EXIT
+  omarchy_repo /etc/pacman.conf "$build_pacman/pacman.conf"
+  cp -a /etc/pacman.d/gnupg "$build_pacman/gnupg"
+  config=$build_pacman/pacman.conf gpgdir=$build_pacman/gnupg
+  pacman-key --gpgdir "$gpgdir" --add "$project/system/omarchy-pkgs.asc"
+  pacman-key --gpgdir "$gpgdir" --lsign-key 40DFB630FF42BCFFB047046CF0134EE680CAC571
+  requested+=(omarchy-keyring omacalc)
+fi
 # Download into the target's package cache with bounded, retried attempts that
 # move on to the next mirror, then install from that cache.
-"$project/system/pacman-download" --root "$root" --gpgdir /etc/pacman.d/gnupg -Sy --noconfirm "${requested[@]}"
-pacman --root "$root" --gpgdir /etc/pacman.d/gnupg -S --noconfirm "${requested[@]}"
+"$project/system/pacman-download" --config "$config" --root "$root" --gpgdir "$gpgdir" -Sy --noconfirm "${requested[@]}"
+pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --noconfirm "${requested[@]}"
+[[ $architecture != aarch64 ]] || omarchy_repo "$root/etc/pacman.conf" "$root/etc/pacman.conf"
 # wlroots0.20 replaces Arch's build of the same version: fast rotated pixman compositing.
 for package in "${local_packages[@]}"; do
-  pacman --root "$root" --gpgdir /etc/pacman.d/gnupg --noconfirm -U "$package"
+  pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -U "$package"
 done
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
 # Native login needs seatd's socket and DRM/input device access (render: the

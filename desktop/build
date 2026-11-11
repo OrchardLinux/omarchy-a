@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from urllib.request import urlopen
 from snapshot_buildenv import buildenv
 from target import validate, check_elf, source_pins, check_package
 native = buildenv.native
@@ -18,12 +19,14 @@ INPUTS = HERE / 'arm64/inputs'
 PINS = HERE / 'arm64/inputs.json'
 FILES = {
     'omafox_xpi': INPUTS / '@omafox.xpi',
-    'omacalc_package': INPUTS / 'omacalc.pkg.tar.zst',
     'libva_v4l2_request_source': INPUTS / 'libva-v4l2_request-1.2-2-gcac6ece.tar.gz',
 }
 # Source-built on 64-bit boards only: the A10 GPU's Vulkan driver and the VA-API video bridge.
 HARDWARE_PACKAGES = {'vulkan-powervr-orchard.pkg.tar.zst': ('gpu_recipe_sha256', 'packages/vulkan-powervr-orchard'),
                      'libva-v4l2-request.pkg.tar.zst': ('video_bridge_recipe_sha256', 'packages/libva-v4l2-request')}
+# Prebuilt on 64-bit boards: packages published by their own repositories,
+# downloaded at build time and pinned by SHA-256 in arm64/inputs.json.
+DOWNLOADS = {'omactivity.pkg.tar.zst': ('omactivity_url', 'omactivity_package')}
 KEYBOARD_PATH = 'home/tablet/.local/share/omarchy-ipad/trials/wvkbd-mobintl-v0.20-font18-special15-state'
 XPI_PATH = 'usr/lib/firefox/distribution/extensions/@omafox.xpi'
 
@@ -42,6 +45,23 @@ def recipe_sha(directory):
     for path in sorted(directory.iterdir()):
         digest.update(path.name.encode() + b'\0' + sha(path).encode() + b'\n')
     return digest.hexdigest()
+
+
+def input_record(pins, architecture):
+    """The pinned inputs a desktop output was built from, as its manifest records them."""
+    names = list(FILES) if architecture == 'aarch64' else ['omafox_xpi']
+    if architecture == 'aarch64':
+        names += [key for _, key in DOWNLOADS.values()]
+    return {name: pins[name] for name in names}
+
+
+def download(url, digest, target):
+    print('Fetching:', url, flush=True)
+    with urlopen(url, timeout=120) as response, target.open('wb') as output:
+        shutil.copyfileobj(response, output)
+    if sha(target) != digest:
+        target.unlink()
+        raise ValueError(f'Downloaded package hash differs: {url}')
 
 
 def source_metadata(built, architecture='aarch64'):
@@ -77,11 +97,10 @@ def verify(directory, architecture=None):
     meta = json.loads((directory / 'manifest.json').read_text())
     architecture = validate(architecture or meta['architecture'])
     pins = json.loads(PINS.read_text())
-    files = FILES if architecture == 'aarch64' else {'omafox_xpi': FILES['omafox_xpi']}
     lock = dict(line.split('=', 1) for line in (HERE / 'upstream.lock').read_text().splitlines() if '=' in line)
     if (meta['architecture'] != architecture or
             meta['omarchy_commit'] != lock['omarchy_commit'] or
-            meta['inputs'] != {name: pins[name] for name in files}):
+            meta['inputs'] != input_record(pins, architecture)):
         raise ValueError('Desktop input manifest differs')
     built_files = source_metadata(meta['source_build'], architecture)
     packages = directory / 'packages'
@@ -89,15 +108,25 @@ def verify(directory, architecture=None):
         raise ValueError('Source-built Omafox package differs')
     if sha(packages / 'wlroots0.20.pkg.tar.xz') != built_files['wlroots0.20.pkg.tar.xz']:
         raise ValueError('Source-built wlroots package differs')
-    omacalc_sha = pins['omacalc_package'] if architecture == 'aarch64' else built_files['omacalc.pkg.tar.zst']
-    for name in ('omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz', 'omacalc.pkg.tar.zst'):
+    # Omacalc: 64-bit images install upstream's signed package from its repository (system/assemble-rootfs).
+    local = ['omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz']
+    if architecture == 'armv7h':
+        local.append('omacalc.pkg.tar.zst')
+        if sha(packages / 'omacalc.pkg.tar.zst') != built_files['omacalc.pkg.tar.zst']:
+            raise ValueError('Source-built Omacalc package differs')
+    if architecture == 'aarch64':
+        for name, (_, key) in DOWNLOADS.items():
+            if sha(packages / name) != pins[key]:
+                raise ValueError('Downloaded package differs: ' + name)
+            local.append(name)
+    if {path.name for path in packages.iterdir()} != set(local) | (set(HARDWARE_PACKAGES) if architecture == 'aarch64' else set()):
+        raise ValueError('Desktop packages differ')
+    for name in local:
         check_package(packages / name, architecture)
     for name in HARDWARE_PACKAGES if architecture == 'aarch64' else ():
         check_package(packages / name, architecture)
         if sha(packages / name) != built_files[name]:
             raise ValueError('Source-built hardware package differs: ' + name)
-    if sha(packages / 'omacalc.pkg.tar.zst') != omacalc_sha:
-        raise ValueError('Signed Omacalc package differs')
     payload = directory / 'payload'
     manifest = payload / 'arch-ipad-ui-manifest.json'
     if sha(manifest) != meta['payload_manifest_sha256']:
@@ -133,28 +162,14 @@ def build(output, architecture='aarch64', builder_image=None):
     if len(commit) != 40 or any(c not in '0123456789abcdef' for c in commit):
         raise ValueError('Invalid Omarchy commit pin')
     required = ['git', 'bsdtar']
-    if architecture == 'aarch64':
-        required.append('gpg')
     if not native():
         required.append('podman')
     for tool in required:
         if shutil.which(tool) is None:
             raise RuntimeError(f'{tool} is required')
     (HERE / '.work').mkdir(exist_ok=True)
-    # gpg's agent socket lives in its home directory, and socket paths are
-    # limited to about 100 bytes: a deep checkout's .work/ is too long for it.
-    with tempfile.TemporaryDirectory(prefix='desktop-', dir=HERE / '.work') as temporary, \
-            tempfile.TemporaryDirectory(prefix='oa-gpg-') as gnupg:
+    with tempfile.TemporaryDirectory(prefix='desktop-', dir=HERE / '.work') as temporary:
         work = Path(temporary)
-        if architecture == 'aarch64':
-            subprocess.run(['gpg', '--homedir', str(gnupg), '--batch', '--import',
-                            str(INPUTS / 'omarchy-pkgs.asc')], check=True, stdout=subprocess.DEVNULL)
-            result = subprocess.run(['gpg', '--homedir', str(gnupg), '--batch', '--status-fd', '1',
-                                     '--verify', str(INPUTS / 'omacalc.pkg.tar.zst.sig'),
-                                     str(FILES['omacalc_package'])], check=True, capture_output=True, text=True)
-            if not any(line.startswith('[GNUPG:] VALIDSIG ' + pins['omacalc_signer'] + ' ')
-                       for line in result.stdout.splitlines()):
-                raise ValueError('Omacalc signature has the wrong signer')
         sources = work / 'source-build'
         options = ['--architecture', architecture]
         if builder_image:
@@ -185,12 +200,14 @@ def build(output, architecture='aarch64', builder_image=None):
         packages.mkdir()
         shutil.copyfile(sources / 'omafox.pkg.tar.xz', packages / 'omafox.pkg.tar.xz')
         shutil.copyfile(sources / 'wlroots0.20.pkg.tar.xz', packages / 'wlroots0.20.pkg.tar.xz')
-        calculator = FILES['omacalc_package'] if architecture == 'aarch64' else sources / 'omacalc.pkg.tar.zst'
-        shutil.copyfile(calculator, packages / 'omacalc.pkg.tar.zst')
+        if architecture == 'armv7h':
+            shutil.copyfile(sources / 'omacalc.pkg.tar.zst', packages / 'omacalc.pkg.tar.zst')
         for name in HARDWARE_PACKAGES if architecture == 'aarch64' else ():
             shutil.copyfile(sources / name, packages / name)
+        for name, (url, key) in DOWNLOADS.items() if architecture == 'aarch64' else ():
+            download(pins[url], pins[key], packages / name)
         meta = {'architecture': architecture, 'omarchy_commit': commit,
-                'inputs': {name: pins[name] for name in files}, 'source_build': built,
+                'inputs': input_record(pins, architecture), 'source_build': built,
                 'payload_manifest_sha256': sha(result_dir / 'payload/arch-ipad-ui-manifest.json')}
         (result_dir / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')
         verify(result_dir, architecture)

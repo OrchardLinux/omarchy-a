@@ -192,13 +192,14 @@ def verify_labwc(record, hashes, modes, owners, groups):
     pin = json.loads((PROJECT / 'desktop/labwc/source.json').read_text())
     expected = {'labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
                 '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
-                'packages.lock', 'compiler.txt', 'version.txt'}
+                '0004-overview.patch', 'packages.lock', 'compiler.txt', 'version.txt'}
     if not record or record.get('schema') != 1 or record.get('source') != pin or record.get('files', {}).keys() != expected:
         raise ValueError('Missing pinned Labwc component receipt')
     if (record['files']['source.tar.gz'] != pin['sha256']
             or record['files']['0001-cancel-super-tap-on-pointer.patch'] != pin['patch_sha256']
             or record['files']['0002-bottom-edge-swipe.patch'] != pin['edge_patch_sha256']
-            or record['files']['0003-session-transitions.patch'] != pin['transitions_patch_sha256']):
+            or record['files']['0003-session-transitions.patch'] != pin['transitions_patch_sha256']
+            or record['files']['0004-overview.patch'] != pin['overview_patch_sha256']):
         raise ValueError('Labwc corresponding source differs from pin')
     for name, digest in record['files'].items():
         path = 'usr/bin/labwc' if name == 'labwc' else 'usr/share/licenses/omarchy-labwc/' + name

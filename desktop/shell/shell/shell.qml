@@ -30,6 +30,10 @@ ShellRoot {
   ShellIpc {
     target: "omarchy.dock"
     function apps(): void { appGrid.toggle() }
+    // For callers that must not toggle: the overview puts the drawer away
+    // when it opens, and asks for it when there is no window to show.
+    function openApps(): void { if (!appGrid.opened) appGrid.open() }
+    function closeApps(): void { if (appGrid.opened) appGrid.close() }
   }
 
   property bool keyboardVisible: false
@@ -1804,6 +1808,11 @@ ShellRoot {
 
     function windowCount(): string {
       return String(shell.appLibrary.toplevelCount())
+    }
+
+    // omarchy-launch-or-focus: "true" when a matching window was focused.
+    function focusWindow(pattern: string): string {
+      return shell.appLibrary.focusToplevel(pattern) ? "true" : "false"
     }
 
     function applyTheme(colorsB64: string, shellB64: string): string {
