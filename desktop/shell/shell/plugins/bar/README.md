@@ -52,13 +52,12 @@ Example `shell.json` (bar subtree only shown):
 
 ## Narrow bars
 
-A bar shorter than 480 logical pixels, such as a phone's in portrait, has no room for a tablet's widgets beside a centered clock. It shows the same layout with each entry's `narrow` setting applied: `"narrow": false` leaves the widget out, and `"narrow": "left"` (or any other section) moves it to the end of that section. An entry without the setting stays where it is. Widgets can read `bar.narrow` to draw a smaller form; `omarchy.activity` then shows its figure without the icon.
+A bar shorter than 480 logical pixels, such as a phone's in portrait, has no room for a tablet's widgets beside a centered clock. It shows the same layout with each entry's `narrow` setting applied: `"narrow": false` leaves the widget out, and `"narrow": "left"` (or any other section) moves it to the end of that section. An entry without the setting stays where it is. Widgets can read `bar.narrow` to draw a smaller form.
 
 ```json
 "right": [
   { "id": "ipadlinux.keyboard", "narrow": "left" },
   { "id": "omarchy.audio", "narrow": false },
-  { "id": "omarchy.activity" },
   { "id": "omarchy.power" }
 ]
 ```
@@ -88,7 +87,6 @@ At the default sizes a slot is 40 pixels, the battery with its percentage 80, an
 | `omarchy.power` | Battery/AC icon + popup with battery stats, power profiles, and system info | left = popup · right = toggle percentage |
 | `omarchy.bluetooth` | Bluetooth icon + popup with device list, connect/disconnect, battery | left = popup · right = toggle radio |
 | `omarchy.monitor` | Brightness and laptop display controls | left = popup |
-| `omarchy.activity` | CPU or memory use in percent, read from `/proc` every few seconds (`mode`: `cpu` or `memory`; `interval` in seconds) | left = open Omactivity on that tab, or focus its window · right or long press = switch between CPU and memory |
 
 The `omarchy.indicators` widget loads individual bar indicators from `indicators/`. Omit `items` (or set it to an empty array) to show all indicators in the default order, or set `items` to a subset such as `["Dnd", "Reminder", "NightLight"]`. Set `alwaysShow` to `true` to keep inactive indicators visible instead of revealing them only on hover. Multiple `omarchy.indicators` instances are allowed, so different sections can show different subsets.
 

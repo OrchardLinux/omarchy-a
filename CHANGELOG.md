@@ -49,7 +49,7 @@ work, with an on-screen display.
   it, in well under a second, and Home wakes it too.
 - Home and Power together take a screenshot, with a flash; it goes to
   ~/Pictures/Screenshots.
-- Omactivity, a touch task manager: in the bar, the menu and Super+Shift+T.
+- Omactivity, a touch task manager: in the menu and with Super+Shift+T.
 - A long press on a saved Wi-Fi network offers Forget and Change passphrase.
 - Wi-Fi remembers its country, so 5 GHz networks connect after a boot.
 - The speakers are called "Speakers"; tapping a bar icon no longer flashes the

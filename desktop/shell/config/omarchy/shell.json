@@ -15,7 +15,6 @@
         { "id": "omarchy.bluetooth", "narrow": false },
         { "id": "omarchy.network", "narrow": "left" },
         { "id": "omarchy.monitor", "narrow": false },
-        { "id": "omarchy.activity", "mode": "cpu" },
         { "id": "omarchy.power" }
       ]
     }
