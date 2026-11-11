@@ -42,7 +42,9 @@ measured as 3.36 s); the key timestamps can. It:
 - reads the `gpio-keys` input device itself (Power, Home), with kernel
   timestamps on `CLOCK_MONOTONIC`. No process per press. labwc no longer binds
   Power; labwc's Home binding is only the session's home action and does not
-  fire while locked. Volume stays with labwc, `allowWhenLocked`, and never
+  fire while locked. A Home press that woke a dark screen (in the grace before
+  the lock, when the session is still unlocked) opens nothing either:
+  `omarchy-powerctl home` answers `wake`. Volume stays with labwc, `allowWhenLocked`, and never
   touches the panel or the state;
 - owns the backlight: brightness 0 is dark. The display pipeline stays on, so
   lighting it again needs no modeset and shows the lock screen it last showed;

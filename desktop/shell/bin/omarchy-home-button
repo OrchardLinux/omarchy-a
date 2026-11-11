@@ -1,12 +1,14 @@
 #!/bin/bash
 
-# omarchy:summary=The iPad's Home button: open the app drawer, or the overview when pressed twice; close the overview; nothing if the press took a screenshot
+# omarchy:summary=The iPad's Home button: open the app drawer, or the overview when pressed twice; close the overview; nothing if the press took a screenshot or woke the screen
 # omarchy:hidden=true
 
 # labwc runs this when Home comes up. omarchy-powerd saw the same press and
-# knows whether Home was pressed together with Power (a screenshot).
+# knows whether Home was pressed together with Power (a screenshot), or
+# woke a dark screen: in the grace before the lock the session is still
+# unlocked, so this binding runs, but the press was only the wake.
 answer=$(/usr/libexec/omarchy-powerctl home 2>&1)
-[[ $answer == combo ]] && exit 0
+[[ $answer == combo || $answer == wake ]] && exit 0
 
 runtime="${XDG_RUNTIME_DIR:-/run/user/$UID}"
 stamp="$runtime/omarchy-home-press"

@@ -347,6 +347,14 @@ class Buttons(unittest.TestCase):
         buttons.edge('home', True, 5.0, True)
         self.assertFalse(buttons.home_in_combo)
 
+    def test_a_home_press_that_wakes_the_screen_opens_nothing(self):
+        buttons = powerd.Buttons()
+        self.assertEqual(buttons.edge('home', True, 1.0, False), 'home')
+        buttons.edge('home', False, 1.1, True)
+        self.assertTrue(buttons.home_woke)
+        buttons.edge('home', True, 5.0, True)
+        self.assertFalse(buttons.home_woke)
+
     def test_power_alone_still_darkens_after_a_screenshot(self):
         edges = [('power', True, 1.0), ('home', True, 1.1), ('home', False, 1.3), ('power', False, 1.4),
                  ('power', True, 3.0), ('power', False, 3.2)]

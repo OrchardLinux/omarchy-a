@@ -73,6 +73,8 @@ class KeyboardShortcutTests(unittest.TestCase):
         # Home closes the overview from the script, not inside labwc: a Home
         # that is half of Home + Power must leave the overview on screen.
         self.assertLess(home.index('combo'), home.index('omarchy-overview-open'))
+        # A press that woke the screen in the grace before the lock opens nothing.
+        self.assertLess(home.index('== wake'), home.index('omarchy-overview-open'))
         self.assertIn('omarchy-overview-open"', changed)
         self.assertIn('omarchy-overview-open', (PROJECT / 'desktop/configuration/labwc-autostart').read_text())
         patch = (PROJECT / 'desktop/labwc/0004-overview.patch').read_text()

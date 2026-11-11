@@ -294,6 +294,7 @@ class Buttons:
         self.combo = None       # both down on a lit screen since
         self.combo_spent = False
         self.home_in_combo = False  # the last Home press was part of a combination
+        self.home_woke = False      # the last Home press came on a dark screen and woke it
 
     def _start_combo(self, when):
         self.spoiled = True
@@ -313,7 +314,7 @@ class Buttons:
         """The event of one edge (a machine event or 'screenshot'), or None."""
         if name == 'home':
             if down:
-                self.home_down, self.home_in_combo = when, False
+                self.home_down, self.home_in_combo, self.home_woke = when, False, not lit
                 if self.held is not None:
                     self._start_combo(when)
                 return 'home'
@@ -716,8 +717,10 @@ class Daemon:
                         self.feed('wake')
                     connection.sendall(b'lit\n' if self.machine.state == ON else b'dark\n')
                 elif request == 'home':
-                    # labwc's Home binding asks: a Home press that took a screenshot opens nothing.
-                    connection.sendall(b'combo\n' if self.buttons.home_in_combo else b'alone\n')
+                    # labwc's Home binding asks: a Home press that took a screenshot or
+                    # woke the screen (dark in the grace before the lock) opens nothing.
+                    answer = 'combo' if self.buttons.home_in_combo else 'wake' if self.buttons.home_woke else 'alone'
+                    connection.sendall(answer.encode() + b'\n')
                 elif request == 'status':
                     connection.sendall(self.machine.state.encode() + b'\n')
                 elif request in ('idle', 'wake', 'lock'):
