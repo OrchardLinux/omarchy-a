@@ -1806,6 +1806,11 @@ ShellRoot {
       return String(shell.appLibrary.toplevelCount())
     }
 
+    // omarchy-launch-or-focus: "true" when a matching window was focused.
+    function focusWindow(pattern: string): string {
+      return shell.appLibrary.focusToplevel(pattern) ? "true" : "false"
+    }
+
     function applyTheme(colorsB64: string, shellB64: string): string {
       if (shell.bootIntro) shell.bootIntro.cancelTheme()
       var background = shell.firstPartyServiceFor("omarchy.background")

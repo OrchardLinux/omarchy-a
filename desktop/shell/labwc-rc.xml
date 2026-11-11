@@ -53,11 +53,17 @@
     <!-- Keyboard shortcuts for a Bluetooth keyboard, after upstream Omarchy (W = Super).
          labwc has no directional focus, so Super+arrows cycle windows; Super+Shift+arrows
          snap the window to that half (top/bottom suit the portrait screen). -->
+    <!-- Apps start through uwsm-app, as upstream's do: each in its own systemd
+         user scope, which Omactivity groups processes by. -->
     <keybind key="W-Return">
-      <action name="Execute" command="foot" />
+      <action name="Execute" command="uwsm-app -- foot" />
     </keybind>
     <keybind key="W-S-b">
-      <action name="Execute" command="firefox" />
+      <action name="Execute" command="uwsm-app -- firefox" />
+    </keybind>
+    <!-- Activity: upstream opens btop here, which has no touch path. -->
+    <keybind key="W-S-t">
+      <action name="Execute" command="omarchy-launch-or-focus omactivity" />
     </keybind>
     <keybind key="W-space">
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />

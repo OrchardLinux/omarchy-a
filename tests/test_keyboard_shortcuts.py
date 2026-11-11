@@ -37,8 +37,9 @@ class KeyboardShortcutTests(unittest.TestCase):
             self.assertTrue(program in packages or program in scripts, (binding.get('key'), program))
 
     def test_omarchy_style_shortcuts(self):
-        self.assertEqual(self.action('W-Return').get('command'), 'foot')
-        self.assertEqual(self.action('W-S-b').get('command'), 'firefox')
+        self.assertEqual(self.action('W-Return').get('command'), 'uwsm-app -- foot')
+        self.assertEqual(self.action('W-S-b').get('command'), 'uwsm-app -- firefox')
+        self.assertEqual(self.action('W-S-t').get('command'), 'omarchy-launch-or-focus omactivity')
         self.assertEqual(self.action('W-space').get('command'), 'omarchy-shell omarchy.dock apps')
         self.assertIn('"menu":"root"', self.action('W-A-space').get('command'))
         self.assertIn('"menu":"system"', self.action('W-Escape').get('command'))

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from urllib.request import urlopen
 from snapshot_buildenv import buildenv
 from target import validate, check_elf, source_pins, check_package
 native = buildenv.native
@@ -23,6 +24,9 @@ FILES = {
 # Source-built on 64-bit boards only: the A10 GPU's Vulkan driver and the VA-API video bridge.
 HARDWARE_PACKAGES = {'vulkan-powervr-orchard.pkg.tar.zst': ('gpu_recipe_sha256', 'packages/vulkan-powervr-orchard'),
                      'libva-v4l2-request.pkg.tar.zst': ('video_bridge_recipe_sha256', 'packages/libva-v4l2-request')}
+# Prebuilt on 64-bit boards: packages published by their own repositories,
+# downloaded at build time and pinned by SHA-256 in arm64/inputs.json.
+DOWNLOADS = {'omactivity.pkg.tar.zst': ('omactivity_url', 'omactivity_package')}
 KEYBOARD_PATH = 'home/tablet/.local/share/omarchy-ipad/trials/wvkbd-mobintl-v0.20-font18-special15-state'
 XPI_PATH = 'usr/lib/firefox/distribution/extensions/@omafox.xpi'
 
@@ -41,6 +45,23 @@ def recipe_sha(directory):
     for path in sorted(directory.iterdir()):
         digest.update(path.name.encode() + b'\0' + sha(path).encode() + b'\n')
     return digest.hexdigest()
+
+
+def input_record(pins, architecture):
+    """The pinned inputs a desktop output was built from, as its manifest records them."""
+    names = list(FILES) if architecture == 'aarch64' else ['omafox_xpi']
+    if architecture == 'aarch64':
+        names += [key for _, key in DOWNLOADS.values()]
+    return {name: pins[name] for name in names}
+
+
+def download(url, digest, target):
+    print('Fetching:', url, flush=True)
+    with urlopen(url, timeout=120) as response, target.open('wb') as output:
+        shutil.copyfileobj(response, output)
+    if sha(target) != digest:
+        target.unlink()
+        raise ValueError(f'Downloaded package hash differs: {url}')
 
 
 def source_metadata(built, architecture='aarch64'):
@@ -76,11 +97,10 @@ def verify(directory, architecture=None):
     meta = json.loads((directory / 'manifest.json').read_text())
     architecture = validate(architecture or meta['architecture'])
     pins = json.loads(PINS.read_text())
-    files = FILES if architecture == 'aarch64' else {'omafox_xpi': FILES['omafox_xpi']}
     lock = dict(line.split('=', 1) for line in (HERE / 'upstream.lock').read_text().splitlines() if '=' in line)
     if (meta['architecture'] != architecture or
             meta['omarchy_commit'] != lock['omarchy_commit'] or
-            meta['inputs'] != {name: pins[name] for name in files}):
+            meta['inputs'] != input_record(pins, architecture)):
         raise ValueError('Desktop input manifest differs')
     built_files = source_metadata(meta['source_build'], architecture)
     packages = directory / 'packages'
@@ -94,6 +114,11 @@ def verify(directory, architecture=None):
         local.append('omacalc.pkg.tar.zst')
         if sha(packages / 'omacalc.pkg.tar.zst') != built_files['omacalc.pkg.tar.zst']:
             raise ValueError('Source-built Omacalc package differs')
+    if architecture == 'aarch64':
+        for name, (_, key) in DOWNLOADS.items():
+            if sha(packages / name) != pins[key]:
+                raise ValueError('Downloaded package differs: ' + name)
+            local.append(name)
     if {path.name for path in packages.iterdir()} != set(local) | (set(HARDWARE_PACKAGES) if architecture == 'aarch64' else set()):
         raise ValueError('Desktop packages differ')
     for name in local:
@@ -179,8 +204,10 @@ def build(output, architecture='aarch64', builder_image=None):
             shutil.copyfile(sources / 'omacalc.pkg.tar.zst', packages / 'omacalc.pkg.tar.zst')
         for name in HARDWARE_PACKAGES if architecture == 'aarch64' else ():
             shutil.copyfile(sources / name, packages / name)
+        for name, (url, key) in DOWNLOADS.items() if architecture == 'aarch64' else ():
+            download(pins[url], pins[key], packages / name)
         meta = {'architecture': architecture, 'omarchy_commit': commit,
-                'inputs': {name: pins[name] for name in files}, 'source_build': built,
+                'inputs': input_record(pins, architecture), 'source_build': built,
                 'payload_manifest_sha256': sha(result_dir / 'payload/arch-ipad-ui-manifest.json')}
         (result_dir / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')
         verify(result_dir, architecture)

@@ -4,5 +4,7 @@
   "omafox_xpi_url": "https://addons.mozilla.org/firefox/downloads/file/4985428/omafox-1.0.3.xpi",
   "libva_v4l2_request_source": "da289b5af9ef4a0090cbbb860f609c5d6cbde21a5fe9845f68f52089d01fdc08",
   "libva_v4l2_request_url": "https://xff.cz/git/libva-v4l2_request",
-  "libva_v4l2_request_commit": "cac6ece0e23ac1f944dd3af266680aff0c3184df"
+  "libva_v4l2_request_commit": "cac6ece0e23ac1f944dd3af266680aff0c3184df",
+  "omactivity_package": "287e85a4637dbcfe3d4641bc5485d19b7e4616ade4462775413f9e8ff0101298",
+  "omactivity_url": "https://github.com/OrchardLinux/omactivity/releases/download/v0.1.0/omactivity-0.1.0-1-aarch64.pkg.tar.zst"
 }

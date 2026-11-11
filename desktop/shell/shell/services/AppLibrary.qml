@@ -75,10 +75,44 @@ Item {
   }
 
   function launch(desktopId, name) {
-    // labwc has no UWSM; Quickshell's desktop-entry runner preserves Exec,
-    // Terminal and field-code handling without an Omarchy-specific wrapper.
-    var entry = DesktopEntries.byId(String(desktopId || ""))
-    if (entry) entry.execute()
+    var id = String(desktopId || "")
+    var entry = DesktopEntries.byId(id)
+    if (!entry) return
+    // Quickshell parses the entry's Exec line; uwsm-app (the Labwc port's, in
+    // bin/) runs it in the app's own systemd user scope, named after the
+    // desktop id, so a task manager can tell which processes are one app.
+    // It runs the command as it is when there is no user manager.
+    var command = (entry.command || []).map(String).filter(function(word) { return !/^%[a-zA-Z]$/.test(word) })
+    // A terminal entry, or one without a command, stays with Quickshell's runner.
+    if (entry.runInTerminal || command.length === 0) {
+      entry.execute()
+      return
+    }
+    var argv = ["uwsm-app", "-a", id, "--"].concat(command)
+    var directory = String(entry.workingDirectory || "")
+    if (directory) Quickshell.execDetached({ command: argv, workingDirectory: directory })
+    else Quickshell.execDetached(argv)
+  }
+
+  // omarchy-launch-or-focus: brings the first window whose app id holds the
+  // pattern as a word, in any case, to the front, or else the first whose
+  // title does, as upstream matches Hyprland's class and title. False when
+  // no window matches.
+  function focusToplevel(pattern) {
+    var text = String(pattern || "")
+    if (!text) return false
+    var matcher
+    try { matcher = new RegExp("\\b" + text + "\\b", "i") } catch (e) { return false }
+    var windows = ToplevelManager.toplevels.values
+    var fields = ["appId", "title"]
+    for (var f = 0; f < fields.length; f++) {
+      for (var i = 0; i < windows.length; i++) {
+        if (!matcher.test(String(windows[i][fields[f]] || ""))) continue
+        windows[i].activate()
+        return true
+      }
+    }
+    return false
   }
 
   // The command a terminal entry runs, without the field codes it leaves for a

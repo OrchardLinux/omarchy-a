@@ -34,6 +34,8 @@ local_packages=("$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/wlroots
 # 64-bit boards: the A10 GPU's Vulkan driver and the VA-API bridge to the
 # hardware video decoders. Both sit unused on a board without that hardware.
 [[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/vulkan-powervr-orchard.pkg.tar.zst" "$desktop/packages/libva-v4l2-request.pkg.tar.zst")
+# 64-bit boards: Omactivity, the touch task manager, as its repository publishes it.
+[[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/omactivity.pkg.tar.zst")
 for package in "${local_packages[@]}"; do
   bsdtar -xOf "$package" .PKGINFO | grep -x "arch = $architecture" >/dev/null || { echo "Package architecture differs from $architecture: $package" >&2; exit 1; }
 done

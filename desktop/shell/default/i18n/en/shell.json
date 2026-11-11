@@ -122,6 +122,8 @@
   "audio.title": "Audio",
   "audio.unknownDevice": "Unknown",
   "audio.unmute": "Unmute",
+  "bar.activityCpu": "CPU use",
+  "bar.activityMemory": "Memory use",
   "bar.allowIdleLock": "Allow Idle Lock & Screensaver",
   "bar.allowNotifications": "Allow Notifications",
   "bar.dayLight": "Day Light",
