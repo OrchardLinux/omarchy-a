@@ -21,6 +21,7 @@ Panel {
   function close() {
     root.controller.hide()
     cancelPasswordPrompt()
+    optionsSsid = ""
   }
 
   function cancelPasswordPrompt() {
@@ -96,6 +97,10 @@ Panel {
   property string failureSsid: ""
   property string failureReason: ""
   property string passwordSsid: ""
+  // The known network whose options (Forget, Change passphrase) are open
+  // under its row: a long press on touch, or a right click.
+  property string optionsSsid: ""
+  readonly property bool touchMode: Quickshell.env("OMARCHY_TOUCH_MODE") === "1"
   property string passwordText: ""
   property Item credentialFocusTarget: null
   property string identityText: ""
@@ -800,6 +805,7 @@ Panel {
   }
 
   function openPasswordPrompt(ssid) {
+    optionsSsid = ""
     if (passwordSsid !== ssid) {
       passwordText = ""
       identityText = ""
@@ -1814,6 +1820,14 @@ Panel {
     readonly property bool isBusy: root.actionKind !== "" && root.actionSsid === (net ? net.ssid : "")
     readonly property bool isFailed: root.failureReason !== "" && root.failureSsid === (net ? net.ssid : "")
     readonly property bool isPasswordOpen: root.passwordSsid !== "" && root.passwordSsid === (net ? net.ssid : "")
+    readonly property bool isOptionsOpen: isKnown && root.optionsSsid !== "" && root.optionsSsid === (net ? net.ssid : "")
+    property bool longPressed: false
+
+    function openOptions() {
+      if (!net || !isKnown || root.busy) return
+      root.cancelPasswordPrompt()
+      root.optionsSsid = net.ssid
+    }
 
     function submitCredentials() {
       if (!net || root.busy || root.passwordText.length === 0) return
@@ -1863,6 +1877,7 @@ Panel {
     }
 
     implicitHeight: rowBody.implicitHeight + (isPasswordOpen ? passwordPanel.implicitHeight + Style.spacing.md : 0)
+                    + (isOptionsOpen ? optionsPanel.implicitHeight + Style.spacing.md : 0)
 
     MouseArea {
       id: rowMouse
@@ -1871,17 +1886,32 @@ Panel {
       anchors.top: parent.top
       height: rowBody.implicitHeight
       hoverEnabled: true
-      acceptedButtons: Qt.LeftButton
+      acceptedButtons: Qt.LeftButton | Qt.RightButton
       cursorShape: Qt.PointingHandCursor
       enabled: !root.busy
+      pressAndHoldInterval: 550
 
       // Move the cursor here when the mouse enters; mouse leaving doesn't
       // clear it (so the cursor stays where the mouse last was and
       // subsequent j/k pick up from this row).
       onContainsMouseChanged: if (containsMouse) { root.cursorActive = true; root.focusSection = "wifi"; root.selectedIndex = row.index; root.wifiActionFocused = false }
 
-      onClicked: {
+      onPressed: row.longPressed = false
+      onCanceled: row.longPressed = false
+      onPressAndHold: function(mouse) {
+        // A held touch reports no button, so only a right button is excluded.
+        if (mouse.button === Qt.RightButton || !row.isKnown) return
+        row.longPressed = true
+        row.openOptions()
+      }
+
+      onClicked: function(mouse) {
         if (!row.net) return
+        if (row.longPressed) { row.longPressed = false; return }
+        // With the options open, a tap on the row only closes them.
+        if (row.isOptionsOpen) { root.optionsSsid = ""; return }
+        if (mouse.button === Qt.RightButton) { row.openOptions(); return }
+        root.optionsSsid = ""
         // Resync cursor in case keyboard nav moved it away while the mouse
         // stayed parked on this row — the click target is unambiguously here.
         root.cursorActive = true
@@ -1959,7 +1989,10 @@ Panel {
           anchors.fill: parent
           hoverEnabled: true
           acceptedButtons: Qt.LeftButton
-          enabled: row.canForget && !root.busy
+          // On touch a tap here must not forget the network unseen: the
+          // red Forget glyph only shows on hover. Touch uses the row's
+          // long-press options instead.
+          enabled: row.canForget && !root.busy && !root.touchMode
           cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
           onContainsMouseChanged: if (containsMouse) { root.cursorActive = true; root.focusSection = "wifi"; root.selectedIndex = row.index; root.wifiActionFocused = true }
           onClicked: if (row.net) root.forget(row.net)
@@ -2017,6 +2050,52 @@ Panel {
         root.failureSsid = ""
         root.failureReason = ""
         pwField.forceActiveFocus()
+      }
+    }
+
+    // Options for a saved network, under its row: Forget, and for a
+    // passphrase network, Change passphrase (connectWithPsk replaces the
+    // saved one). Touch has no hover, so the hover-revealed Forget on the
+    // lock is out of reach there.
+    Column {
+      id: optionsPanel
+      visible: row.isOptionsOpen
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: rowMouse.bottom
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      anchors.topMargin: Style.space(4)
+      spacing: Style.space(4)
+      bottomPadding: Style.spacing.rowGap
+      height: visible ? implicitHeight : 0
+
+      Button {
+        width: parent.width
+        visible: row.requiresCredentials && !row.isEnterprise
+        text: Commons.I18n.t("network.changePassphrase", "Change passphrase")
+        iconText: "󰌾"
+        foreground: root.bar.foreground
+        fontFamily: root.bar.fontFamily
+        bordered: true
+        leftAlign: true
+        onClicked: if (row.net) root.openPasswordPrompt(row.net.ssid)
+      }
+
+      Button {
+        width: parent.width
+        text: Commons.I18n.t("network.forgetNetwork")
+        iconText: "󰅙"
+        foreground: root.bar.urgent
+        accent: root.bar.urgent
+        fontFamily: root.bar.fontFamily
+        bordered: true
+        leftAlign: true
+        onClicked: {
+          var net = row.net
+          root.optionsSsid = ""
+          if (net) root.forget(net)
+        }
       }
     }
 

@@ -349,6 +349,7 @@
   "network.bandAuto": "Auto",
   "network.bandAutoTooltip": "Let Wi-Fi pick the band",
   "network.captivePortalHelp": "Sign in or accept this network’s terms to access the internet.",
+  "network.changePassphrase": "Change passphrase",
   "network.connect": "Connect",
   "network.connected": "Connected",
   "network.connecting": "Connecting…",
