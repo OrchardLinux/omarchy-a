@@ -236,7 +236,10 @@ Item {
         }
 
         Keys.onPressed: function(event) {
-          root.wakeRequested()
+          // A held key is one press. Its repeats are not new activity: a key
+          // whose release went missing would otherwise keep the screen awake
+          // and the shell busy until something moved keyboard focus.
+          if (!event.isAutoRepeat) root.wakeRequested()
           if (event.isAutoRepeat && root.dropsAutoRepeat(event.key)) {
             event.accepted = true
             return

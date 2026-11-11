@@ -420,6 +420,13 @@ class Integration(unittest.TestCase):
         for key in ('XF86PowerOff', 'XF86HomePage'):
             self.assertEqual(greeter.findall(f"./keyboard/keybind[@key='{key}']"), [])
 
+    def test_a_held_key_on_the_lock_screen_wakes_once(self):
+        view = (PROJECT / 'desktop/shell/shell/plugins/lock/LockView.qml').read_text()
+        keys = view[view.index('Keys.onPressed'):]
+        keys = keys[:keys.index('\n        }\n')]
+        self.assertIn('if (!event.isAutoRepeat) root.wakeRequested()', keys)
+        self.assertEqual(keys.count('wakeRequested()'), 1)
+
     def test_every_way_to_dark_uses_the_same_client_and_the_decided_times(self):
         client = '/usr/libexec/omarchy-powerctl'
         lock = (PROJECT / 'desktop/shell/shell/plugins/lock/Service.qml').read_text()
