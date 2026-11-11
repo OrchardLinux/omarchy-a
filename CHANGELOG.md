@@ -23,6 +23,7 @@ work, with an on-screen display.
 - App switcher: four fingers up, Home pressed twice or Super+Tab show every
   open window side by side, minimised ones included. Tap one to bring it back,
   flick it up to close it.
+- The iPad 7 panel gets scale 2 at login in both orientations. The scale script only matched the iPad 6 modes, so 1620×2160 stayed at scale 1.
 - A five-row on-screen keyboard with punctuation on the main layer, double-tap
   Shift for Caps Lock, immediate key highlight, and a slide in and out.
 - Swipe up from the bottom edge to open the keyboard.
