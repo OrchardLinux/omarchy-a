@@ -8,7 +8,8 @@ After=local-fs.target
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/bin/pacman-key --init
-ExecStart=/usr/bin/pacman-key --populate archlinuxarm
+# Every installed keyring: Arch Linux ARM, and Omarchy on 64-bit images.
+ExecStart=/usr/bin/pacman-key --populate
 
 [Install]
 WantedBy=multi-user.target
