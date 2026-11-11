@@ -50,6 +50,12 @@ escape_unit() {
   escaped=$out
 }
 
+# The shell draws with Qt's software renderer on every board and says so in
+# its environment (QT_QUICK_BACKEND), which every app it starts inherits. On
+# a GPU desktop (login-session sets WLR_RENDERER=gles2 there) apps draw on
+# the GPU, the Qt Quick ones too, so the shell's own choice ends here.
+[[ ${WLR_RENDERER:-} != gles2 ]] || unset QT_QUICK_BACKEND
+
 if [[ -n ${XDG_RUNTIME_DIR:-} ]] && command -v systemd-run >/dev/null; then
   escape_unit "$app"
   printf -v unit 'app-%s-%04x%04x.scope' "$escaped" "$RANDOM" "$RANDOM"

@@ -24,7 +24,7 @@ export LIBGL_ALWAYS_SOFTWARE=1 LIBSEAT_BACKEND=seatd MOZ_ENABLE_WAYLAND=1
 # driver powervr): Labwc draws on wlroots' GLES2 renderer and applications on
 # OpenGL, both through Zink on that driver. Every other board, and a boot with
 # modprobe.blacklist=powervr, keeps the software desktop above. The shell stays
-# on Qt's software renderer either way.
+# on Qt's software renderer either way; the apps it starts don't (uwsm-app).
 gpu=
 for node in /sys/class/drm/renderD*; do
   if [[ $(basename "$(readlink -f "$node/device/driver")") == powervr ]]; then gpu=$node; fi

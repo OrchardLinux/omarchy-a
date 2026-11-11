@@ -33,6 +33,23 @@ class AppScopeTests(unittest.TestCase):
         self.env = {**os.environ, 'PATH': '%s:%s' % (stubs, os.environ['PATH']), 'XDG_RUNTIME_DIR': str(runtime),
                     'CALLS': str(self.calls), 'STARTED': str(self.started)}
 
+    def renderer_seen(self, **env):
+        """QT_QUICK_BACKEND as an app started by uwsm-app finds it."""
+        seen = Path(self.temp.name) / 'seen'
+        subprocess.run(['bash', str(SCRIPT), '--', 'sh', '-c', 'echo "${QT_QUICK_BACKEND:-unset}" > "$1"', 'sh', str(seen)],
+                       env={**self.env, **env}, capture_output=True, text=True, timeout=20)
+        deadline = time.monotonic() + 5
+        while not seen.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        time.sleep(0.1)
+        return seen.read_text().strip()
+
+    def test_apps_draw_on_the_gpu_where_the_desktop_does(self):
+        # The shell's software renderer is its own: on a GPU desktop the apps
+        # it starts don't inherit it; on the software desktop they do.
+        self.assertEqual(self.renderer_seen(QT_QUICK_BACKEND='software', WLR_RENDERER='gles2'), 'unset')
+        self.assertEqual(self.renderer_seen(QT_QUICK_BACKEND='software', WLR_RENDERER='pixman'), 'software')
+
     def launch(self, *options, **env):
         result = subprocess.run(['bash', str(SCRIPT), *options, '--', 'sh', '-c', 'echo "$1" >> "$STARTED"', 'sh', 'app'],
                                 env={**self.env, **env}, capture_output=True, text=True, timeout=20)
