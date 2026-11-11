@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# omarchy:summary=Follow the window overview: note whether it is open, and put the app drawer and on-screen keyboard away as it opens
+# omarchy:args=opened|closed
+# omarchy:hidden=true
+
+# labwc runs this when its overview opens and when it closes. The note is how
+# omarchy-home-button knows that Home should close the overview.
+state="${XDG_RUNTIME_DIR:-/run/user/$UID}/omarchy-overview-open"
+case ${1:-} in
+opened)
+  : >"$state"
+  # Both would lie over it.
+  omarchy-shell -q omarchy.dock closeApps
+  omarchy-keyboard hide
+  ;;
+closed)
+  rm -f "$state"
+  ;;
+*)
+  echo "Usage: omarchy-overview-changed opened|closed" >&2
+  exit 1
+  ;;
+esac

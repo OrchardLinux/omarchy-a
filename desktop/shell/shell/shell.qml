@@ -30,6 +30,10 @@ ShellRoot {
   ShellIpc {
     target: "omarchy.dock"
     function apps(): void { appGrid.toggle() }
+    // For callers that must not toggle: the overview puts the drawer away
+    // when it opens, and asks for it when there is no window to show.
+    function openApps(): void { if (!appGrid.opened) appGrid.open() }
+    function closeApps(): void { if (appGrid.opened) appGrid.close() }
   }
 
   property bool keyboardVisible: false

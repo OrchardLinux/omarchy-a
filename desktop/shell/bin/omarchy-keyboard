@@ -57,6 +57,9 @@ elif mode == "show":
         launch()
         pid = wait_for_start()
     os.kill(pid, signal.SIGUSR2)
+elif mode == "hide":
+    if pid := live_pid():
+        os.kill(pid, signal.SIGUSR1)
 elif mode == "restart":
     if pid := live_pid():
         os.kill(pid, signal.SIGTERM)
@@ -86,4 +89,4 @@ elif mode == "run":
     os.environ["WVKBD_STATE_FILE"] = str(state_file)
     os.execv(str(binary), args)
 else:
-    raise SystemExit("Usage: omarchy-keyboard [run|toggle|show|restart]")
+    raise SystemExit("Usage: omarchy-keyboard [run|toggle|show|hide|restart]")
