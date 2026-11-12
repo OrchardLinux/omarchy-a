@@ -33,7 +33,7 @@ local_packages=("$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/wlroots
 [[ $architecture == aarch64 ]] || local_packages+=("$desktop/packages/omacalc.pkg.tar.zst")
 # 64-bit boards: the A10 GPU's Vulkan driver and the VA-API bridge to the
 # hardware video decoders. Both sit unused on a board without that hardware.
-[[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/vulkan-powervr-orchard.pkg.tar.zst" "$desktop/packages/libva-v4l2-request.pkg.tar.zst")
+[[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/mesa-g5p-orchard.pkg.tar.zst" "$desktop/packages/vulkan-powervr-orchard.pkg.tar.zst" "$desktop/packages/libva-v4l2-request.pkg.tar.zst")
 # 64-bit boards: Omactivity, the touch task manager, as its repository publishes it.
 [[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/omactivity.pkg.tar.zst")
 # 64-bit boards: Files, upstream Omarchy's file manager (Folio) with the touch
@@ -87,6 +87,11 @@ pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --noconfirm "${re
 for package in "${local_packages[@]}"; do
   pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -U "$package"
 done
+# J71t and A10 use the same stateless VXD bridge. Refuse an image that
+# contains the package receipt but lacks the actual VA-API driver.
+if [[ $architecture == aarch64 ]]; then
+  [[ -s "$root/usr/lib/dri/v4l2_request_drv_video.so" ]] || { echo 'Missing VXD VA-API bridge' >&2; exit 1; }
+fi
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
 # Native login needs seatd's socket and DRM/input device access (render: the
 # GPU, video: the hardware video decoder, also over SSH); wheel
@@ -99,7 +104,8 @@ usermod --root "$root" --append --groups seat,video,input greeter
 cp -a --no-preserve=ownership "$desktop/payload/." "$root/"
 chown -R 1000:1000 "$root/home/tablet"
 install -d "$root/etc/systemd/system"
-# Suspend stays possible; orchard allows it per board. Hibernation never is.
+# Suspend is gated at runtime by the platform registry and kernel admission.
+# Hibernation never is supported.
 for unit in hibernate hybrid-sleep suspend-then-hibernate; do
   ln -s /dev/null "$root/etc/systemd/system/$unit.target"
 done
