@@ -19,7 +19,13 @@ packages=(base-devel wayland libxkbcommon pango scdoc pkgconf patch python pytho
   # (systemd is in the base).
   meson ninja glslang vulkan-headers xorg-xwayland wayland-protocols
   libdisplay-info libdrm libglvnd libinput lcms2 libliftoff pixman seatd vulkan-icd-loader mesa hwdata
-  xcb-util-errors xcb-util-renderutil xcb-util-wm)
+  xcb-util-errors xcb-util-renderutil xcb-util-wm
+  # vulkan-powervr-orchard (packages/vulkan-powervr-orchard): the Mesa fork's Vulkan
+  # driver; LLVM, Clang and libclc compile its internal shaders at build time.
+  bison flex expat zlib zstd libelf spirv-tools python-mako python-yaml python-packaging python-ply
+  llvm clang libclc spirv-llvm-translator
+  # libva-v4l2-request (packages/libva-v4l2-request)
+  libva)
 pacman-download -Sy --noconfirm --needed "${packages[@]}"
 pacman -S --noconfirm --needed "${packages[@]}"
 pacman -Sc --noconfirm

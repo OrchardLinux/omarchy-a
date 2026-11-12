@@ -1,0 +1,11 @@
+{
+  "system.loggingOut": "Logging out",
+  "system.logoutFailed": "Logout failed",
+  "system.logoutRetry": "Could not complete logout. Please try again.",
+  "system.rebootFailed": "Reboot failed",
+  "system.rebootRetry": "Could not complete reboot. Please try again.",
+  "system.rebooting": "Rebooting",
+  "system.shutdownFailed": "Shutdown failed",
+  "system.shutdownRetry": "Could not complete shutdown. Please try again.",
+  "system.shuttingDown": "Shutting down"
+}

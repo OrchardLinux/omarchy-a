@@ -81,7 +81,12 @@ class PairingPackagingTests(unittest.TestCase):
             bindings = tree.findall("./keyboard/keybind[@key='%s']" % key)
             self.assertEqual(len(bindings), 1)
             self.assertEqual(bindings[0].get('onRelease'), 'yes')
-            self.assertEqual(bindings[0].find('action').get('command'), command)
+            if key == 'XF86HomePage':
+                # The dock, unless the press was part of Home + Power (a screenshot).
+                self.assertEqual(bindings[0].find('action').get('command'), 'omarchy-home-button')
+                self.assertIn(command, (PROJECT / 'desktop/shell/bin/omarchy-home-button').read_text())
+            else:
+                self.assertEqual(bindings[0].find('action').get('command'), command)
         for key in ('XF86AudioRaiseVolume', 'XF86AudioLowerVolume'):
             self.assertIsNone(tree.find("./keyboard/keybind[@key='%s']" % key).get('onRelease'))
 
@@ -100,14 +105,18 @@ class PairingPackagingTests(unittest.TestCase):
             output = root / 'component'
             output.mkdir()
             names = ('labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
-                     'packages.lock', 'compiler.txt', 'version.txt')
+                     '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
+                     '0004-overview.patch', 'packages.lock', 'compiler.txt', 'version.txt')
             digests = {}
             for name in names:
                 data = ('fixture ' + name).encode()
                 (output / name).write_bytes(data)
                 digests[name] = hashlib.sha256(data).hexdigest()
             pin = {'version': 'test', 'sha256': digests['source.tar.gz'],
-                   'patch_sha256': digests['0001-cancel-super-tap-on-pointer.patch']}
+                   'patch_sha256': digests['0001-cancel-super-tap-on-pointer.patch'],
+                   'edge_patch_sha256': digests['0002-bottom-edge-swipe.patch'],
+                   'transitions_patch_sha256': digests['0003-session-transitions.patch'],
+                   'overview_patch_sha256': digests['0004-overview.patch']}
             source = root / 'desktop/labwc'
             source.mkdir(parents=True)
             (source / 'source.json').write_text(json.dumps(pin))

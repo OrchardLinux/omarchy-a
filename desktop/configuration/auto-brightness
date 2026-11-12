@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Ambient-light auto-brightness for omarchy-a.
 
-Ported from linux-a9's tested ALS curve, smoothing, hysteresis, ramp and manual
-pause policy. Reads generic IIO lux or iio-sensor-proxy; no board calibration
+Uses the ALS curve, smoothing, hysteresis, ramp and manual pause policy tested
+on the iPad 5. Reads generic IIO lux or iio-sensor-proxy; no board calibration
 is embedded. Off by default. omarchy-auto-brightness on|off|toggle|enabled|status
 controls it; --list and --probe [seconds] diagnose without backlight writes.
 Configuration: ~/.config/omarchy/als-brightness.conf (same keys as the port).
@@ -34,7 +34,7 @@ RAMP_TICK = 1.0 / 30  # loop period while a ramp runs: small, frequent steps loo
 RAMP_GAMMA = 2.2  # ramp in perceived brightness (raw ~ perceived ** gamma), not raw PWM
 RAMP_MIN_SECS, RAMP_MAX_SECS = 0.3, 3.0
 HOLD_SETTLE = 1.0  # let the power daemon finish restoring brightness after wake
-# Owner tuning 2026-11-08: the linux-a9 curve read too dark on Orchard; lifted ~10-20 points at indoor levels.
+# Panel tuning: the initial brightness curve read too dark on Orchard; lifted ~10-20 points at indoor levels.
 DEFAULT_CURVE = "0:15, 5:25, 20:38, 80:58, 250:78, 700:94, 1500:100"
 DEFAULTS = {
     "enabled": False,

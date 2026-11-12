@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the keyboard, the Omafox package and the patched wlroots package from pinned source archives."""
+"""Build the keyboard and the Omafox, wlroots, GPU driver and video bridge packages from pinned sources."""
 import argparse
 import hashlib
 import json
@@ -15,6 +15,7 @@ from urllib.request import urlopen
 
 HERE = Path(__file__).resolve().parent
 IMAGE = 'localhost/omarchy-a-desktop-builder:arm64'
+BRIDGE_SOURCE = 'libva-v4l2_request-1.2-2-gcac6ece.tar.gz'
 
 
 def sha(path):
@@ -68,6 +69,15 @@ def main():
     wlroots = HERE / 'packages/wlroots0.20/PKGBUILD'
     if pins['wlroots']['sha256'] not in wlroots.read_text():
         parser.error('wlroots PKGBUILD and source pin differ')
+    gpu = HERE / 'packages/vulkan-powervr-orchard'
+    bridge = HERE / 'packages/libva-v4l2-request'
+    bridge_source = HERE / 'arm64/inputs' / BRIDGE_SOURCE
+    if args.architecture == 'aarch64':
+        if pins['mesa']['sha256'] not in (gpu / 'PKGBUILD').read_text():
+            parser.error('GPU driver PKGBUILD and source pin differ')
+        bridge_pin = json.loads((HERE / 'arm64/inputs.json').read_text())['libva_v4l2_request_source']
+        if sha(bridge_source) != bridge_pin or bridge_pin not in (bridge / 'PKGBUILD').read_text():
+            parser.error('Video bridge source, PKGBUILD and pin differ')
     image = builder(buildenv, args.architecture, args.builder_image)
     (HERE / '.work').mkdir(exist_ok=True)
     try:
@@ -82,10 +92,16 @@ def main():
             }
             if args.architecture == 'armv7h':
                 fetched['omacalc'] = fetch(pins['omacalc'], sources / 'omacalc-0.3.1.tar.gz')
+            else:
+                fetched['mesa'] = fetch(pins['mesa'], sources / f"mesa-{pins['mesa']['commit']}.tar.gz")
             print('Building keyboard and Omafox package...', flush=True)
             script = r'''
 set -euo pipefail
 test "$(uname -m)" = "$OMARCHY_MACHINE"
+# The package builds use the builder's own Python: in CI the job's virtual
+# environment comes first on PATH, and Mesa's build needs the system modules.
+unset VIRTUAL_ENV
+PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '/[.]venv/' | paste -sd: -)
 build=$(mktemp -d "$ORCHARD_TMP/desktop.XXXXXX")
 trap 'rm -rf "$build"' EXIT
 mkdir -p "$build/keyboard" "$build/omafox" "$build/result" "$ORCHARD_WORK/result"
@@ -97,6 +113,7 @@ if ! grep -q preferred_buffer_scale /usr/include/wayland-client-protocol.h; then
 fi
 tar -xzf "$ORCHARD_WORK/sources/wvkbd-v0.20.tar.gz" --strip-components=1 -C "$build/keyboard"
 patch --batch --fuzz=0 -d "$build/keyboard" -p1 < "$ORCHARD_RECIPE/keyboard/wvkbd-0.20.patch"
+python3 "$ORCHARD_RECIPE/keyboard/friendly-layout.py" "$build/keyboard"
 make -C "$build/keyboard" -j2 wvkbd-mobintl
 readelf -h "$build/keyboard/wvkbd-mobintl" >/dev/null
 cp "$build/keyboard/wvkbd-mobintl" "$ORCHARD_WORK/result/wvkbd-mobintl"
@@ -129,6 +146,23 @@ package="$build/result/omacalc-0.3.1-1-$OMARCHY_ARCH.pkg.tar.zst"
 bsdtar -xOf "$package" .PKGINFO | grep -x "arch = $OMARCHY_ARCH" >/dev/null
 cp "$package" "$ORCHARD_WORK/result/omacalc.pkg.tar.zst"
 '''
+            else:
+                script += r'''
+mkdir -p "$build/bridge" "$build/gpu"
+cp "$ORCHARD_RECIPE/packages/libva-v4l2-request/PKGBUILD" "$ORCHARD_RECIPE/arm64/inputs/''' + BRIDGE_SOURCE + r'''" "$build/bridge/"
+cd "$build/bridge"
+PKGDEST="$build/result" PKGEXT='.pkg.tar.zst' makepkg --noconfirm --nodeps
+package=$(ls "$build"/result/libva-v4l2-request-*-$OMARCHY_ARCH.pkg.tar.zst)
+bsdtar -tf "$package" usr/lib/dri/v4l2_request_drv_video.so >/dev/null
+cp "$package" "$ORCHARD_WORK/result/libva-v4l2-request.pkg.tar.zst"
+echo 'Building the GPU Vulkan driver (several minutes)...'
+cp "$ORCHARD_RECIPE/packages/vulkan-powervr-orchard/PKGBUILD" "$ORCHARD_WORK"/sources/mesa-*.tar.gz "$build/gpu/"
+cd "$build/gpu"
+PKGDEST="$build/result" PKGEXT='.pkg.tar.zst' makepkg --noconfirm --nodeps > "$build/gpu.log" 2>&1 || { tail -60 "$build/gpu.log"; exit 1; }
+package=$(ls "$build"/result/vulkan-powervr-orchard-*-$OMARCHY_ARCH.pkg.tar.zst)
+bsdtar -tf "$package" usr/lib/libvulkan_powervr_mesa.so usr/share/vulkan/icd.d/powervr_mesa_icd.json >/dev/null
+cp "$package" "$ORCHARD_WORK/result/vulkan-powervr-orchard.pkg.tar.zst"
+'''
             buildenv.run(image, ['bash', '-euc', script],
                          [(work, '/work', False), (HERE, '/recipe', True)],
                          env={'OMARCHY_MACHINE': machine(args.architecture), 'OMARCHY_ARCH': args.architecture},
@@ -138,16 +172,23 @@ cp "$package" "$ORCHARD_WORK/result/omacalc.pkg.tar.zst"
             names = ['wvkbd-mobintl', 'omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz']
             if args.architecture == 'armv7h':
                 names.append('omacalc.pkg.tar.zst')
+            else:
+                names += ['vulkan-powervr-orchard.pkg.tar.zst', 'libva-v4l2-request.pkg.tar.zst']
             for name in names[1:]:
                 check_package(built / name, args.architecture)
             files = {name: sha(built / name) for name in names}
             meta = {'architecture': args.architecture, 'source_urls': fetched,
                     'source_sha256': {name: pins[name]['sha256'] for name in pins},
                     'patch_sha256': sha(HERE / 'keyboard/wvkbd-0.20.patch'),
+                    'keyboard_layout_sha256': {name: sha(HERE / 'keyboard' / name) for name in
+                                              ('friendly-layout.py', 'apply-shift.py', 'orchard-shift.h')},
                     'pkgbuild_sha256': sha(pkgbuild), 'wlroots_recipe_sha256': recipe_sha(HERE / 'packages/wlroots0.20'),
                     'files': files}
             if args.architecture == 'armv7h':
                 meta['omacalc_recipe_sha256'] = recipe_sha(HERE / 'packages/omacalc')
+            else:
+                meta['gpu_recipe_sha256'] = recipe_sha(gpu)
+                meta['video_bridge_recipe_sha256'] = recipe_sha(bridge)
             (built / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')
             output.parent.mkdir(parents=True, exist_ok=True)
             os.replace(built, output)

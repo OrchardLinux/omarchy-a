@@ -1,0 +1,45 @@
+# omarchy-a: the Vulkan driver for the Apple A10 GPU (iPad 6, iPad 7) from
+# OrchardLinux's Mesa fork, and only that driver: EGL, GBM and Zink stay
+# Arch's own Mesa and draw through it. The kernel side is orchard's.
+
+pkgname=vulkan-powervr-orchard
+_commit=7446eebebec5722cbdc6d3670e834c08d6ea9607
+pkgver=27.0.0.dev.7446eebebec
+pkgrel=1
+pkgdesc="Vulkan driver for the Apple A10 GPU, from the OrchardLinux Mesa fork"
+url="https://github.com/OrchardLinux/mesa"
+license=('MIT')
+arch=('aarch64')
+options=('!lto' '!debug')
+depends=('expat' 'gcc-libs' 'glibc' 'libdisplay-info' 'libdrm' 'spirv-tools' 'systemd-libs' 'vulkan-icd-loader'
+         'wayland' 'zlib' 'zstd')
+# LLVM, Clang and libclc compile the driver's internal shaders at build time only.
+makedepends=('bison' 'clang' 'flex' 'glslang' 'libclc' 'libdisplay-info' 'libelf' 'libxkbcommon' 'llvm' 'meson'
+             'ninja' 'python-mako' 'python-packaging' 'python-ply' 'python-yaml' 'spirv-llvm-translator'
+             'spirv-tools' 'vulkan-headers' 'wayland-protocols')
+provides=('vulkan-driver')
+conflicts=('vulkan-powervr')
+source=("mesa-${_commit}.tar.gz::${url}/archive/${_commit}.tar.gz")
+sha256sums=('7aa55f09aae7be33399136311a5b507c0846fb777dc6a1d36ded66d7546480f2')
+
+build() {
+	# Not arch-meson: its --auto-features=enabled turns on Mesa features that
+	# need X11 and the rest of Mesa.
+	meson setup "mesa-${_commit}" build --prefix=/usr --buildtype=debugoptimized \
+		--wrap-mode=nodownload -Db_lto=false \
+		-Dplatforms=wayland -Dvulkan-drivers=imagination -Dgallium-drivers= \
+		-Dopengl=false -Degl=disabled -Dgbm=disabled -Dglx=disabled -Dgles1=disabled \
+		-Dgles2=disabled -Dllvm=enabled -Dvideo-codecs= -Dtools= -Dvulkan-layers=
+	ninja -C build
+}
+
+package() {
+	install -Dm 755 build/src/imagination/vulkan/libvulkan_powervr_mesa.so \
+		"${pkgdir}/usr/lib/libvulkan_powervr_mesa.so"
+	# The build tree's manifest names the library by its build path.
+	sed 's#"library_path": "[^"]*"#"library_path": "/usr/lib/libvulkan_powervr_mesa.so"#' \
+		build/src/imagination/vulkan/powervr_mesa_icd.*.json > powervr_mesa_icd.json
+	grep -q '"library_path": "/usr/lib/libvulkan_powervr_mesa.so"' powervr_mesa_icd.json
+	install -Dm 644 powervr_mesa_icd.json "${pkgdir}/usr/share/vulkan/icd.d/powervr_mesa_icd.json"
+	install -Dm 644 "mesa-${_commit}/docs/license.rst" "${pkgdir}/usr/share/licenses/${pkgname}/license.rst"
+}

@@ -364,6 +364,18 @@ Item {
       property int readyFrames: 0
       readonly property bool backgroundReady: base.ready && readyFrames >= 2
 
+      // Orchard: a compositor that holds a session's first picture until the
+      // shell has drawn (Labwc's startup cover) names a file to create once
+      // the wallpaper is on screen.
+      // Once: the compositor removes the file after its fade.
+      readonly property string startupReadyFile: Quickshell.env("LABWC_STARTUP_READY") || ""
+      property bool startupSignalled: false
+      onBackgroundReadyChanged: {
+        if (!backgroundReady || startupSignalled || startupReadyFile === "") return
+        startupSignalled = true
+        Quickshell.execDetached(["touch", startupReadyFile])
+      }
+
       FrameAnimation {
         running: base.ready && panel.readyFrames < 2
         onTriggered: panel.readyFrames += 1
@@ -379,8 +391,17 @@ Item {
       // decoded at native size first, and a wallpaper smaller than the screen
       // is decoded at its own size rather than scaled up to cover the screen.
       readonly property bool sized: width > 0 && height > 0
-      readonly property int decodeWidth: sized ? Math.ceil(width * screen.devicePixelRatio) : 0
-      readonly property int decodeHeight: sized ? Math.ceil(height * screen.devicePixelRatio) : 0
+      // On a tablet, swapping width/height must not clear and asynchronously
+      // decode the wallpaper again. Keep one orientation-independent decode.
+      // A high-water mark also ignores intermediate geometry during rotation.
+      readonly property bool tabletRotation: Quickshell.env("OMARCHY_TOUCH_MODE") === "1"
+      readonly property int requestedDecodeEdge: sized ? Math.ceil(Math.max(width, height) * screen.devicePixelRatio) : 0
+      property int stableDecodeEdge: 0
+      onRequestedDecodeEdgeChanged: {
+        if (requestedDecodeEdge > stableDecodeEdge) stableDecodeEdge = requestedDecodeEdge
+      }
+      readonly property int decodeWidth: sized ? (tabletRotation ? Math.max(stableDecodeEdge, requestedDecodeEdge) : Math.ceil(width * screen.devicePixelRatio)) : 0
+      readonly property int decodeHeight: sized ? (tabletRotation ? Math.max(stableDecodeEdge, requestedDecodeEdge) : Math.ceil(height * screen.devicePixelRatio)) : 0
 
       function decodeSize(path) {
         if (!sized || !path) return Qt.size(0, 0)

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy.flash",
+  "name": "Capture flash",
+  "version": "1.0.0",
+  "description": "A white flash over the whole screen when a screenshot is taken.",
+  "kinds": [
+    "panel"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "panel": "Flash.qml"
+  }
+}
