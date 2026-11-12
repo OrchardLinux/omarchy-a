@@ -253,6 +253,7 @@ def streams_running(dump):
 
 
 EV_KEY, KEY_POWER, KEY_HOMEPAGE = 1, 116, 172
+EV_SW, SW_MACHINE_COVER = 5, 0x10
 INPUT_EVENT = struct.Struct('qqHHi')
 EVIOCSCLOCKID = 0x400445a0
 SOCKET = '/run/omarchy-powerd.sock'
@@ -274,6 +275,46 @@ def key_edges(data):
         if kind == EV_KEY and value in (0, 1) and code in (KEY_POWER, KEY_HOMEPAGE):
             edges.append(('power' if code == KEY_POWER else 'home', value == 1, sec + usec / 1e6))
     return edges
+
+
+def cover_edges(data):
+    """(closed, kernel seconds) of every Smart Cover switch change in evdev bytes."""
+    return [(value == 1, sec + usec / 1e6) for sec, usec, kind, code, value in INPUT_EVENT.iter_unpack(data)
+            if kind == EV_SW and code == SW_MACHINE_COVER and value in (0, 1)]
+
+
+def reports_cover(capabilities_sw):
+    """Whether an input device's sysfs capabilities/sw bitmap includes SW_MACHINE_COVER."""
+    words = capabilities_sw.split()
+    if not words:
+        return False
+    # Hex words, most significant first; the last word holds bits 0-63 (or 0-31).
+    bits = int(words[-1], 16)
+    return bool(bits >> SW_MACHINE_COVER & 1)
+
+
+class Cover:
+    """The Smart Cover from its switches: closing locks, opening wakes.
+
+    An iPad has two hall sensors, each its own input device. The cover is
+    closed while any of them reports closed; the machine sees one 'lock'
+    when it closes and one 'wake' when it opens again.
+    """
+
+    def __init__(self):
+        self.closed = {}
+
+    def change(self, source, closed):
+        """The machine event of one switch report ('lock', 'wake'), or None."""
+        before = any(self.closed.values())
+        self.closed[source] = closed
+        after = any(self.closed.values())
+        if after == before:
+            return None
+        return 'lock' if after else 'wake'
+
+    def forget(self, source):
+        self.closed.pop(source, None)
 
 
 class Buttons:
@@ -374,6 +415,8 @@ class Daemon:
     def __init__(self):
         self.machine = Machine()
         self.buttons = Buttons()
+        self.cover = Cover()
+        self.covers = {}
         self.events = queue.Queue()
         self.wake_read, self.wake_write = os.pipe()
         os.set_blocking(self.wake_read, False)
@@ -438,9 +481,20 @@ class Daemon:
         for device in Path('/sys/class/input').glob('event*'):
             try:
                 name = (device / 'device/name').read_text().strip()
+                sw = (device / 'device/capabilities/sw').read_text()
             except OSError:
                 continue
             path = f'/dev/input/{device.name}'
+            if reports_cover(sw) and path not in self.covers.values():
+                try:
+                    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+                    fcntl.ioctl(fd, EVIOCSCLOCKID, struct.pack('i', time.CLOCK_MONOTONIC))
+                except OSError as error:
+                    log(f'cannot read {path}: {error}')
+                    continue
+                self.covers[fd] = path
+                log(f'cover: {path}')
+                continue
             if name != 'gpio-keys' or path in self.keys.values():
                 continue
             try:
@@ -815,7 +869,7 @@ class Daemon:
             threading.Thread(target=worker, daemon=True).start()
         log('ready: ON')
         while not self.stopping:
-            watched = [*self.keys, server, self.wake_read, self.monitor.stdout]
+            watched = [*self.keys, *self.covers, server, self.wake_read, self.monitor.stdout]
             if self.uevents:
                 watched.append(self.uevents)
             readable, _, _ = select.select(watched, [], [], self.timeout())
@@ -839,6 +893,18 @@ class Daemon:
                     log(f'keys lost: {error}')
                     os.close(fd)
                     del self.keys[fd]
+            for fd in [fd for fd in readable if fd in self.covers]:
+                try:
+                    for closed, when in cover_edges(os.read(fd, INPUT_EVENT.size * 64)):
+                        name = self.cover.change(fd, closed)
+                        if name:
+                            log(f't={when:.6f} cover {"closed" if closed else "opened"}')
+                            self.feed(name, when)
+                except OSError as error:
+                    log(f'cover lost: {error}')
+                    os.close(fd)
+                    del self.covers[fd]
+                    self.cover.forget(fd)
             if self.wake_read in readable:
                 os.read(self.wake_read, 512)
                 while not self.events.empty():

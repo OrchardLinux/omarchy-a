@@ -318,6 +318,41 @@ class Parsing(unittest.TestCase):
         self.assertEqual(powerd.INPUT_EVENT.size, 24)
 
 
+class SmartCover(unittest.TestCase):
+    def test_cover_edges_only_the_cover_switch(self):
+        event = powerd.INPUT_EVENT.pack
+        data = (event(5, 0, 5, 0x10, 1) + event(5, 0, 0, 0, 0) + event(6, 500000, 5, 0x10, 0) +
+                event(7, 0, 5, 0x00, 1) + event(8, 0, 1, 116, 1))
+        self.assertEqual(powerd.cover_edges(data), [(True, 5.0), (False, 6.5)])
+
+    def test_a_device_reports_the_cover_from_its_switch_bitmap(self):
+        self.assertTrue(powerd.reports_cover('10000\n'))
+        self.assertTrue(powerd.reports_cover('0 10001\n'))
+        self.assertFalse(powerd.reports_cover('1\n'))
+        self.assertFalse(powerd.reports_cover('0\n'))
+        self.assertFalse(powerd.reports_cover(''))
+
+    def test_closing_locks_once_and_opening_wakes_once_across_both_sensors(self):
+        cover = powerd.Cover()
+        self.assertEqual(cover.change('a', True), 'lock')
+        self.assertIsNone(cover.change('b', True))
+        self.assertIsNone(cover.change('a', False))
+        self.assertEqual(cover.change('b', False), 'wake')
+        self.assertIsNone(cover.change('b', False))
+
+    def test_a_lost_sensor_does_not_keep_the_cover_closed(self):
+        cover = powerd.Cover()
+        cover.change('a', True)
+        cover.forget('a')
+        self.assertEqual(cover.change('b', True), 'lock')
+
+    def test_closing_darkens_and_locks_and_opening_lights(self):
+        machine = powerd.Machine()
+        self.assertEqual(machine.handle('lock'), ['dark', 'lock', 'arm-settle'])
+        self.assertEqual(machine.handle('wake'), ['cancel-settle', 'light', 'woke'])
+        self.assertEqual(machine.state, powerd.ON)
+
+
 class Buttons(unittest.TestCase):
     def events(self, edges, lit=True):
         buttons = powerd.Buttons()
