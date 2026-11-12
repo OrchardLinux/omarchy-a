@@ -4,11 +4,10 @@
   boot/build-artwork --output DIR [--logo-header omarchy-logo.h]
 
 DIR/splash is orchard's boot splash (docs/boot-contract.md), the green mark
-at 480 px, which m1n1 paints for an installed boot entry. DIR/logo.bin is
-m1n1's custom logo payload (m1n1_logo_256128: RGBA on black, 256x256 then
-128x128, the format's largest), which the recovery's assembly puts directly
-after m1n1 (orchard's assemble.py --logo). Needs rsvg-convert and
-ImageMagick; no m1n1 build.
+at 480 px, which m1n1 paints for an installed boot entry. DIR/logo.bin, the
+installer's picture after m1n1, is the same splash: orchard's m1n1 (patch
+0014) draws it at its own size, so install and boot show the same mark.
+Needs rsvg-convert and ImageMagick (generate-logo.py); no m1n1 build.
 """
 import argparse
 from pathlib import Path
@@ -17,20 +16,6 @@ import sys
 import tempfile
 
 HERE = Path(__file__).resolve().parent
-LOGO_MAGIC = b'm1n1_logo_256128'
-GREEN = (0x9e, 0xce, 0x6a)
-
-
-def rgba(size):
-    """The mark at SIZE, green on black, with the same 50% alpha cut as generate-logo.py."""
-    png = subprocess.run(['rsvg-convert', '-w', str(size), '-h', str(size), str(HERE / 'artwork/omarchy-logo.svg')],
-                         check=True, capture_output=True).stdout
-    alpha = subprocess.run(['magick', 'png:-', '-alpha', 'extract', '-depth', '8', 'gray:-'], input=png,
-                           check=True, capture_output=True).stdout
-    if len(alpha) != size * size:
-        raise ValueError(f'Unexpected {size}x{size} raster size')
-    on, off = bytes((*GREEN, 0xff)), bytes((0, 0, 0, 0xff))
-    return b''.join(on if value >= 128 else off for value in alpha)
 
 
 def main():
@@ -48,7 +33,7 @@ def main():
                             '--output', str(header)], check=True)
         subprocess.run([sys.executable, str(HERE / 'splash.py'), str(header), str(args.output / 'splash')],
                        check=True)
-    (args.output / 'logo.bin').write_bytes(LOGO_MAGIC + rgba(256) + rgba(128))
+    (args.output / 'logo.bin').write_bytes((args.output / 'splash').read_bytes())
     print(f'Built {args.output}/splash and {args.output}/logo.bin')
 
 

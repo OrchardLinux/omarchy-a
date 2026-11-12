@@ -11,15 +11,37 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
-## [Unreleased]
+## [0.3.0] - 2026-11-12
 
 ### Highlights
 
-The screen rotates with the iPad, and landscape no longer lags. Volume keys
-work, with an on-screen display.
+Full GPU acceleration on the iPad 6 and 7: the desktop and apps run on the
+GPU, and Firefox plays YouTube with hardware video. A proper tablet experience,
+with an app switcher that shows every open window, Omactivity for what's
+running, and Files with a touch mode. Installing takes under two minutes
+instead of four. More supported devices, the screen rotates with the iPad, and
+login and the lock screen flow smoothly.
 
 ### Desktop
 
+- On the iPad 6 and 7 the desktop and apps run on the GPU, and Firefox plays
+  YouTube with hardware video decoding.
+- Files: Omarchy's file manager, now with a touch mode, replaces Dolphin on
+  64-bit boards.
+- Qt apps (Files, Omactivity, Omacalc) draw on the GPU on the GPU desktop.
+- App switcher: four fingers up, Home pressed twice or Super+Tab show every
+  open window side by side, minimised ones included. Tap one to bring it back,
+  flick it up to close it.
+- The iPad 7 panel gets scale 2 at login in both orientations. The scale script only matched the iPad 6 modes, so 1620×2160 stayed at scale 1.
+- A five-row on-screen keyboard with punctuation on the main layer, double-tap
+  Shift for Caps Lock, immediate key highlight, and a slide in and out.
+- Swipe up from the bottom edge to open the keyboard.
+- Rotation lock in the Display menu; rotation no longer makes the bar and
+  wallpaper flicker, crossfades, and a quick half turn rotates once.
+- Idle screen-off waits eight seconds before locking, so a quick wake needs no
+  PIN; screen off and on fade.
+- Stay Awake in the Display menu, with an icon in the bar while it is on.
+- Login and logout go from one picture to the next without a black screen.
 - Fix the System menu’s Shutdown and Reboot actions.
 - Automatic rotation on the iPad 6 through iio-sensor-proxy, using orchard's
   in-kernel accelerometer driver; rotation waits for the device to settle, and
@@ -28,8 +50,18 @@ work, with an on-screen display.
 - Volume starts quiet; the volume keys step in 5% steps and show the shell's
   on-screen display; the mixer is in the bar.
 - No leftover boot splash between the greeter and the desktop.
-- Power locks and darkens the screen at once; the iPad sleeps 10 s later. One
-  press wakes it, in well under a second, and Home wakes it too.
+- Power locks and darkens the screen when released; held, alone or with Home
+  (DFU, restart), it does nothing. The iPad sleeps 10 s later. One press wakes
+  it, in well under a second, and Home wakes it too.
+- Home and Power together take a screenshot, with a flash; it goes to
+  ~/Pictures/Screenshots.
+- Omactivity, a touch task manager: in the menu and with Super+Shift+T.
+- A long press on a saved Wi-Fi network offers Forget and Change passphrase.
+- Wi-Fi connects to 5 GHz networks right after a boot.
+- The speakers are called "Speakers"; tapping a bar icon no longer flashes the
+  Stay Awake mug; the first boot starts at full brightness.
+- Omacalc comes from Omarchy's package repository and updates with the system.
+- The installer shows Omarchy's mark at the size it boots with.
 - Plugging in lights the screen.
 - The greeter and the lock screen go dark after 30 s without input, the desktop
   after 5 minutes.

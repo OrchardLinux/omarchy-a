@@ -83,13 +83,26 @@ ShellRoot {
     }
 
     PanelWindow {
+        id: window
         anchors { top: true; bottom: true; left: true; right: true }
         color: "transparent"
         WlrLayershell.namespace: "orchard-greeter"
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 
+        // Labwc holds the previous session's last picture until this file
+        // exists (handoverDirectory): the pad appears with its wallpaper drawn.
+        property int drawnFrames: 0
+        FrameAnimation {
+            running: view.backgroundDrawn && window.drawnFrames < 3
+            onTriggered: {
+                window.drawnFrames += 1
+                var file = Quickshell.env("LABWC_STARTUP_READY") || ""
+                if (window.drawnFrames === 3 && file !== "") Quickshell.execDetached(["touch", file])
+            }
+        }
         Lock.LockView {
+            id: view
             anchors.fill: parent
             backgroundPath: root.themeDir + "/background"
             passwordText: root.pin

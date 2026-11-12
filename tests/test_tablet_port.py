@@ -25,9 +25,14 @@ class TabletPort(unittest.TestCase):
 
 
 
-
-
-
+    def test_home_power_overlap_uses_upstream_screenshot_buttons(self):
+        p=load('power', 'system/overlay/usr/libexec/omarchy-powerd')
+        for edges in ((('power', True), ('home', True), ('power', False), ('home', False)),
+                      (('home', True), ('power', True), ('home', False), ('power', False))):
+            buttons=p.Buttons()
+            result=[buttons.edge(name, down, 10+i/10, True) for i,(name,down) in enumerate(edges)]
+            self.assertEqual([x for x in result if x], ['home', 'screenshot'])
+            self.assertTrue(buttons.home_in_combo)
 
 
 if __name__=='__main__': unittest.main()

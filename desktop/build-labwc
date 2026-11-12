@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build pinned Labwc with a narrow standalone-Super pointer-cancellation fix."""
+"""Build pinned Labwc with tablet input fixes, session transitions and the overview."""
 import argparse
 import hashlib
 import io
@@ -33,7 +33,12 @@ def main():
     image = builder(buildenv, args.architecture, args.builder_image, labwc=True)
     pin = json.loads((HERE / 'labwc/source.json').read_text())
     patch = HERE / 'labwc/0001-cancel-super-tap-on-pointer.patch'
-    if sha(patch) != pin['patch_sha256']:
+    edge_patch = HERE / 'labwc/0002-bottom-edge-swipe.patch'
+    transitions_patch = HERE / 'labwc/0003-session-transitions.patch'
+    overview_patch = HERE / 'labwc/0004-overview.patch'
+    if (sha(patch) != pin['patch_sha256'] or sha(edge_patch) != pin['edge_patch_sha256']
+            or sha(transitions_patch) != pin['transitions_patch_sha256']
+            or sha(overview_patch) != pin['overview_patch_sha256']):
         parser.error('Labwc patch differs from pin')
     data = args.archive.read_bytes() if args.archive else urllib.request.urlopen(pin['url'], timeout=30).read()
     if hashlib.sha256(data).hexdigest() != pin['sha256']:
@@ -55,7 +60,8 @@ def main():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(archive.extractfile(entry).read())
                 target.chmod(entry.mode & 0o777)
-        subprocess.run(['patch', '-p1', '-i', str(patch.resolve())], cwd=source, check=True)
+        for item in (patch, edge_patch, transitions_patch, overview_patch):
+            subprocess.run(['patch', '--batch', '--fuzz=0', '-p1', '-i', str(item.resolve())], cwd=source, check=True)
         recipe = '''
 set -eu
 test "$(uname -m)" = "$OMARCHY_MACHINE"
@@ -71,7 +77,10 @@ cc --version > "$ORCHARD_OUTPUT/compiler.txt"
                      env={'OMARCHY_MACHINE': machine(args.architecture)}, arch=podman_arch(args.architecture))
         check_elf(output / 'labwc', args.architecture, 'Labwc')
         shutil.copyfile(source / 'LICENSE', output / 'LICENSE')
-        shutil.copyfile(patch, output / '0001-cancel-super-tap-on-pointer.patch')
+        shutil.copyfile(patch, output / patch.name)
+        shutil.copyfile(edge_patch, output / edge_patch.name)
+        shutil.copyfile(transitions_patch, output / transitions_patch.name)
+        shutil.copyfile(overview_patch, output / overview_patch.name)
         (output / 'source.tar.gz').write_bytes(data)
         record = {'schema': 1, 'architecture': args.architecture, 'source': pin, 'compiler_image': image_id,
                   'build_options': ['release', 'nofallback', 'xwayland=enabled', 'nls=enabled', 'labnag=disabled'],

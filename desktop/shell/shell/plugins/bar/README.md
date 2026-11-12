@@ -50,6 +50,20 @@ Example `shell.json` (bar subtree only shown):
 
 `center` is a box in the middle of the bar whose modules are centered as one group on the exact horizontal/vertical center. `centerBegin` and `centerEnd` hang off the box's two edges and move out as it grows; with the box empty they meet in the middle of the bar.
 
+## Narrow bars
+
+A bar shorter than 480 logical pixels, such as a phone's in portrait, has no room for a tablet's widgets beside a centered clock. It shows the same layout with each entry's `narrow` setting applied: `"narrow": false` leaves the widget out, and `"narrow": "left"` (or any other section) moves it to the end of that section. An entry without the setting stays where it is. Widgets can read `bar.narrow` to draw a smaller form.
+
+```json
+"right": [
+  { "id": "ipadlinux.keyboard", "narrow": "left" },
+  { "id": "omarchy.audio", "narrow": false },
+  { "id": "omarchy.power" }
+]
+```
+
+At the default sizes a slot is 40 pixels, the battery with its percentage 80, and a 375 pixel bar with a centered clock has room for about three slots on either side.
+
 ## Module catalogue
 
 ### First-party interactive widgets
@@ -173,6 +187,7 @@ Widgets receive `bar` (the shell root), `moduleName` (string), and `settings` (o
 - `bar.fontFamily` — current monospace family
 - `bar.position` — `"top" | "bottom" | "left" | "right"`
 - `bar.vertical` — boolean shortcut
+- `bar.narrow` — true on a bar shorter than 480 logical pixels (see Narrow bars)
 - `bar.barSize` — 26 horizontal / 28 vertical
 - `bar.run(command)` — fire-and-forget bash exec (quote arguments with `Util.shellQuote` from `qs.Commons`)
 - `bar.showTooltip(target, text)` / `bar.hideTooltip(target)` — shared tooltip popup

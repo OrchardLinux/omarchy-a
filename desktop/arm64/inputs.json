@@ -2,7 +2,11 @@
   "architecture": "aarch64",
   "omafox_xpi": "8a4f28162b6fd5098ff2e6e671d1bcbe69eb1606b277f4822bc1aaf14e76dec1",
   "omafox_xpi_url": "https://addons.mozilla.org/firefox/downloads/file/4985428/omafox-1.0.3.xpi",
-  "omacalc_package": "165c8fef7323db43ca47c5b933de6382c1020b4962c77b9e9d52e2be697b1618",
-  "omacalc_url": "https://pkgs.omarchy.org/stable/aarch64/omacalc-0.3.1-1-aarch64.pkg.tar.zst",
-  "omacalc_signer": "40DFB630FF42BCFFB047046CF0134EE680CAC571"
+  "libva_v4l2_request_source": "da289b5af9ef4a0090cbbb860f609c5d6cbde21a5fe9845f68f52089d01fdc08",
+  "libva_v4l2_request_url": "https://xff.cz/git/libva-v4l2_request",
+  "libva_v4l2_request_commit": "cac6ece0e23ac1f944dd3af266680aff0c3184df",
+  "omactivity_package": "287e85a4637dbcfe3d4641bc5485d19b7e4616ade4462775413f9e8ff0101298",
+  "omactivity_url": "https://github.com/OrchardLinux/omactivity/releases/download/v0.1.0/omactivity-0.1.0-1-aarch64.pkg.tar.zst",
+  "folio_package": "ca9cf99dac669130a6fdbc61cdfca9c8a210a5aebba0d6958929b7acb36cf8f6",
+  "folio_url": "https://github.com/OrchardLinux/folio/releases/download/a0.2.0-1/folio-touch-0.2.0-1-aarch64.pkg.tar.zst"
 }

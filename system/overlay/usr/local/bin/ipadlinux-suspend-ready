@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Read-only suspend policy probe; 0 permits a request, 1 refuses, 2 is usage.
+
+This never performs a suspend or reserves admission. The kernel remains the
+final authority at the actual transition. Public device data must first
+qualify suspend as working. Missing data/helper and all other states refuse.
+On J71t admission comes from the kernel's own query,
+/sys/power/suspend_ready ("ready", or
+"not-ready <who> <errno>"); PM callback presence, a loaded module and
+power/state's "freeze" are not proof of admission.
+"""
+from pathlib import Path
+import sys
+import subprocess
+
+COMPATIBLE = Path('/sys/firmware/devicetree/base/compatible')
+READINESS = Path('/sys/power/suspend_ready')
+
+
+def admission():
+    """The kernel's readiness answer; None when it reports ready."""
+    try:
+        report = READINESS.read_text(encoding='ascii').strip()
+    except FileNotFoundError:
+        return ('J71t kernel has no suspend readiness query (/sys/power/suspend_ready); '
+                'GPU/VXD/SEP admission and platform prechecks cannot be verified')
+    except (OSError, UnicodeDecodeError) as error:
+        return f'cannot read kernel suspend readiness: {error}'
+    if report == 'ready':
+        return None
+    words = report.split()
+    if len(words) == 3 and words[0] == 'not-ready':
+        return f'kernel admission refused by {words[1]} ({words[2]})'
+    return f'malformed kernel suspend readiness: {report!r}'
+
+
+def refusal(compatible):
+    if not compatible or not compatible.endswith(b'\0'):
+        return 'cannot identify the board from a valid DeviceTree compatible list'
+    if b'apple,j71t' in compatible.split(b'\0'):
+        # The kernel runs every admission provider's check and every early
+        # precheck without reserving; a later suspend still checks again.
+        return admission()
+    # Other qualified boards keep logind + the kernel's existing suspend path.
+    return None
+
+
+def qualification():
+    """Public platform data, never inferred from kernel admission."""
+    try:
+        result = subprocess.run(['/usr/lib/orchard/device-feature', 'suspend', 'working'],
+                                capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError) as error:
+        return f'cannot verify suspend qualification: {error}'
+    if result.returncode:
+        return 'public device registry does not qualify suspend as working'
+    return None
+
+
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv:
+        print('Usage: ipadlinux-suspend-ready', file=sys.stderr)
+        return 2
+    try:
+        reason = qualification()
+        if reason is None:
+            reason = refusal(COMPATIBLE.read_bytes())
+    except OSError as error:
+        reason = f'cannot read board identity: {error}'
+    if reason:
+        print(f'Suspend unavailable: {reason}', file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

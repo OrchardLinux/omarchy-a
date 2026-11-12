@@ -127,6 +127,8 @@ class DesktopArchitecture(unittest.TestCase):
             built = {'architecture': 'armv7h', 'source_sha256': {name: value['sha256'] for name, value in pins.items()},
                      'source_urls': {name: value['urls'][0] for name, value in pins.items()},
                      'patch_sha256': desktop.sha(PROJECT / 'desktop/keyboard/wvkbd-0.20.patch'),
+                     'keyboard_layout_sha256': {name: desktop.sha(PROJECT / 'desktop/keyboard' / name) for name in
+                                                ('friendly-layout.py', 'apply-shift.py', 'orchard-shift.h')},
                      'pkgbuild_sha256': desktop.sha(PROJECT / 'desktop/packages/omafox/PKGBUILD'),
                      'wlroots_recipe_sha256': desktop.recipe_sha(PROJECT / 'desktop/packages/wlroots0.20'),
                      'omacalc_recipe_sha256': desktop.recipe_sha(PROJECT / 'desktop/packages/omacalc'), 'files': files}

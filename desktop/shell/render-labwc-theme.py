@@ -88,4 +88,5 @@ snapping.overlay.edge.border.width: 2
 snapping.overlay.region.border.width: 2
 snapping.overlay.edge.border.color: {active},{colors['background']}
 snapping.overlay.region.border.color: {active},{colors['background']}
+overview.attention.color: {colors.get('yellow', '#e0af68')}
 """)

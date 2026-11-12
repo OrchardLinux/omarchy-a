@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# omarchy:summary=The iPad's Home button: open the app drawer, or the overview when pressed twice; close the overview; nothing if the press took a screenshot or woke the screen
+# omarchy:hidden=true
+
+# labwc runs this when Home comes up. omarchy-powerd saw the same press and
+# knows whether Home was pressed together with Power (a screenshot), or
+# woke a dark screen: in the grace before the lock the session is still
+# unlocked, so this binding runs, but the press was only the wake.
+answer=$(/usr/libexec/omarchy-powerctl home 2>&1)
+[[ $answer == combo || $answer == wake ]] && exit 0
+
+runtime="${XDG_RUNTIME_DIR:-/run/user/$UID}"
+stamp="$runtime/omarchy-home-press"
+
+# In the overview Home goes back to the desktop (omarchy-overview-changed
+# keeps the note). labwc leaves Home to this script even then, so that
+# Home + Power can take a screenshot of the overview.
+if [[ -e $runtime/omarchy-overview-open ]]; then
+  rm -f "$stamp"
+  exec labwc --overview
+fi
+
+# Two presses open the overview of all windows, and must not flash the app
+# drawer on the way. So one press waits a moment for a second: the drawer
+# opens only once it is certain that the press stays alone.
+now=$(date +%s%3N)
+last=$(cat "$stamp" 2>/dev/null)
+if [[ $last =~ ^[0-9]+$ ]] && (( now - last < 400 )); then
+  rm -f "$stamp"
+  exec labwc --overview
+fi
+echo "$now" >"$stamp"
+sleep 0.35
+# A second press has taken the stamp; an older, slower one may have left its own.
+[[ $(cat "$stamp" 2>/dev/null) == "$now" ]] || exit 0
+rm -f "$stamp"
+exec omarchy-shell omarchy.dock apps
