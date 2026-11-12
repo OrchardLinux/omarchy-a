@@ -46,6 +46,10 @@ def desktop_replacements():
     replacements[prefix + 'shell/plugins/panels/monitor/Panel.qml'] = (PROJECT / 'desktop/shell/shell/plugins/panels/monitor/Panel.qml').read_bytes()
     replacements[prefix + 'default/i18n/en/shell.json'] = (PROJECT / 'desktop/shell/default/i18n/en/shell.json').read_bytes()
     replacements[prefix + 'default/omarchy/omarchy-menu.jsonc'] = (PROJECT / 'desktop/shell/default/omarchy/omarchy-menu.jsonc').read_bytes()
+    replacements[prefix + 'bin/omarchy-menu-images'] = (PROJECT / 'desktop/shell/bin/omarchy-menu-images').read_bytes()
+    replacements[prefix + 'bin/omarchy-picker-process'] = (PROJECT / 'desktop/shell/bin/omarchy-picker-process').read_bytes()
+    replacements[prefix + 'shell/picker.qml'] = (PROJECT / 'desktop/shell/shell/picker.qml').read_bytes()
+    replacements[prefix + 'shell/plugins/image-picker/ImagePicker.qml'] = (PROJECT / 'desktop/shell/shell/plugins/image-picker/ImagePicker.qml').read_bytes()
     return replacements
 
 
@@ -135,6 +139,8 @@ def labwc_files(directory, architecture='aarch64'):
 def desktop_additions():
     prefix = 'home/tablet/.local/share/omarchy-ipad/'
     return {
+        'home/tablet/.config/omarchy-ipad/shell.json':
+            ((PROJECT / 'desktop/shell/config/omarchy/shell.json').read_bytes(), 0o644),
         'usr/local/bin/omarchy-rotate': ((PROJECT / 'desktop/shell/bin/omarchy-rotate').read_bytes(), 0o755),
         'home/tablet/.local/share/omarchy-ipad/bin/omarchy-rotate': ((PROJECT / 'desktop/shell/bin/omarchy-rotate').read_bytes(), 0o755),
         'usr/local/bin/omarchy-rotation-lock': ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755),
@@ -256,6 +262,11 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                             data = group_membership(data, shadow=member.name == 'etc/gshadow')
                         if member.name in replacements:
                             data = replacements[member.name]
+                            # A base made by older staging code may lack executable bits.
+                            if (member.name.startswith(('usr/local/libexec/', 'usr/local/bin/',
+                                                        'home/tablet/.local/share/omarchy-ipad/bin/'))
+                                    or member.name.endswith('/labwc/autostart')):
+                                member.mode = 0o755
                         if member.name == 'arch-ipad-ui-manifest.json':
                             manifest = json.loads(data)
                             for name, replacement in replacements.items():
