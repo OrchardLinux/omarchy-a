@@ -556,7 +556,7 @@ class EventLoop(unittest.TestCase):
                               ('STATS', self.stats), ('BACKLIGHTS', self.work / 'backlight'),
                               ('BRIGHTNESS', self.remembered),
                               ('WAKEUP_COUNT', self.work / 'wakeup_count'), ('SOCKET', str(self.work / 'ctl')),
-                              ('session_user', lambda: None), ('command', self.fake_command), ('log', lambda *_: None)):
+                              ('platform_suspend_ready', lambda: True), ('session_user', lambda: None), ('command', self.fake_command), ('log', lambda *_: None)):
             patcher = patch.object(powerd, target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -624,6 +624,72 @@ class EventLoop(unittest.TestCase):
             connection.connect(powerd.SOCKET)
             connection.sendall(request.encode() + b'\n')
             return connection.recv(64).decode().strip()
+
+    def test_home_socket_reports_combo_after_screenshot_chord(self):
+        when = time.monotonic()
+        event = powerd.INPUT_EVENT.pack
+        os.write(self.key_write, b''.join(event(int(when+i/10), int((when+i/10)%1*1e6), 1, code, down)
+                     for i, (code, down) in enumerate(((116, 1), (172, 1), (172, 0), (116, 0)))))
+        self.wait(lambda: self.daemon.buttons.home_in_combo)
+        self.assertEqual(self.ask('home'), 'combo')
+        self.assertEqual(self.ask('status'), 'ON')
+
+    def test_idle_dim_restore_and_manual_brightness_supersedes_dim(self):
+        self.assertEqual(self.ask('dim'), 'ok')
+        self.assertEqual(self.brightness(), '300')
+        self.assertEqual(self.ask('als-state'), 'dark')
+        self.assertEqual(self.ask('brightness panel 600 300'), 'held')
+        self.ask('undim'); self.assertEqual(self.brightness(), '1563')
+        self.ask('dim')
+        (self.panel / 'brightness').write_text('700\n')
+        self.ask('undim'); self.assertEqual(self.brightness(), '700')
+
+    def test_cover_close_locks_without_automatic_suspend_and_open_wakes(self):
+        self.ask('cover-close')
+        self.wait(lambda: self.daemon.machine.lock_ok)
+        self.assertEqual(self.ask('status'), 'DARK')
+        self.assertEqual(self.brightness(), '0')
+        time.sleep(0.2)
+        self.assertNotIn(('systemctl', 'suspend'), self.requests)
+        self.ask('wake'); self.assertEqual(self.brightness(), '1563')
+
+    def test_unqualified_power_idle_and_cover_suspend_stay_dark_and_can_wake(self):
+        with patch.object(powerd, 'platform_suspend_ready', return_value=False):
+            for entry in ('power', 'idle', 'cover-suspend'):
+                with self.subTest(entry=entry):
+                    self.requests.clear()
+                    if entry == 'power':
+                        self.press()
+                    elif entry == 'idle':
+                        self.ask('idle')
+                    else:
+                        self.ask('cover-close')
+                        self.ask('cover-suspend')
+                    self.wait(lambda: self.daemon.machine.state == DARK and self.daemon.machine.no_suspend)
+                    self.assertEqual(self.ask('status'), 'DARK')
+                    self.assertEqual(self.brightness(), '0')
+                    self.assertIsNone(self.daemon.settle_at)
+                    self.assertNotIn(('systemctl', 'suspend'), self.requests)
+                    self.assertFalse(any('CanSuspend' in call for call in self.requests))
+                    if entry == 'power':
+                        self.press()
+                        self.wait(lambda: self.brightness() == '1563')
+                    else:
+                        self.ask('wake')  # touch/cover wake path
+                        self.assertEqual(self.brightness(), '1563')
+
+    def test_automatic_brightness_obeys_power_state_and_manual_changes(self):
+        self.assertEqual(self.ask('brightness panel 1800 1563'), 'ok')
+        self.assertEqual(self.brightness(), '1800')
+        self.assertEqual(self.ask('brightness panel 1900 1563'), 'held')
+        self.assertEqual(self.brightness(), '1800')
+        for request in ('brightness panel 0 1800', 'brightness panel 3001 1800',
+                        'brightness other 1900 1800', 'brightness panel ² 1800'):
+            self.assertEqual(self.ask(request), 'held')
+            self.assertEqual(self.brightness(), '1800')
+        self.press(); self.wait(lambda: self.brightness() == '0')
+        self.assertEqual(self.ask('brightness panel 1800 0'), 'held')
+        self.assertEqual(self.brightness(), '0')
 
     def test_press_sleep_wake(self):
         machine = self.daemon.machine

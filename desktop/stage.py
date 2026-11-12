@@ -123,12 +123,6 @@ def main():
         copy(src, dst)
     # Branding is static; kernel, memory and CPU information use live probes.
     assert "VM prototype" not in (config / "fastfetch/config.jsonc").read_text()
-    # Offer Suspend only when the kernel-side charger PM contract is ready.
-    menu = source / "default/omarchy/omarchy-menu.jsonc"
-    original_menu = menu.read_text()
-    stock_guard = '"when":"! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled"'
-    assert original_menu.count(stock_guard) == 1
-    menu.write_text(original_menu.replace(stock_guard, '"when":"command -v ipadlinux-suspend-ready >/dev/null && ipadlinux-suspend-ready"'))
     (config / "labwc/autostart").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-first-theme").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-scale-output").chmod(0o755)

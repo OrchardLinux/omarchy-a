@@ -1,11 +1,11 @@
 # Power, lock and sleep: the state model
 
-`omarchy-powerd` (`system/overlay/usr/libexec/omarchy-powerd`) is the one owner
+`omarchy-powerd` (`system/overlay/usr/libexec/omarchy-powerd`) is the one maintainer
 of the screen, the lock request and sleep. Its state machine, the `Machine`
 class, has no I/O and no clocks; `tests/test_powerd.py` walks every reachable
 state with every input and checks the invariants below. Whether a board may
-suspend at all is not decided here or by device data: every board may (see
-orchard `docs/bring-up/suspend.md`); this model decides when.
+suspend at all is decided by public device qualification, then kernel admission;
+this model decides when. Unqualified boards retain dim, blank and wake.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ orchard `docs/bring-up/suspend.md`); this model decides when.
 9. Being plugged in lights the screen, as on any tablet, asleep or awake. Being
    unplugged wakes the kernel (orchard) but stays dark and sleeps again.
 
-## One owner
+## One maintainer
 
 A system service, because it serves the greeter and the desktop alike, and
 because system services thaw with the kernel while `user.slice` stays frozen a
@@ -217,3 +217,70 @@ when `user.slice` thaws.
 `omarchy-tablet-power` (one process per press, state in brightness and files, a
 fixed window after resume), `omarchy-screen-toggle` and `omarchy-greeter-wake`
 (a second and third writer of the backlight).
+
+## J71t Mac USB current profile
+
+`/etc/orchard/mac-usb-current` opts into Orchard's J71t Mac-current profile.
+Merge and install the matching Orchard #108 hardware bundle first. Gadget
+identity, host-grant handling and board/pack limits remain Orchard's policy;
+this flag does not override the charger limits or host authorization.
+
+Pair with Orchard's stable USB serial path (#110). No root service should
+rewrite the initrd's identity during switch-root. Cold and warm charging,
+stable serial and USB traffic require exact-revision device checks. The
+previous warm 500 mA observation remains unresolved; the flag alone does not
+prove a higher current grant. Remove the flag and reboot to disable the profile.
+
+Use a freshly matched initrd from the integrated Orchard kernel bundle so its
+stable USB identity and current-grant handling travel with the kernel modules.
+
+## Suspend qualification and readiness
+
+The root overlay installs `/usr/local/bin/ipadlinux-suspend-ready` for both
+fresh roots and public-root refreshes. It first requires
+`/usr/lib/orchard/device-feature suspend working`: Orchard's platform layer ships
+that helper and `device-features.json`, matched against live DT compatibles.
+Missing, unknown, untested, broken or ambiguous device data refuses sleep before
+any kernel admission check. J71t currently declares suspend `untested`.
+After qualification, it reads DeviceTree identity and checks admission below;
+other qualified boards keep their existing logind/kernel path. Refusal returns 1
+with a reason on stderr. Arguments are
+rejected with status 2. It never writes sysfs, unbinds drivers, runs a PM test
+or requests suspend. The power daemon logs refusal reasons.
+
+On J71t it reads the kernel's admission query, `/sys/power/suspend_ready`
+(Orchard's suspend topic): `ready` exits 0; `not-ready <who> <errno>` exits 1
+naming the refusing provider device or precheck. The kernel runs every
+admission provider's non-reserving check (GPU, video decoder) and every early
+precheck (PCI/NVMe, AOP, USB) for the current `mem_sleep` state, takes no
+reservation, and answers `not-ready transition` while a transition runs. A
+missing, unreadable or malformed answer refuses: an older kernel cannot prove
+admission. The answer is advisory; the real suspend reserves and checks again.
+
+The source menu used by both desktop staging and `release/public_root.py` uses
+this helper for visibility and again before its suspend action. Powerd uses it
+for every sleep request (Power, idle and `cover-suspend`); a refusal leaves the
+screen dark until touch/Home/Power wake, without retrying sleep. Cover-close
+itself only locks/blanks. Logind ignores lid, idle, suspend and power keys;
+keyboard or direct logind/systemctl requests still pass the same helper in
+`systemd-suspend.service`'s `ExecStartPre`. Hibernation, hybrid sleep and
+suspend-then-hibernate remain disabled and their targets masked. No static
+suspend mask or board-specific qualification override is installed, so a board
+whose registry changes to `working` can sleep after kernel admission succeeds.
+
+Device verification on a rebuilt image:
+
+```sh
+timeout -k 5 5 /usr/lib/orchard/device-feature suspend working
+timeout -k 5 10 /usr/local/bin/ipadlinux-suspend-ready
+timeout -k 5 10 systemctl suspend
+```
+
+On the current unqualified J71t all three must refuse; the journal must name
+qualification rather than a kernel suspend attempt, and suspend success
+counters must not advance. Check that the final session menu omits Suspend.
+Use `timeout -k 5 5 omarchy-powerctl idle`, cover-close/cover-suspend, and a
+short Power press separately; each must blank without sleep and touch/Power
+must wake. Dim/undim must still restore the previous brightness. Repeat after
+reboot with the installed platform data; do not edit qualification on hardware
+just to exercise sleep. These are pending device checks, not host-test results.
