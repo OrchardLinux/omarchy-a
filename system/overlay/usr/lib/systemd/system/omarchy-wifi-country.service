@@ -1,0 +1,12 @@
+[Unit]
+Description=Start Wi-Fi in the country it was last used in
+# Saved by /etc/NetworkManager/dispatcher.d/60-omarchy-a-wifi-country.
+ConditionPathExists=/var/lib/omarchy-a/wifi-country
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'exec /usr/bin/iw reg set "$(head -c 2 /var/lib/omarchy-a/wifi-country)"'
+
+[Install]
+WantedBy=multi-user.target

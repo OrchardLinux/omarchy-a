@@ -172,6 +172,10 @@ Item {
   }
 
   function handleActiveSignal() {
+    // Only powerd's idle-grace state accepts this wake; a locked dark screen
+    // still ignores incidental activity after the grace window has expired.
+    if (Quickshell.env("OMARCHY_TOUCH_MODE") === "1")
+      runProcess(wakeProcess, "idle-grace-input", "/usr/libexec/omarchy-powerctl input")
     if (!root.idledThisCycle) return
 
     // Starting the screensaver can make the compositor report activity. Keep

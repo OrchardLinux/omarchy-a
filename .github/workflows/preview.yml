@@ -1,0 +1,53 @@
+name: Publish preview
+# A finished Build Omarchy A run's assets as a pre-release, for a hardware test
+# before a version: published from GitHub's side, so nothing travels through
+# the machine that asks for it.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: The successful Build Omarchy A run (workflow_dispatch) to publish
+        required: true
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ inputs.run_id }}
+    steps:
+      - name: Check the run
+        id: run
+        run: |
+          [[ $RUN_ID =~ ^[0-9]+$ ]] || { echo "Not a run id: $RUN_ID" >&2; exit 1; }
+          IFS=$'\t' read -r name conclusion sha < <(gh run view "$RUN_ID" --json workflowName,conclusion,headSha \
+            --jq '[.workflowName, .conclusion, .headSha] | @tsv')
+          [[ $name == 'Build Omarchy A' && $conclusion == success ]] || { echo "Run $RUN_ID: $name $conclusion" >&2; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: omarchy-release-assets
+          path: assets
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify checksums and build provenance
+        working-directory: assets
+        run: |
+          sha256sum -c SHA256SUMS
+          gh attestation verify SHA256SUMS --repo "$GH_REPO"
+      - name: Publish the pre-release
+        env:
+          SHA: ${{ steps.run.outputs.sha }}
+        run: |
+          tag="vpreview-$RUN_ID"
+          url="https://github.com/$GH_REPO/releases/download/$tag/install.sh"
+          printf '%s\n' "Preview build of omarchy-a $SHA (run $RUN_ID), for the hardware test before a version. Not a release." \
+            '' "Install: \`curl -fsSL $url | sh\`" > notes.md
+          gh release create "$tag" assets/* --target "$SHA" --prerelease --latest=false --title "$tag" --notes-file notes.md
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"

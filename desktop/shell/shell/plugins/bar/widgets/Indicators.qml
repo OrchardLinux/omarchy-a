@@ -15,7 +15,10 @@ BarWidget {
   property bool indicatorAreaHovered: false
   property bool indicatorItemHovered: false
   readonly property bool alwaysShowIndicators: setting("alwaysShow", false) === true
-  readonly property bool revealInactiveIndicators: alwaysShowIndicators || indicatorAreaHovered || indicatorItemHovered || (bar && bar.centerSectionRevealHeld === true && bar.centerHoverRevealSuppressed !== true)
+  // On a touchscreen every tap on the bar is a brief hover, which flashed the
+  // inactive indicators: there they show only when active (or always shown).
+  readonly property bool touchMode: Quickshell.env("OMARCHY_TOUCH_MODE") === "1"
+  readonly property bool revealInactiveIndicators: alwaysShowIndicators || (!touchMode && (indicatorAreaHovered || indicatorItemHovered || (bar && bar.centerSectionRevealHeld === true && bar.centerHoverRevealSuppressed !== true)))
   // The active block sits against the widget's fixed edge, and everything that
   // grows the widget (revealed inactive icons, newly active ones) goes on its
   // far side, so the icons already showing keep their click targets. A

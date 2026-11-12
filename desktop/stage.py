@@ -101,33 +101,32 @@ def main():
         PORT / "fastfetch/about-compact.txt": config / "omarchy/branding/about-compact.txt",
         CONFIG / "first-theme": target / "usr/local/libexec/arch-ipad-first-theme",
         CONFIG / "scale-output": target / "usr/local/libexec/arch-ipad-scale-output",
-        CONFIG / "auto-brightness": target / "usr/local/libexec/arch-ipad-auto-brightness",
         CONFIG / "rotate-output": target / "usr/local/libexec/arch-ipad-rotate-output",
         CONFIG / "touch-output": target / "usr/local/libexec/arch-ipad-touch-output",
         CONFIG / "login-session": target / "usr/local/libexec/arch-ipad-login-session",
-        CONFIG / "org.kde.dolphin.desktop": target / "home/tablet/.local/share/applications/org.kde.dolphin.desktop",
         HERE / "greeter/greetd.toml": target / "etc/greetd/config.toml",
         HERE / "greeter/greetd-seatd.conf": target / "etc/systemd/system/greetd.service.d/seatd.conf",
         CONFIG / "networkmanager.rules": target / "etc/polkit-1/rules.d/40-arch-ipad-networkmanager.rules",
         FORK / "applications/foot.desktop": target / "usr/local/share/applications/foot.desktop",
         XPI: target / "usr/lib/firefox/distribution/extensions/@omafox.xpi",
         CONFIG / "firefox-policies.json": target / "usr/lib/firefox/distribution/policies.json",
+        # Session-dependent Firefox defaults (hardware video decoding), through AutoConfig.
+        CONFIG / "firefox-autoconfig.js": target / "usr/lib/firefox/defaults/pref/omarchy-a.js",
+        CONFIG / "firefox.cfg": target / "usr/lib/firefox/omarchy-a.cfg",
     }
+    # The files app: 64-bit boards get Files (Folio with touch mode), whose
+    # package brings its own launcher entry. It has no ARMv7 build, so those
+    # boards keep Dolphin, with this entry for its wrapper.
+    if args.architecture == "armv7h":
+        mapping[CONFIG / "org.kde.dolphin.desktop"] = target / "home/tablet/.local/share/applications/org.kde.dolphin.desktop"
     for src, dst in mapping.items():
         copy(src, dst)
     # Branding is static; kernel, memory and CPU information use live probes.
     assert "VM prototype" not in (config / "fastfetch/config.jsonc").read_text()
-    # Offer Suspend only when the kernel-side charger PM contract is ready.
-    menu = source / "default/omarchy/omarchy-menu.jsonc"
-    original_menu = menu.read_text()
-    stock_guard = '"when":"! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled"'
-    assert original_menu.count(stock_guard) == 1
-    menu.write_text(original_menu.replace(stock_guard, '"when":"command -v ipadlinux-suspend-ready >/dev/null && ipadlinux-suspend-ready"'))
     (config / "labwc/autostart").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-first-theme").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-scale-output").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-rotate-output").chmod(0o755)
-    (target / "usr/local/libexec/arch-ipad-auto-brightness").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-touch-output").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-login-session").chmod(0o755)
     # The base overlay preserves directory modes. Set the target layout

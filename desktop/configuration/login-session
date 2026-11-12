@@ -13,13 +13,44 @@ set -euo pipefail
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 # The user session must read its live theme, not the greeter's snapshot.
 unset OMARCHY_GREETER_THEME_DIR
-export OMARCHY_PATH=/home/tablet/.local/share/omarchy-ipad
+export OMARCHY_PATH="$HOME/.local/share/omarchy-ipad"
 export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=labwc
 export WLR_RENDERER=pixman QT_QUICK_BACKEND=software QT_QPA_PLATFORM=wayland
 # Match pinned upstream Omarchy's GTK-backed Qt platform theme.
 export QT_QPA_PLATFORMTHEME=gtk3
 export OMARCHY_TOUCH_MODE=1
 export LIBGL_ALWAYS_SOFTWARE=1 LIBSEAT_BACKEND=seatd MOZ_ENABLE_WAYLAND=1
+# A board with a GPU this image has a Vulkan driver for (the A10's, kernel
+# driver powervr): Labwc draws on wlroots' GLES2 renderer and applications on
+# OpenGL, both through Zink on that driver. Every other board, and a boot with
+# modprobe.blacklist=powervr, keeps the software desktop above. The shell stays
+# on Qt's software renderer either way; the apps it starts don't (uwsm-app).
+gpu=
+for node in /sys/class/drm/renderD*; do
+  if [[ $(basename "$(readlink -f "$node/device/driver")") == powervr ]]; then gpu=$node; fi
+done
+if [[ -n $gpu && -e /usr/share/vulkan/icd.d/powervr_mesa_icd.json ]]; then
+  export WLR_RENDERER=gles2 WLR_RENDER_DRM_DEVICE=/dev/dri/${gpu##*/}
+  export MESA_LOADER_DRIVER_OVERRIDE=zink PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1
+  unset LIBGL_ALWAYS_SOFTWARE
+  # The GPU has no display outputs: Labwc must open the display's card only.
+  for card in /sys/class/drm/card*; do
+    if [[ ${card##*/} =~ ^card[0-9]+$ && $(readlink -f "$card/device") != "$(readlink -f "$gpu/device")" ]]; then
+      export WLR_DRM_DEVICES=/dev/dri/${card##*/}
+    fi
+  done
+fi
+# A hardware video decoder (kernel driver apple-vxd, H.264): VA-API
+# applications reach it through libva-v4l2-request. Firefox uses it only when
+# it draws on the GPU, and only with its media decoding sandbox off, which
+# does not let the driver's device files through; /usr/lib/firefox/omarchy-a.cfg
+# sets its preferences to match. Web content stays sandboxed.
+for video in /sys/class/video4linux/video*; do
+  if [[ $(basename "$(readlink -f "$video/device/driver")") == apple-vxd ]]; then
+    export LIBVA_DRIVER_NAME=v4l2_request
+    if [[ ${WLR_RENDERER:-} == gles2 ]]; then export MOZ_DISABLE_RDD_SANDBOX=1; fi
+  fi
+done
 export PATH=/usr/local/bin:/usr/bin
 # Services such as PipeWire and WirePlumber use the same user manager/bus as
 # Quickshell. Do not spawn a separate dbus-run-session instance.
