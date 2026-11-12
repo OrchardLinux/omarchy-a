@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepare warm restart into the default BLS entry
+After=local-fs.target orchard-kexec-provenance.service
+Before=systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/orchard-kexec load default
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
