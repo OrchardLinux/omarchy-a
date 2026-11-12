@@ -55,3 +55,6 @@ libnotify
 # USB link probes and network recovery.
 iputils
 iproute2
+# Removable storage mounted through the session identity.
+udiskie
+udisks2
