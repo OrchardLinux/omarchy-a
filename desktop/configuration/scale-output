@@ -5,7 +5,7 @@ set -euo pipefail
 state=$(wlr-randr)
 mapfile -t outputs < <(awk '/^[^[:space:]]/ {print $1}' <<< "$state")
 if (( ${#outputs[@]} != 1 )) || ! grep -q '  Enabled: yes' <<< "$state" ||
-   ! grep -Eq '^[[:space:]]+(1536x2048|2048x1536) px, .*current' <<< "$state"; then
+   ! grep -Eq '^[[:space:]]+(1536x2048|2048x1536|1620x2160|2160x1620) px, .*current' <<< "$state"; then
   echo 'Native single-panel mode not established; left scale unchanged' >&2
   exit 0
 fi

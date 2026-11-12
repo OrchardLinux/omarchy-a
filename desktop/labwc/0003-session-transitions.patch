@@ -1,0 +1,793 @@
+diff --git a/include/config/rcxml.h b/include/config/rcxml.h
+index 320fbdd..1e0f38f 100644
+--- a/include/config/rcxml.h
++++ b/include/config/rcxml.h
+@@ -86,6 +86,9 @@ struct rcxml {
+ 	uint32_t allowed_interfaces;
+ 	bool xwayland_persistence;
+ 	bool primary_selection;
++	bool startup_fade;
++	char *handover_dir;
++	bool startup_signal;
+ 	char *prompt_command;
+ 	char *error_command;
+ 
+diff --git a/include/output.h b/include/output.h
+index c17defa..67bad78 100644
+--- a/include/output.h
++++ b/include/output.h
+@@ -16,6 +16,10 @@ struct output {
+ 	struct wlr_scene_tree *layer_popup_tree;
+ 	struct wlr_scene_tree *cycle_osd_tree;
+ 	struct wlr_scene_tree *session_lock_tree;
++	/* startupFade: black until the desktop shell has drawn, then one fade */
++	struct wlr_scene_rect *startup_cover;
++	struct wlr_scene_buffer *startup_frame; /* the previous compositor's last frame */
++	double startup_began, startup_ready_since, startup_fade_began;
+ 	struct wlr_scene_buffer *workspace_osd;
+ 
+ 	/* In output-relative scene coordinates */
+@@ -26,6 +30,13 @@ struct output {
+ 	struct wl_listener destroy;
+ 	struct wl_listener frame;
+ 	struct wl_listener request_state;
++	struct wl_listener rotation_commit;
++	struct wlr_buffer *rotation_last_frame;
++	struct wlr_scene_buffer *rotation_cover;
++	double rotation_started, rotation_fade_started;
++	int rotation_ready_frames;
++	struct rotation_waiter *rotation_waiters;
++	double rotation_ready_since;
+ 
+ 	/*
+ 	 * Unique power-of-two ID used in bitsets such as view->outputs.
+@@ -44,6 +55,7 @@ struct output {
+ 
+ void output_init(void);
+ void output_finish(void);
++void output_save_handover(void);
+ struct output *output_from_wlr_output(struct wlr_output *wlr_output);
+ struct output *output_from_name(const char *name);
+ struct output *output_nearest_to(int lx, int ly);
+diff --git a/src/config/rcxml.c b/src/config/rcxml.c
+index f2134d0..6e332e4 100644
+--- a/src/config/rcxml.c
++++ b/src/config/rcxml.c
+@@ -1169,6 +1169,12 @@ entry(xmlNode *node, char *nodename, char *content)
+ 		set_bool(content, &rc.xwayland_persistence);
+ 	} else if (!strcasecmp(nodename, "primarySelection.core")) {
+ 		set_bool(content, &rc.primary_selection);
++	} else if (!strcasecmp(nodename, "startupFade.core")) {
++		set_bool(content, &rc.startup_fade);
++	} else if (!strcasecmp(nodename, "startupSignal.core")) {
++		set_bool(content, &rc.startup_signal);
++	} else if (!strcasecmp(nodename, "handoverDirectory.core")) {
++		xstrdup_replace(rc.handover_dir, content);
+ 
+ 	} else if (!strcasecmp(nodename, "promptCommand.core")) {
+ 		xstrdup_replace(rc.prompt_command, content);
+@@ -2068,6 +2074,7 @@ rcxml_finish(void)
+ 	zfree(rc.font_menuitem.name);
+ 	zfree(rc.font_osd.name);
+ 	zfree(rc.prompt_command);
++	zfree(rc.handover_dir);
+ 	zfree(rc.error_command);
+ 	zfree(rc.theme_name);
+ 	zfree(rc.icon_theme_name);
+diff --git a/src/main.c b/src/main.c
+index 081bd62..ae0e061 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -13,6 +13,7 @@
+ #include "config/rcxml.h"
+ #include "config/session.h"
+ #include "labwc.h"
++#include "output.h"
+ #include "theme.h"
+ #include "translate.h"
+ #include "menu/menu.h"
+@@ -293,6 +294,7 @@ main(int argc, char *argv[])
+ 
+ 	wl_display_run(server.wl_display);
+ 
++	output_save_handover();
+ 	session_shutdown();
+ 
+ 	menu_finish();
+diff --git a/src/output.c b/src/output.c
+index 1308f56..151030a 100644
+--- a/src/output.c
++++ b/src/output.c
+@@ -10,13 +10,24 @@
+ #include "output.h"
+ #include <assert.h>
+ #include <drm_fourcc.h>
++#include <fcntl.h>
+ #include <glib.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <unistd.h>
+ #include <strings.h>
+ #include <wlr/backend/wayland.h>
+ #include <wlr/config.h>
++#include <wlr/render/wlr_texture.h>
+ #include <wlr/types/wlr_cursor.h>
++#include <wlr/types/wlr_buffer.h>
++#include <wlr/types/wlr_compositor.h>
++#include <wlr/types/wlr_layer_shell_v1.h>
++#include <wlr/util/transform.h>
+ #include <wlr/types/wlr_ext_workspace_v1.h>
+ #include <wlr/types/wlr_gamma_control_v1.h>
++#include <wlr/types/wlr_layer_shell_v1.h>
+ #include <wlr/types/wlr_output.h>
+ #include <wlr/types/wlr_output_management_v1.h>
+ #include <wlr/types/wlr_output_power_management_v1.h>
+@@ -24,6 +35,8 @@
+ #include <wlr/types/wlr_xdg_output_v1.h>
+ #include <wlr/types/wlr_scene.h>
+ #include <wlr/util/log.h>
++#include "buffer.h"
++#include "input/cursor.h"
+ #include "common/macros.h"
+ #include "common/mem.h"
+ #include "common/scene-helpers.h"
+@@ -248,6 +261,556 @@ output_get_tearing_allowance(struct output *output)
+ 	return view->force_tearing == LAB_STATE_ENABLED;
+ }
+ 
++struct rotation_waiter {
++	char *namespace;
++	uint32_t layer, anchor, sequence;
++	int width, height;
++	struct wlr_surface *old_surface; /* cleared by its destroy listener */
++	struct wl_listener destroy;
++	struct rotation_waiter *next;
++};
++
++static void
++rotation_surface_destroy(struct wl_listener *listener, void *data)
++{
++	struct rotation_waiter *waiter = wl_container_of(listener, waiter, destroy);
++	waiter->old_surface = NULL;
++	wl_list_remove(&waiter->destroy.link);
++	wl_list_init(&waiter->destroy.link);
++}
++
++static double
++rotation_now(void)
++{
++	struct timespec now;
++	clock_gettime(CLOCK_MONOTONIC, &now);
++	return now.tv_sec + now.tv_nsec / 1000000000.0;
++}
++
++static void
++rotation_clear(struct output *output)
++{
++	if (output->rotation_cover) {
++		wlr_scene_node_destroy(&output->rotation_cover->node);
++		output->rotation_cover = NULL;
++	}
++	output->rotation_ready_frames = 0;
++	output->rotation_fade_started = 0;
++	output->rotation_ready_since = 0;
++	while (output->rotation_waiters) {
++		struct rotation_waiter *waiter = output->rotation_waiters;
++		output->rotation_waiters = waiter->next;
++		wl_list_remove(&waiter->destroy.link);
++		free(waiter->namespace);
++		free(waiter);
++	}
++}
++
++/* Whether anything of a session is on this output: a shell layer or a window. */
++static bool
++output_has_content(struct output *output)
++{
++	for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); i++) {
++		struct wlr_scene_node *node;
++		wl_list_for_each(node, &output->layer_tree[i]->children, link) {
++			struct lab_layer_surface *layer = node_layer_surface_from_node(node);
++			if (layer->mapped && layer->layer_surface->surface->buffer) {
++				return true;
++			}
++		}
++	}
++	struct view *view;
++	wl_list_for_each(view, &server.views, link) {
++		if (view->mapped && view->output == output) {
++			return true;
++		}
++	}
++	return false;
++}
++
++static void
++handle_rotation_commit(struct wl_listener *listener, void *data)
++{
++	struct output *output = wl_container_of(listener, output, rotation_commit);
++	struct wlr_output_event_commit *event = data;
++	if (server.session_lock_manager && server.session_lock_manager->locked) {
++		rotation_clear(output);
++		if (output->rotation_last_frame) {
++			wlr_buffer_unlock(output->rotation_last_frame);
++			output->rotation_last_frame = NULL;
++		}
++		return;
++	}
++	if ((event->state->committed & WLR_OUTPUT_STATE_BUFFER) && event->state->buffer) {
++		struct wlr_buffer *frame = wlr_buffer_lock(event->state->buffer);
++		if (output->rotation_last_frame) {
++			wlr_buffer_unlock(output->rotation_last_frame);
++		}
++		output->rotation_last_frame = frame;
++	}
++}
++
++static bool
++rotation_accepts_input(struct wlr_scene_buffer *buffer, double *x, double *y)
++{
++	return false;
++}
++
++static bool
++rotation_persistent_layer(struct wlr_layer_surface_v1 *layer)
++{
++	/* Popovers/dismiss shields have no stable size or lifetime across a
++	 * rotation. They must not turn a visual transition into a timeout. */
++	return layer->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND
++		|| layer->current.exclusive_zone > 0;
++}
++
++static void
++rotation_begin(struct output *output)
++{
++	rotation_clear(output);
++	if (!output->rotation_last_frame || !output->wlr_output->enabled
++			|| (server.session_lock_manager && server.session_lock_manager->locked)) {
++		return;
++	}
++	struct wlr_scene_buffer *cover = wlr_scene_buffer_create(&server.scene->tree,
++		output->rotation_last_frame);
++	if (!cover) {
++		return;
++	}
++	output->rotation_cover = cover;
++	output->rotation_started = rotation_now();
++	/* Remember visible shell roles before the reconfigure. An empty layer
++	 * list during a shell rebuild is NOT evidence that the new frame is ready. */
++	for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); ++i) {
++		struct wlr_scene_node *node;
++		wl_list_for_each(node, &output->layer_tree[i]->children, link) {
++			struct lab_layer_surface *layer = node_layer_surface_from_node(node);
++			struct wlr_layer_surface_v1 *ls = layer->layer_surface;
++			if (!layer->mapped || !rotation_persistent_layer(ls)) {
++				continue;
++			}
++			struct rotation_waiter *waiter = znew(*waiter);
++			waiter->namespace = strdup(ls->namespace ? ls->namespace : "");
++			waiter->layer = ls->current.layer;
++			waiter->anchor = ls->current.anchor;
++			waiter->old_surface = ls->surface;
++			waiter->destroy.notify = rotation_surface_destroy;
++			wl_signal_add(&ls->surface->events.destroy, &waiter->destroy);
++			waiter->sequence = ls->surface->current.seq;
++			waiter->width = ls->surface->current.width;
++			waiter->height = ls->surface->current.height;
++			waiter->next = output->rotation_waiters;
++			output->rotation_waiters = waiter;
++		}
++	}
++	cover->point_accepts_input = rotation_accepts_input;
++	/* Never cover the security layer or intercept input. An almost-opaque
++	 * cover keeps underlying clients visible to frame-done/readiness logic. */
++	wlr_scene_node_place_below(&cover->node, &output->session_lock_tree->node);
++	wlr_scene_buffer_set_opacity(cover, 0.999f);
++}
++
++static void
++rotation_tick(struct output *output)
++{
++	struct wlr_scene_buffer *cover = output->rotation_cover;
++	if (!cover) {
++		return;
++	}
++	if (server.session_lock_manager && server.session_lock_manager->locked) {
++		rotation_clear(output);
++		return;
++	}
++	struct wlr_box box;
++	wlr_output_layout_get_box(server.output_layout, output->wlr_output, &box);
++	wlr_scene_node_set_position(&cover->node, box.x, box.y);
++	wlr_scene_buffer_set_dest_size(cover, box.width, box.height);
++	/* Scene buffers invert this transform when rendering. Using the inverse
++	 * here applies the output rotation twice and flips the frozen frame. */
++	wlr_scene_buffer_set_transform(cover, output->wlr_output->transform);
++	bool ready = true;
++	struct view *view;
++	wl_list_for_each(view, &server.views, link) {
++		if (view->mapped && view->output == output && view->pending_configure_serial) {
++			ready = false;
++		}
++	}
++	for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); ++i) {
++		struct wlr_scene_node *node;
++		wl_list_for_each(node, &output->layer_tree[i]->children, link) {
++			struct lab_layer_surface *layer = node_layer_surface_from_node(node);
++			if (layer->mapped && rotation_persistent_layer(layer->layer_surface)
++					&& !wl_list_empty(&layer->layer_surface->configure_list)) {
++				ready = false;
++			}
++		}
++	}
++	for (struct rotation_waiter *waiter = output->rotation_waiters; waiter; waiter = waiter->next) {
++		bool repainted = false;
++		for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); ++i) {
++			struct wlr_scene_node *node;
++			wl_list_for_each(node, &output->layer_tree[i]->children, link) {
++				struct lab_layer_surface *layer = node_layer_surface_from_node(node);
++				struct wlr_layer_surface_v1 *ls = layer->layer_surface;
++				if (layer->mapped && ls->surface->buffer
++						&& ls->current.layer == waiter->layer && ls->current.anchor == waiter->anchor
++						&& !strcmp(ls->namespace ? ls->namespace : "", waiter->namespace)
++						&& (ls->surface != waiter->old_surface || ls->surface->current.seq != waiter->sequence
++							|| (ls->surface->current.width == waiter->width && ls->surface->current.height == waiter->height
++								&& (int)ls->current.actual_width == waiter->width && (int)ls->current.actual_height == waiter->height))
++						&& wl_list_empty(&ls->configure_list)
++						&& ls->surface->current.width == (int)ls->current.actual_width
++						&& ls->surface->current.height == (int)ls->current.actual_height) {
++					repainted = true;
++				}
++			}
++		}
++		ready &= repainted;
++	}
++	double now = rotation_now();
++	if (!output->rotation_fade_started) {
++		output->rotation_ready_frames = ready ? output->rotation_ready_frames + 1 : 0;
++		if (!ready) {
++			output->rotation_ready_since = 0;
++		} else if (!output->rotation_ready_since) {
++			output->rotation_ready_since = now;
++		}
++		/* Repainted shell roles must remain ready for a short quiet interval. */
++		if ((output->rotation_ready_frames >= 2 && output->rotation_ready_since
++				&& now - output->rotation_ready_since >= 0.05)
++				|| now - output->rotation_started >= 2.5) {
++			wlr_log(WLR_INFO, "rotation transition: %s after %.0f ms",
++				ready ? "ready" : "timeout", (now - output->rotation_started) * 1000);
++			output->rotation_fade_started = now;
++		}
++	} else {
++		double t = (now - output->rotation_fade_started) / 0.22;
++		if (t >= 1) {
++			rotation_clear(output);
++			return;
++		}
++		double ease = t * t * (3 - 2 * t);
++		wlr_scene_buffer_set_opacity(cover, (float)(0.999 * (1 - ease)));
++	}
++	wlr_output_schedule_frame(output->wlr_output);
++}
++
++/*
++ * Session transitions between two compositors on one seat (a greeter and
++ * the desktop): no black screen and no shell arriving piece by piece.
++ *
++ * <core><handoverDirectory>DIR</handoverDirectory></core>: at exit each
++ * output's last frame is written to DIR/OUTPUT.frame. A compositor starting
++ * within a few seconds shows that frame first (the panel still shows it too,
++ * if the kernel does not restore its console in between), consumes the file,
++ * and crossfades to its own picture once its shell has drawn. Nothing is
++ * written while the session is locked.
++ *
++ * <core><startupFade>yes</startupFade></core>: without such a frame the
++ * output stays black until the shell has drawn, then fades in.
++ *
++ * "Drawn" is a background layer surface plus a bar (a layer surface with an
++ * exclusive zone), or one layer surface over the whole output (a greeter),
++ * quiet for a moment. A compositor cannot see whether a wallpaper has arrived
++ * in its surface, so with <core><startupSignal>yes</startupSignal></core> it
++ * also waits for the shell to create the file it names in the environment
++ * variable LABWC_STARTUP_READY. All waiting is bounded.
++ */
++#define STARTUP_FADE_SECONDS 0.25
++#define STARTUP_QUIET_SECONDS 0.15
++#define STARTUP_BAR_WAIT_SECONDS 0.6
++#define STARTUP_TIMEOUT_SECONDS 6.0
++#define HANDOVER_MAX_AGE_SECONDS 20
++#define HANDOVER_MAGIC "LABFRAM1"
++
++struct handover_header {
++	char magic[8];
++	uint32_t width, height;
++};
++
++static bool startup_over;
++/* startupSignal: the shell creates this file once its picture is complete */
++static char startup_ready_file[512];
++
++static double
++startup_now(void)
++{
++	struct timespec now;
++	clock_gettime(CLOCK_MONOTONIC, &now);
++	return now.tv_sec + now.tv_nsec / 1000000000.0;
++}
++
++static bool
++handover_path(struct output *output, const char *suffix, char *path, size_t size)
++{
++	int length = snprintf(path, size, "%s/%s.frame%s", rc.handover_dir,
++		output->wlr_output->name, suffix);
++	return length > 0 && (size_t)length < size;
++}
++
++static bool
++write_all(int fd, const void *data, size_t size)
++{
++	const char *cursor = data;
++	while (size > 0) {
++		ssize_t written = write(fd, cursor, size);
++		if (written <= 0) {
++			return false;
++		}
++		cursor += written;
++		size -= written;
++	}
++	return true;
++}
++
++static bool
++read_all(int fd, void *data, size_t size)
++{
++	char *cursor = data;
++	while (size > 0) {
++		ssize_t got = read(fd, cursor, size);
++		if (got <= 0) {
++			return false;
++		}
++		cursor += got;
++		size -= got;
++	}
++	return true;
++}
++
++static void
++handover_save(struct output *output)
++{
++	struct wlr_buffer *frame = output->rotation_last_frame;
++	char path[512], partial[512];
++	if (!frame || !handover_path(output, "", path, sizeof(path))
++			|| !handover_path(output, ".part", partial, sizeof(partial))) {
++		return;
++	}
++	struct wlr_texture *texture = wlr_texture_from_buffer(server.renderer, frame);
++	if (!texture) {
++		return;
++	}
++	uint32_t format = wlr_texture_preferred_read_format(texture);
++	bool swap_red_blue = format == DRM_FORMAT_ABGR8888 || format == DRM_FORMAT_XBGR8888;
++	struct handover_header header = { .width = texture->width, .height = texture->height };
++	memcpy(header.magic, HANDOVER_MAGIC, sizeof(header.magic));
++	size_t count = (size_t)header.width * header.height;
++	uint32_t *pixels = NULL;
++	int fd = -1;
++	if (!swap_red_blue && format != DRM_FORMAT_ARGB8888 && format != DRM_FORMAT_XRGB8888) {
++		goto out;
++	}
++	pixels = malloc(count * 4);
++	if (!pixels || !wlr_texture_read_pixels(texture, &(struct wlr_texture_read_pixels_options){
++			.data = pixels, .format = format, .stride = header.width * 4 })) {
++		goto out;
++	}
++	for (size_t i = 0; i < count; i++) {
++		uint32_t pixel = pixels[i];
++		if (swap_red_blue) {
++			pixel = (pixel & 0x0000ff00) | ((pixel >> 16) & 0xff) | ((pixel & 0xff) << 16);
++		}
++		pixels[i] = pixel | 0xff000000;
++	}
++	fd = open(partial, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0660);
++	if (fd < 0) {
++		goto out;
++	}
++	if (write_all(fd, &header, sizeof(header)) && write_all(fd, pixels, count * 4)) {
++		fchmod(fd, 0660);
++		close(fd);
++		fd = -1;
++		if (rename(partial, path) < 0) {
++			unlink(partial);
++		}
++	} else {
++		unlink(partial);
++	}
++out:
++	if (fd >= 0) {
++		close(fd);
++	}
++	free(pixels);
++	wlr_texture_destroy(texture);
++}
++
++static struct wlr_buffer *
++handover_load(struct output *output)
++{
++	char path[512];
++	if (!rc.handover_dir || !handover_path(output, "", path, sizeof(path))) {
++		return NULL;
++	}
++	int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
++	if (fd < 0) {
++		return NULL;
++	}
++	unlink(path); /* one use: never an old picture later */
++	struct stat st;
++	struct handover_header header;
++	void *pixels = NULL;
++	struct wlr_buffer *buffer = NULL;
++	if (fstat(fd, &st) < 0 || !S_ISREG(st.st_mode)
++			|| time(NULL) < st.st_mtime
++			|| time(NULL) - st.st_mtime > HANDOVER_MAX_AGE_SECONDS
++			|| !read_all(fd, &header, sizeof(header))
++			|| memcmp(header.magic, HANDOVER_MAGIC, sizeof(header.magic))
++			|| !header.width || !header.height
++			|| header.width > 16384 || header.height > 16384) {
++		goto out;
++	}
++	size_t size = (size_t)header.width * header.height * 4;
++	if ((size_t)st.st_size != sizeof(header) + size) {
++		goto out;
++	}
++	pixels = malloc(size);
++	if (!pixels || !read_all(fd, pixels, size)) {
++		free(pixels);
++		goto out;
++	}
++	buffer = &buffer_create_from_data(pixels, header.width, header.height,
++		header.width * 4)->base;
++out:
++	close(fd);
++	return buffer;
++}
++
++static void
++startup_cover_create(struct output *output)
++{
++	if (startup_over) {
++		return;
++	}
++	struct wlr_buffer *frame = handover_load(output);
++	if (frame) {
++		output->startup_frame = wlr_scene_buffer_create(&server.scene->tree, frame);
++		wlr_buffer_drop(frame);
++	}
++	if (!output->startup_frame && rc.startup_fade) {
++		float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
++		output->startup_cover = wlr_scene_rect_create(&server.scene->tree, 1, 1, black);
++	}
++	if ((output->startup_frame || output->startup_cover) && rc.startup_signal
++			&& rc.handover_dir && !startup_ready_file[0]) {
++		snprintf(startup_ready_file, sizeof(startup_ready_file), "%s/ready-%d",
++			rc.handover_dir, (int)getpid());
++		unlink(startup_ready_file);
++		setenv("LABWC_STARTUP_READY", startup_ready_file, 1);
++	}
++	if (output->startup_frame || output->startup_cover) {
++		output->startup_began = startup_now();
++		/* no pointer on a picture that is not ours yet */
++		cursor_set_visible(&server.seat, false);
++	}
++}
++
++static void
++startup_cover_destroy(struct output *output)
++{
++	if (output->startup_cover) {
++		wlr_scene_node_destroy(&output->startup_cover->node);
++		output->startup_cover = NULL;
++	}
++	if (output->startup_frame) {
++		wlr_scene_node_destroy(&output->startup_frame->node);
++		output->startup_frame = NULL;
++	}
++}
++
++static bool
++startup_covering(struct output *output)
++{
++	return output->startup_cover || output->startup_frame;
++}
++
++static void
++startup_tick(struct output *output)
++{
++	if (!startup_covering(output)) {
++		return;
++	}
++	struct wlr_scene_node *cover = output->startup_frame
++		? &output->startup_frame->node : &output->startup_cover->node;
++	struct wlr_box box;
++	wlr_output_layout_get_box(server.output_layout, output->wlr_output, &box);
++	wlr_scene_node_set_position(cover, box.x, box.y);
++	if (output->startup_frame) {
++		/* keep the frame as the panel showed it, whatever the transform now */
++		wlr_scene_buffer_set_dest_size(output->startup_frame, box.width, box.height);
++		wlr_scene_buffer_set_transform(output->startup_frame, output->wlr_output->transform);
++	} else {
++		wlr_scene_rect_set_size(output->startup_cover, box.width, box.height);
++	}
++	wlr_scene_node_place_below(cover, &output->session_lock_tree->node);
++
++	/* A desktop shell: wallpaper and bar. A greeter: one layer over everything. */
++	bool background = false, bar = false, covering = false;
++	for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); i++) {
++		struct wlr_scene_node *node;
++		wl_list_for_each(node, &output->layer_tree[i]->children, link) {
++			struct lab_layer_surface *layer = node_layer_surface_from_node(node);
++			struct wlr_layer_surface_v1 *ls = layer->layer_surface;
++			if (!layer->mapped || !ls->surface->buffer
++					|| !wl_list_empty(&ls->configure_list)) {
++				continue;
++			}
++			if (ls->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND) {
++				background = true;
++			} else if ((int)ls->current.actual_width >= box.width
++					&& (int)ls->current.actual_height >= box.height) {
++				covering = true;
++			}
++			if (ls->current.exclusive_zone > 0) {
++				bar = true;
++			}
++		}
++	}
++	bool drawn = (background || covering)
++		&& (!startup_ready_file[0] || access(startup_ready_file, F_OK) == 0);
++
++	double now = startup_now();
++	if (!output->startup_fade_began) {
++		if (!drawn) {
++			output->startup_ready_since = 0;
++		} else if (!output->startup_ready_since) {
++			output->startup_ready_since = now;
++		}
++		double ready_for = output->startup_ready_since
++			? now - output->startup_ready_since : 0;
++		bool ready = drawn && ready_for >= STARTUP_QUIET_SECONDS
++			&& (covering || bar || ready_for >= STARTUP_BAR_WAIT_SECONDS);
++		if (ready || now - output->startup_began >= STARTUP_TIMEOUT_SECONDS) {
++			wlr_log(WLR_INFO, "startup cover: %s after %.0f ms (background %d, bar %d, frame %d)",
++				ready ? "ready" : "timeout",
++				(now - output->startup_began) * 1000, background, bar,
++				output->startup_frame != NULL);
++			output->startup_fade_began = now;
++		}
++	} else {
++		double t = (now - output->startup_fade_began) / STARTUP_FADE_SECONDS;
++		if (t >= 1) {
++			startup_cover_destroy(output);
++			startup_over = true;
++			if (startup_ready_file[0]) {
++				unlink(startup_ready_file);
++				unsetenv("LABWC_STARTUP_READY");
++			}
++			wlr_output_schedule_frame(output->wlr_output);
++			return;
++		}
++		float alpha = (float)(1 - t * t * (3 - 2 * t));
++		if (output->startup_frame) {
++			wlr_scene_buffer_set_opacity(output->startup_frame, alpha);
++		} else {
++			float color[4] = { 0.0f, 0.0f, 0.0f, alpha };
++			wlr_scene_rect_set_color(output->startup_cover, color);
++		}
++	}
++	wlr_output_schedule_frame(output->wlr_output);
++}
++
+ static void
+ handle_output_frame(struct wl_listener *listener, void *data)
+ {
+@@ -273,6 +836,18 @@ handle_output_frame(struct wl_listener *listener, void *data)
+ 	struct wlr_output_state *pending = &output->pending;
+ 
+ 	pending->tearing_page_flip = output_get_tearing_allowance(output);
++	rotation_tick(output);
++
++	startup_tick(output);
++
++	/*
++	 * A session that is ending loses its clients a moment before the
++	 * compositor exits. Do not replace its last picture with an empty one:
++	 * that picture is what the next compositor takes over from.
++	 */
++	if (rc.handover_dir && !startup_covering(output) && !output_has_content(output)) {
++		return;
++	}
+ 
+ 	lab_wlr_scene_output_commit(scene_output, pending);
+ 
+@@ -310,6 +885,11 @@ handle_output_destroy(struct wl_listener *listener, void *data)
+ 	wl_list_remove(&output->frame.link);
+ 	wl_list_remove(&output->destroy.link);
+ 	wl_list_remove(&output->request_state.link);
++	wl_list_remove(&output->rotation_commit.link);
++	rotation_clear(output);
++	if (output->rotation_last_frame) {
++		wlr_buffer_unlock(output->rotation_last_frame);
++	}
+ 	seat_output_layout_changed(seat);
+ 
+ 	for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); i++) {
+@@ -318,6 +898,7 @@ handle_output_destroy(struct wl_listener *listener, void *data)
+ 	wlr_scene_node_destroy(&output->layer_popup_tree->node);
+ 	wlr_scene_node_destroy(&output->cycle_osd_tree->node);
+ 	wlr_scene_node_destroy(&output->session_lock_tree->node);
++	startup_cover_destroy(output);
+ 	if (output->workspace_osd) {
+ 		wlr_scene_node_destroy(&output->workspace_osd->node);
+ 		output->workspace_osd = NULL;
+@@ -708,6 +1289,8 @@ handle_new_output(struct wl_listener *listener, void *data)
+ 
+ 	output->request_state.notify = handle_output_request_state;
+ 	wl_signal_add(&wlr_output->events.request_state, &output->request_state);
++	output->rotation_commit.notify = handle_rotation_commit;
++	wl_signal_add(&wlr_output->events.commit, &output->rotation_commit);
+ 
+ 	wl_list_init(&output->regions);
+ 
+@@ -746,6 +1329,7 @@ handle_new_output(struct wl_listener *listener, void *data)
+ 
+ 	wlr_scene_node_raise_to_top(&output->cycle_osd_tree->node);
+ 	wlr_scene_node_raise_to_top(&output->session_lock_tree->node);
++	startup_cover_create(output);
+ 
+ 	/*
+ 	 * autoEnableOutputs=no only makes sense for outputs that can be
+@@ -801,6 +1385,22 @@ output_init(void)
+ 
+ static void output_manager_finish(void);
+ 
++void
++output_save_handover(void)
++{
++	/* Called while the configuration still exists: before rcxml_finish(). */
++	if (startup_ready_file[0]) {
++		unlink(startup_ready_file);
++	}
++	if (rc.handover_dir && !(server.session_lock_manager
++			&& server.session_lock_manager->locked)) {
++		struct output *output;
++		wl_list_for_each(output, &server.outputs, link) {
++			handover_save(output);
++		}
++	}
++}
++
+ void
+ output_finish(void)
+ {
+@@ -854,12 +1454,22 @@ output_config_apply(struct wlr_output_configuration_v1 *config)
+ 			(void)output_test_auto(o, os,
+ 				/* is_client_request */ true);
+ 			wlr_output_state_set_scale(os, head->state.scale);
++			if (o->transform != head->state.transform) {
++				if (startup_covering(output)) {
++					/* one transition: wait for the turned shell */
++					output->startup_ready_since = 0;
++					output->startup_began = startup_now();
++				} else {
++					rotation_begin(output);
++				}
++			}
+ 			wlr_output_state_set_transform(os, head->state.transform);
+ 			output_enable_adaptive_sync(output,
+ 				head->state.adaptive_sync_enabled);
+ 			output_state_setup_hdr(output, false);
+ 		}
+ 		if (!output_state_commit(output)) {
++			rotation_clear(output);
+ 			/*
+ 			 * FIXME: This is only part of the story, we should revert
+ 			 *        all previously committed outputs as well here.

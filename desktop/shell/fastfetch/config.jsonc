@@ -34,7 +34,7 @@
     {
       "type": "command",
       "key": "│ ├Renderer",
-      "text": "printf 'labwc: %s (forced backend)' \"${WLR_RENDERER:-unverified}\"",
+      "text": "case ${WLR_RENDERER:-} in gles2) echo 'GPU: OpenGL ES through Zink on Vulkan' ;; pixman) echo 'Software (pixman)' ;; *) echo 'Unknown' ;; esac",
       "keyColor": "green"
     },
     {

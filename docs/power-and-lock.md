@@ -9,8 +9,14 @@ orchard `docs/bring-up/suspend.md`); this model decides when.
 
 ## Requirements
 
-1. Power locks and darkens the screen **at once**; sleep follows only after the
-   screen stayed dark for a short while.
+1. Power, released after a short press on its own, requests lock and eases the
+   backlight to dark over 240 ms. Home and Power pressed together on a lit
+   screen take a screenshot (`omarchy-capture-screenshot fullscreen`) when the
+   first of them comes up within 1.5 s; Home then does not open the dock
+   (`omarchy-home-button` asks `omarchy-powerctl home`). Held longer (the DFU
+   and restart combination), they do nothing. Sleep follows
+   only after the screen stayed dark for a short while. Idle
+   screen-off has an eight-second grace period before requesting lock.
 2. **The first press always wakes.** No press is lost or replayed.
 3. **Press to lit well under 1 s** (target ≤ 0.5 s), measured and logged per wake.
 4. Every input has one defined effect in every state, and a press causes exactly
@@ -36,17 +42,24 @@ measured as 3.36 s); the key timestamps can. It:
 - reads the `gpio-keys` input device itself (Power, Home), with kernel
   timestamps on `CLOCK_MONOTONIC`. No process per press. labwc no longer binds
   Power; labwc's Home binding is only the session's home action and does not
-  fire while locked. Volume stays with labwc, `allowWhenLocked`, and never
+  fire while locked. A Home press that woke a dark screen (in the grace before
+  the lock, when the session is still unlocked) opens nothing either:
+  `omarchy-powerctl home` answers `wake`. Volume stays with labwc, `allowWhenLocked`, and never
   touches the panel or the state;
 - owns the backlight: brightness 0 is dark. The display pipeline stays on, so
   lighting it again needs no modeset and shows the lock screen it last showed;
+- remembers the last lit level in `/var/lib/omarchy-powerd/brightness` each
+  time the screen goes dark and at shutdown, and restores it once per boot (half
+  brightness if nothing is remembered, never below 5%). `systemd-backlight` is
+  disabled: it would save the dark 0 and start every later boot at its minimum;
 - asks the session's shell to lock (as the session's user: `omarchy-shell lock
   lock`, then `status` until `secure`). The greeter has nothing to lock;
 - requests sleep through logind, and holds a logind delay inhibitor so that a
   suspend from anywhere else comes through here first (`PrepareForSleep`);
 - takes the session's inputs over `/run/omarchy-powerd.sock` (group `video`):
   `/usr/libexec/omarchy-powerctl idle` (the idle timeouts), `wake`,
-  `input` (lit or dark, for lock-screen taps), `status`.
+  `input` (lit or dark, for lock-screen taps), `status`. Upstream's
+  `omarchy-system-lock` and `omarchy-system-wake` send `idle` and `wake`.
 
 No state is inferred from brightness or files. After a restart the state is
 `ON` and the panel is lit: it fails towards a visible, locked-or-not screen.
@@ -55,22 +68,25 @@ No state is inferred from brightness or files. After a restart the state is
 
 | State | Panel | System | Invariants |
 |---|---|---|---|
-| `ON` | lit | running | The only lit state. `inflight` may still be true right after a wake. |
+| `ON` | lit or fading in | running | `inflight` may still be true right after a wake. |
+| `GRACE` | fading out, then dark | running | Idle only; no lock or suspend requested until the eight-second grace expires. |
 | `SETTLING` | dark | running | Lock requested; settle timer armed or expired. Nothing suspended yet. |
 | `DARK` | dark | running | Dark and awake with no timer, **only** for playback, a block inhibitor, or a board that cannot suspend. |
 | `SUSPENDING` | dark | entering, asleep, or leaving sleep | Entered only from `SETTLING` with the lock confirmed, or from a logind signal. `inflight` is true. |
 
-**Can screen-off and sleep conflict? No.** They are not separate flags: dark is
-what every non-`ON` state *is*, and the only way to sleep is
+**Can screen-off and sleep conflict? No.** Every non-`ON` state targets dark;
+backlight animation is visual state, not authorization to sleep. A pending
+fade-to-dark is completed before any suspend/inhibitor release. The only way
+to request sleep is
 `SETTLING` → `SUSPENDING`, which requires dark and a confirmed lock. The panel
 is lit only by the transition to `ON`. The tests assert this for every reachable
 state: panel dark exactly when state ≠ `ON`, and `suspend` only ever dark and
 locked. A sleep can still be finishing behind a lit screen for a moment (`ON`
 with `inflight`), because the press lights the panel without waiting for it.
 
-**A dark screen never silently means running indefinitely.** Every way to dark,
-Power, the idle timeout and the lock screen's own blank timeout alike, goes
-through `SETTLING` to sleep; only the reasons listed for `DARK` hold it there. A
+**A dark screen never silently means running indefinitely.** Power enters
+`SETTLING` immediately. Idle first enters `GRACE`, then `SETTLING` if no input
+arrives within eight seconds. Only the reasons listed for `DARK` hold it there. A
 suspend that did not happen is tried again after the settle time.
 
 `ASLEEP` is not a state of the daemon: frozen, it cannot be in one. It is the
@@ -80,10 +96,12 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 
 | Input | Source |
 |---|---|
-| `power`, `home` | key **down** in gpio-keys, with its kernel timestamp |
+| `power`, `home` | gpio-keys, with the kernel timestamp: Home and a Power on a dark screen on key **down**; Power on a lit screen on key **up** after a short lone press. Home + Power is not a machine event: it runs the screenshot in the session |
 | `idle` | shell: idle timeout, or the lock screen's blank timeout |
+| `lock` | the menu's Lock (`omarchy-system-lock`): lock at once, no grace |
 | `wake` | lock screen: input while lit |
 | `settle` | settle timer |
+| `grace-ended` | eight-second idle grace timer |
 | `lock-ok`, `lock-failed` | the shell's answer to the lock request |
 | `playing`, `not-playing` | playback check, once a second while dark |
 | `sleep-signal` | logind `PrepareForSleep(true)`, someone else's suspend |
@@ -98,15 +116,20 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 (`pw-dump`, as the session's user) has a `Stream/Output/*` node in state
 `running`. Test without audio: `systemd-inhibit --what=sleep sleep 60`.
 
-Touch and volume are deliberately **not** inputs: a dark screen ignores taps
-(`omarchy-powerctl input` answers `dark`), volume works in every state without
-lighting anything and does not restart the settle timer.
+During `GRACE`, activity (`omarchy-powerctl input`) wakes without requesting a
+lock. After grace expires, dark-screen taps are ignored (`input` answers
+`dark`). Volume works in every state without lighting anything and does not
+restart the settle timer. Explicit locking is never undone by grace.
 
 ## Transitions
 
 | From | Input | To | Actions |
 |---|---|---|---|
-| `ON` | `power`, `idle` | `SETTLING` | dark; lock; arm settle |
+| `ON` | `power`, `lock` | `SETTLING` | dark; lock; arm settle |
+| `ON` | `idle` | `GRACE` | dark; arm grace |
+| `GRACE` | `power`, `home`, `wake` | `ON` | cancel grace; light; no lock request |
+| `GRACE` | `grace-ended`, `lock` | `SETTLING` | lock; arm settle |
+| `GRACE` | `sleep-signal` | `SUSPENDING` | cancel grace; lock; finish dark fade before releasing inhibitor |
 | `ON` | `home`, `wake` | `ON` | nothing (the session's Home does its home action) |
 | `ON` | `sleep-signal` | `SUSPENDING` | dark; lock; let logind go once locked |
 | `SETTLING` | `power`, `home`, `wake` | `ON` | cancel settle; light; tell the lock screen |
@@ -150,7 +173,9 @@ instant, and sleep only follows 10 s after the last one left it dark.
 
 | | Value | Why |
 |---|---|---|
-| Settle (dark → sleep) | 10 s | Power, idle, lock screen and greeter alike; lighting a running screen is instant |
+| Idle lock grace | 8 s | Quick wake does not require a new PIN; explicit lock is unchanged |
+| Screen fade | 240 ms | Smoothstep easing, reversible immediately; event loop never sleeps for animation |
+| Settle (lock requested → sleep) | 10 s | After Power immediately, or after the idle grace expires |
 | Desktop idle → dark | 5 min | the shell's `idle.lock` |
 | Lock screen idle → dark | 30 s | the lock's blank timer, sent as `idle` |
 | Greeter idle → dark | 30 s | `IdleMonitor` in the greeter's `shell.qml` |
@@ -182,8 +207,10 @@ sleep-ended result=slept seconds=46.012 wakeup_irq=78
 `from=ASLEEP-or-entering` followed by `result=slept` was a real sleep of that
 length; `result=aborted` means the press came while it was entering sleep.
 `press_to_lit_ms` runs from the wake press, so it includes the kernel's resume,
-and ends at the backlight write. What the panel shows then is the
-last frame; the lock screen's own update follows when `user.slice` thaws.
+and ends at the start of the brightness transition. Full target brightness is
+reached over 240 ms; the loop continues to service wake inputs throughout.
+What the panel shows is the last frame; the lock screen's own update follows
+when `user.slice` thaws.
 
 ## What this replaced
 

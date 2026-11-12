@@ -50,6 +50,23 @@ Item {
     layout: { left: [], centerBegin: [], center: [], centerEnd: [], right: [] }
   })
   property var layoutConfig: fallbackBarConfig.layout
+  // The layout as shell.json has it. A narrow bar shows what
+  // BarModel.narrowLayout makes of it, and layoutConfig is whichever is shown.
+  property var configuredLayout: fallbackBarConfig.layout
+  // A bar shorter than this many logical pixels is narrow: a phone in
+  // portrait (320 to 430) is, a phone in landscape or a tablet is not. With
+  // several screens the shortest bar decides, since they share one layout.
+  readonly property int narrowBelow: 480
+  readonly property bool narrow: {
+    var screens = Quickshell.screens
+    var shortest = 0
+    for (var i = 0; i < screens.length; i++) {
+      var length = root.vertical ? screens[i].height : screens[i].width
+      if (length > 0 && (shortest === 0 || length < shortest)) shortest = length
+    }
+    return shortest > 0 && shortest < root.narrowBelow
+  }
+  onNarrowChanged: applyLayout()
   property bool requestedTransparent: false
   property bool useTransparentForeground: false
   property bool transparent: false
@@ -753,7 +770,12 @@ Item {
     // Each widget keeps its key while it stays in the layout, wherever it
     // moves and whatever its settings, so a config write builds just the
     // widgets it adds (layoutWidgets).
-    layoutConfig = normalizeLayout(config.layout)
+    configuredLayout = normalizeLayout(config.layout)
+    applyLayout()
+  }
+
+  function applyLayout() {
+    layoutConfig = narrow ? BarModel.narrowLayout(configuredLayout) : configuredLayout
     barConfigSerial++
   }
 
@@ -2630,7 +2652,8 @@ Item {
       property real pressedY: 0
       // Finger jitter must not reorder a tablet's status bar. Mouse-based
       // customization remains available in the VM/desktop session.
-      readonly property bool canReorder: Quickshell.env("OMARCHY_TOUCH_MODE") !== "1" && root.shell && typeof root.shell.mutateShellConfig === "function"
+      // A narrow bar shows a derived layout, whose places are not shell.json's.
+      readonly property bool canReorder: Quickshell.env("OMARCHY_TOUCH_MODE") !== "1" && !root.narrow && root.shell && typeof root.shell.mutateShellConfig === "function"
       readonly property real dragThreshold: Style.space(4)
 
       anchors.fill: parent

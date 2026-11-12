@@ -1,0 +1,17 @@
+#!/usr/bin/python3
+"""Persistent rotation lock, shared by the Display panel and rotation daemon."""
+import json
+import os
+from pathlib import Path
+import sys
+
+path = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config'))) / 'omarchy/rotation-lock'
+mode = sys.argv[1] if len(sys.argv) > 1 else 'status'
+if mode == 'on':
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+elif mode == 'off':
+    path.unlink(missing_ok=True)
+elif mode != 'status':
+    raise SystemExit('Usage: omarchy-rotation-lock [status|on|off]')
+print(json.dumps({'locked': path.exists()}))

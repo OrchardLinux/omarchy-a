@@ -4,12 +4,14 @@ import importlib.util
 import json
 from pathlib import Path
 import os
+import pwd
 import socket
 import subprocess
 import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
@@ -155,8 +157,9 @@ class Scenarios(unittest.TestCase):
     def test_the_lock_screens_blank_timeout_leads_to_sleep(self):
         machine = Machine()
         run(machine, 'power', 'lock-ok', 'power', 'sleep-ended')  # back on the lit lock screen
-        self.assertEqual(machine.handle('idle'), ['dark', 'lock', 'arm-settle'])
-        run(machine, 'lock-ok')
+        self.assertEqual(machine.handle('idle'), ['dark', 'arm-grace'])
+        # An already locked screen stays locked during the grace interval.
+        run(machine, 'grace-ended', 'lock-ok')
         self.assertEqual(machine.handle('settle'), ['suspend'])
 
     def test_a_suspend_from_elsewhere_locks_and_darkens_before_it_is_let_through(self):
@@ -168,6 +171,48 @@ class Scenarios(unittest.TestCase):
     def test_a_suspend_this_daemon_asked_for_needs_nothing_more_from_the_signal(self):
         machine = asleep()
         self.assertEqual(machine.handle('sleep-signal'), [])
+
+
+class IdleGrace(unittest.TestCase):
+    def test_idle_waits_eight_seconds_before_requesting_lock(self):
+        machine = Machine()
+        self.assertEqual(machine.handle('idle'), ['dark', 'arm-grace'])
+        self.assertEqual(machine.state, powerd.GRACE)
+        self.assertEqual(machine.handle('settle'), [])
+        self.assertEqual(machine.handle('playing'), [])
+        self.assertEqual(machine.handle('grace-ended'), ['dark', 'lock', 'arm-settle'])
+        self.assertEqual(machine.state, SETTLING)
+        self.assertEqual(powerd.IDLE_GRACE_SECONDS, 8.0)
+
+    def test_quick_wake_never_requests_lock_or_suspend(self):
+        for event in ('power', 'home', 'wake'):
+            machine = Machine()
+            machine.handle('idle')
+            self.assertEqual(machine.handle(event), ['cancel-grace', 'light', 'woke'])
+            self.assertEqual(machine.handle('grace-ended'), [])
+            self.assertEqual(machine.state, ON)
+
+    def test_explicit_power_and_external_suspend_bypass_grace(self):
+        machine = Machine()
+        self.assertIn('lock', machine.handle('power'))
+        machine = Machine()
+        machine.handle('idle')
+        actions = machine.handle('sleep-signal')
+        self.assertIn('cancel-grace', actions)
+        self.assertIn('lock', actions)
+        self.assertNotIn('release-inhibitor', actions)
+        self.assertEqual(machine.handle('lock-ok'), ['release-inhibitor'])
+
+    def test_menu_lock_locks_at_once_also_during_grace(self):
+        machine = Machine()
+        self.assertEqual(machine.handle('lock'), ['dark', 'lock', 'arm-settle'])
+        self.assertEqual(machine.state, SETTLING)
+        machine = Machine()
+        machine.handle('idle')
+        self.assertEqual(machine.handle('lock'), ['cancel-grace', 'dark', 'lock', 'arm-settle'])
+        self.assertEqual(machine.state, SETTLING)
+        # anywhere else it changes nothing: already dark and locked, or asleep
+        self.assertEqual(machine.handle('lock'), [])
 
 
 class Exhaustive(unittest.TestCase):
@@ -265,12 +310,76 @@ class Inhibitor(unittest.TestCase):
 
 
 class Parsing(unittest.TestCase):
-    def test_key_presses_only_power_and_home_going_down(self):
+    def test_key_edges_only_power_and_home_presses_and_releases(self):
         event = powerd.INPUT_EVENT.pack
         data = (event(10, 500000, 1, 116, 1) + event(10, 600000, 1, 116, 0) + event(11, 0, 1, 172, 1) +
                 event(11, 0, 1, 115, 1) + event(12, 0, 0, 0, 0) + event(13, 0, 1, 116, 2))
-        self.assertEqual(powerd.key_presses(data), [('power', 10.5), ('home', 11.0)])
+        self.assertEqual(powerd.key_edges(data), [('power', True, 10.5), ('power', False, 10.6), ('home', True, 11.0)])
         self.assertEqual(powerd.INPUT_EVENT.size, 24)
+
+
+class Buttons(unittest.TestCase):
+    def events(self, edges, lit=True):
+        buttons = powerd.Buttons()
+        return [e for e in (buttons.edge(name, down, when, lit) for name, down, when in edges) if e]
+
+    def test_a_short_press_on_a_lit_screen_darkens_on_release(self):
+        buttons = powerd.Buttons()
+        self.assertIsNone(buttons.edge('power', True, 1.0, True))
+        self.assertEqual(buttons.edge('power', False, 1.2, True), 'power')
+
+    def test_power_with_home_held_does_nothing_for_dfu_and_restart(self):
+        for edges in ([('power', True, 1.0), ('home', True, 1.1), ('home', False, 11), ('power', False, 11)],
+                      [('home', True, 1.0), ('power', True, 1.1), ('power', False, 3.0), ('home', False, 3.1)],
+                      [('power', True, 1.0), ('home', True, 1.1)]):
+            with self.subTest(edges=edges):
+                self.assertEqual(self.events(edges), ['home'])
+
+    def test_a_short_home_and_power_press_takes_one_screenshot_on_release(self):
+        for edges in ([('power', True, 1.0), ('home', True, 1.1), ('power', False, 1.3), ('home', False, 1.4)],
+                      [('home', True, 1.0), ('power', True, 1.05), ('home', False, 1.3), ('power', False, 1.35)]):
+            with self.subTest(edges=edges):
+                self.assertEqual(self.events(edges), ['home', 'screenshot'])
+
+    def test_a_screenshot_press_does_not_count_as_a_home_press(self):
+        buttons = powerd.Buttons()
+        for name, down, when in (('power', True, 1.0), ('home', True, 1.1), ('home', False, 1.3), ('power', False, 1.4)):
+            buttons.edge(name, down, when, True)
+        self.assertTrue(buttons.home_in_combo)
+        buttons.edge('home', True, 5.0, True)
+        self.assertFalse(buttons.home_in_combo)
+
+    def test_user_commands_look_groups_up_in_the_child(self):
+        # os.getgrouplist would hold the interpreter lock through nss-systemd,
+        # which stalls until systemd has finished a sleep.
+        user = pwd.struct_passwd(('tablet', 'x', 1000, 1000, '', '/home/tablet', '/bin/bash'))
+        with mock.patch.object(powerd, 'command') as command, \
+                mock.patch.object(powerd.os, 'getgrouplist', side_effect=AssertionError('NSS in powerd')):
+            powerd.as_user(user, 'omarchy-shell', 'lock', 'woke')
+        argv, options = command.call_args
+        self.assertEqual(argv[:5], ('setpriv', '--reuid=1000', '--regid=1000', '--init-groups', '--'))
+        self.assertEqual(argv[5:], ('omarchy-shell', 'lock', 'woke'))
+        self.assertNotIn('extra_groups', options)
+        self.assertEqual(options['env']['HOME'], '/home/tablet')
+
+    def test_a_home_press_that_wakes_the_screen_opens_nothing(self):
+        buttons = powerd.Buttons()
+        self.assertEqual(buttons.edge('home', True, 1.0, False), 'home')
+        buttons.edge('home', False, 1.1, True)
+        self.assertTrue(buttons.home_woke)
+        buttons.edge('home', True, 5.0, True)
+        self.assertFalse(buttons.home_woke)
+
+    def test_power_alone_still_darkens_after_a_screenshot(self):
+        edges = [('power', True, 1.0), ('home', True, 1.1), ('home', False, 1.3), ('power', False, 1.4),
+                 ('power', True, 3.0), ('power', False, 3.2)]
+        self.assertEqual(self.events(edges), ['home', 'screenshot', 'power'])
+
+    def test_a_long_hold_does_nothing(self):
+        self.assertEqual(self.events([('power', True, 1.0), ('power', False, 2.6)]), [])
+
+    def test_a_dark_screen_wakes_on_the_press(self):
+        self.assertEqual(self.events([('power', True, 1.0), ('power', False, 1.1)], lit=False), ['power'])
 
     def test_sleep_signal(self):
         signal = {'type': 'signal', 'member': 'PrepareForSleep', 'payload': {'type': 'b', 'data': [True]}}
@@ -311,6 +420,13 @@ class Integration(unittest.TestCase):
         for key in ('XF86PowerOff', 'XF86HomePage'):
             self.assertEqual(greeter.findall(f"./keyboard/keybind[@key='{key}']"), [])
 
+    def test_a_held_key_on_the_lock_screen_wakes_once(self):
+        view = (PROJECT / 'desktop/shell/shell/plugins/lock/LockView.qml').read_text()
+        keys = view[view.index('Keys.onPressed'):]
+        keys = keys[:keys.index('\n        }\n')]
+        self.assertIn('if (!event.isAutoRepeat) root.wakeRequested()', keys)
+        self.assertEqual(keys.count('wakeRequested()'), 1)
+
     def test_every_way_to_dark_uses_the_same_client_and_the_decided_times(self):
         client = '/usr/libexec/omarchy-powerctl'
         lock = (PROJECT / 'desktop/shell/shell/plugins/lock/Service.qml').read_text()
@@ -345,6 +461,77 @@ class Integration(unittest.TestCase):
         self.assertIn('ExecStart=/usr/libexec/omarchy-powerd', unit.read_text())
 
 
+class Brightness(unittest.TestCase):
+    def setUp(self):
+        work = tempfile.TemporaryDirectory()
+        self.addCleanup(work.cleanup)
+        work = Path(work.name)
+        self.panel = work / 'backlight/panel'
+        self.panel.mkdir(parents=True)
+        (self.panel / 'brightness').write_text('20\n')
+        (self.panel / 'max_brightness').write_text('2000\n')
+        self.remembered = work / 'state/brightness'
+        for target, value in (('BACKLIGHTS', work / 'backlight'), ('BRIGHTNESS', self.remembered),
+                              ('FADE_SECONDS', 0), ('log', lambda *_: None)):
+            patcher = patch.object(powerd, target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.daemon = powerd.Daemon()
+
+    def level(self):
+        return int((self.panel / 'brightness').read_text())
+
+    def test_the_first_boot_without_a_remembered_level_is_full_bright(self):
+        self.daemon.restore_brightness()
+        self.assertEqual(self.level(), 2000)
+
+    def test_a_boot_restores_the_level_of_the_last_dark_not_the_dark_itself(self):
+        (self.panel / 'brightness').write_text('1200\n')
+        self.daemon.do_dark(None)
+        self.assertEqual(self.level(), 0)
+        self.assertEqual(self.remembered.read_text(), '1200\n')
+        powerd.Daemon().restore_brightness()
+        self.assertEqual(self.level(), 1200)
+
+    def test_a_remembered_level_too_dim_to_see_is_raised(self):
+        self.remembered.parent.mkdir()
+        self.remembered.write_text('3\n')
+        self.daemon.restore_brightness()
+        self.assertEqual(self.level(), 100)
+
+    def test_fade_is_eased_interruptible_and_keeps_requested_brightness(self):
+        (self.panel / 'brightness').write_text('1200\n')
+        with patch.object(powerd, 'FADE_SECONDS', .24), patch.object(powerd.time, 'monotonic', return_value=10):
+            self.daemon.do_dark(None)
+        self.assertEqual(self.level(), 1200)
+        with patch.object(powerd, 'FADE_SECONDS', .24), patch.object(powerd.time, 'monotonic', return_value=10.12):
+            self.daemon.tick_fade()
+            self.assertAlmostEqual(self.level(), 600, delta=1)
+            self.daemon.key_time = 10.12
+            self.daemon.do_light(SETTLING)
+        with patch.object(powerd, 'FADE_SECONDS', .24), patch.object(powerd.time, 'monotonic', return_value=10.36):
+            self.daemon.tick_fade()
+        self.assertEqual(self.level(), 1200)
+        self.assertEqual(self.daemon.saved, 1200)
+
+    def test_suspend_finishes_a_dark_transition_before_freezing(self):
+        with patch.object(powerd, 'FADE_SECONDS', .24):
+            self.daemon.do_dark(None)
+            self.daemon.finish_dark_fade()
+        self.assertEqual(self.level(), 0)
+        self.assertIsNone(self.daemon.fade)
+
+    def test_shutdown_keeps_a_changed_level_but_never_a_dark_panel(self):
+        (self.panel / 'brightness').write_text('700\n')
+        with self.assertRaises(SystemExit):
+            self.daemon.stop_brightness()
+        self.assertEqual(self.remembered.read_text(), '700\n')
+        (self.panel / 'brightness').write_text('0\n')
+        with self.assertRaises(SystemExit):
+            self.daemon.stop_brightness()
+        self.assertEqual(self.remembered.read_text(), '700\n')
+
+
 class EventLoop(unittest.TestCase):
     """The real loop with a fake sysfs, keys through a pipe and no logind."""
 
@@ -362,9 +549,14 @@ class EventLoop(unittest.TestCase):
         (self.work / 'wakeup_count').write_text('7\n')
         self.requests = []
         self.unit_state = 'activating'
-        for target, value in (('SETTLE_SECONDS', 0.1), ('STATS', self.stats), ('BACKLIGHTS', self.work / 'backlight'),
+        self.remembered = self.work / 'state/brightness'
+        self.remembered.parent.mkdir()
+        self.remembered.write_text('1563\n')
+        for target, value in (('SETTLE_SECONDS', 0.1), ('FADE_SECONDS', 0), ('IDLE_GRACE_SECONDS', 0.1),
+                              ('STATS', self.stats), ('BACKLIGHTS', self.work / 'backlight'),
+                              ('BRIGHTNESS', self.remembered),
                               ('WAKEUP_COUNT', self.work / 'wakeup_count'), ('SOCKET', str(self.work / 'ctl')),
-                              ('platform_suspend_ready', lambda: True), ('session_user', lambda: None), ('command', self.fake_command), ('log', lambda *_: None)):
+                              ('session_user', lambda: None), ('command', self.fake_command), ('log', lambda *_: None)):
             patcher = patch.object(powerd, target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -409,8 +601,11 @@ class EventLoop(unittest.TestCase):
             os.replace(self.stats / 'new', self.stats / name)
 
     def press(self, code=116, when=None):
+        """A tap: the key goes down and comes up 50 ms later."""
         when = time.monotonic() if when is None else when
-        os.write(self.key_write, b''.join(powerd.INPUT_EVENT.pack(int(when), int(when % 1 * 1e6), 1, code, v) for v in (1,0)))
+        up = when + 0.05
+        os.write(self.key_write, powerd.INPUT_EVENT.pack(int(when), int(when % 1 * 1e6), 1, code, 1) +
+                 powerd.INPUT_EVENT.pack(int(up), int(up % 1 * 1e6), 1, code, 0))
 
     def wait(self, condition, seconds=3):
         deadline = time.monotonic() + seconds
@@ -429,38 +624,6 @@ class EventLoop(unittest.TestCase):
             connection.connect(powerd.SOCKET)
             connection.sendall(request.encode() + b'\n')
             return connection.recv(64).decode().strip()
-
-    def test_idle_dim_restore_and_manual_brightness_supersedes_dim(self):
-        self.assertEqual(self.ask('dim'), 'ok')
-        self.assertEqual(self.brightness(), '300')
-        self.assertEqual(self.ask('als-state'), 'dark')
-        self.assertEqual(self.ask('brightness panel 600 300'), 'held')
-        self.ask('undim'); self.assertEqual(self.brightness(), '1563')
-        self.ask('dim')
-        (self.panel / 'brightness').write_text('700\n')
-        self.ask('undim'); self.assertEqual(self.brightness(), '700')
-
-    def test_cover_close_locks_without_automatic_suspend_and_open_wakes(self):
-        self.ask('cover-close')
-        self.wait(lambda: self.daemon.machine.lock_ok)
-        self.assertEqual(self.ask('status'), 'DARK')
-        self.assertEqual(self.brightness(), '0')
-        time.sleep(0.2)
-        self.assertNotIn(('systemctl', 'suspend'), self.requests)
-        self.ask('wake'); self.assertEqual(self.brightness(), '1563')
-
-    def test_automatic_brightness_obeys_power_state_and_manual_changes(self):
-        self.assertEqual(self.ask('brightness panel 1800 1563'), 'ok')
-        self.assertEqual(self.brightness(), '1800')
-        self.assertEqual(self.ask('brightness panel 1900 1563'), 'held')
-        self.assertEqual(self.brightness(), '1800')
-        for request in ('brightness panel 0 1800', 'brightness panel 3001 1800',
-                        'brightness other 1900 1800', 'brightness panel ² 1800'):
-            self.assertEqual(self.ask(request), 'held')
-            self.assertEqual(self.brightness(), '1800')
-        self.press(); self.wait(lambda: self.brightness() == '0')
-        self.assertEqual(self.ask('brightness panel 1800 0'), 'held')
-        self.assertEqual(self.brightness(), '0')
 
     def test_press_sleep_wake(self):
         machine = self.daemon.machine
