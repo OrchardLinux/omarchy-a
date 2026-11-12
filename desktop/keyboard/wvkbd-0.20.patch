@@ -24,7 +24,9 @@
 +    fclose(file);
 +}
 +
-@@ -138,0 +152,138 @@
+@@ -137,0 +151,182 @@
++static void request_hide(void);
++
 +/* Drag the actual layer surface, preserving its exclusive zone until hide.
 + * Surface-local motion changes as the surface moves: add the current offset
 + * to recover the finger's position in the original surface coordinates. */
@@ -35,6 +37,8 @@
 +static uint32_t drag_last_time;
 +static double drag_velocity;
 +static bool animating, animation_hide;
++/* A resize (rotation) rebuilds a visible keyboard: no second slide-in. */
++static bool resize_show;
 +static int animation_from, animation_to;
 +static int64_t animation_started;
 +/* Delay the initial key briefly so a downward drag does not type a letter.
@@ -44,6 +48,7 @@
 +static int pending_x, pending_y;
 +static uint32_t pending_time;
 +static int64_t pending_started;
++static bool pending_preview_visible;
 +
 +static int64_t monotonic_ms(void)
 +{
@@ -122,6 +127,13 @@
 +    drag_position(animation_from + (int)((animation_to - animation_from) * ease));
 +}
 +
++static void pending_preview_clear(void)
++{
++    if (!pending_preview_visible) return;
++    pending_preview_visible = false;
++    kbd_draw_layout(&keyboard);
++}
++
 +static void pending_begin(enum drag_source source, int32_t id, int x, int y, uint32_t time)
 +{
 +    pending_source = source;
@@ -130,11 +142,21 @@
 +    pending_y = y;
 +    pending_time = time;
 +    pending_started = monotonic_ms();
++    /* Feedback is immediate; key/modifier events still wait for the gesture. */
++    struct key *key = kbd_get_key(&keyboard, x, y);
++    if (key) {
++        bool popup = keyboard.show_popup;
++        keyboard.show_popup = false;
++        kbd_draw_key(&keyboard, key, Press);
++        keyboard.show_popup = popup;
++        pending_preview_visible = true;
++    }
 +}
 +
 +static void pending_commit(void)
 +{
 +    if (pending_source == DRAG_NONE) return;
++    pending_preview_visible = false;
 +    pending_source = DRAG_NONE;
 +    kbd_unpress_key(&keyboard, pending_time);
 +    struct key *key = kbd_get_key(&keyboard, pending_x, pending_y);
@@ -153,6 +175,7 @@
 +        int32_t id = pending_id;
 +        int start_y = pending_y;
 +        uint32_t start_time = pending_time;
++        pending_preview_clear();
 +        pending_source = DRAG_NONE;
 +        kbd_release_key(&keyboard, time);
 +        drag_begin(source, id, start_y, start_time);
@@ -163,13 +186,65 @@
 +    }
 +}
 +
-@@ -255,16 +406,3 @@
++/* User-facing hide requests slide down; internal teardown stays immediate. */
++static void request_hide(void)
++{
++    if (!layer_surface) return;
++    if (!layer_surface_configured) {
++        hide();
++        return;
++    }
++    if (animating && animation_hide) return;
++    pending_preview_clear();
++    pending_source = DRAG_NONE;
++    drag_source = DRAG_NONE;
++    cur_press = false;
++    kbd_release_key(&keyboard, (uint32_t)monotonic_ms());
++    animation_from = drag_offset;
++    animation_to = height;
++    animation_hide = true;
++    animation_started = monotonic_ms();
++    animating = animation_from != animation_to;
++    if (!animating) hide();
++}
+@@ -255,2 +448,34 @@
 -    struct key *next_key;
 -    uint32_t touch_x, touch_y;
--
--    touch_x = wl_fixed_to_int(x);
--    touch_y = wl_fixed_to_int(y);
--
++    if (drag_source != DRAG_NONE || animating || pending_source != DRAG_NONE) return;
++    if (surface == draw_surf.surf)
++        pending_begin(DRAG_TOUCH, id, wl_fixed_to_int(x), wl_fixed_to_int(y), time);
++}
++
++void
++wl_touch_up(void *data, struct wl_touch *wl_touch, uint32_t serial,
++            uint32_t time, int32_t id)
++{
++    if(!layer_surface_configured || !popup_xdg_surface_configured) {
++        return;
++    }
++
++    if (drag_source == DRAG_TOUCH) {
++        if (id == drag_touch_id) drag_finish(false, time);
++        return;
++    }
++    if (drag_source != DRAG_NONE || animating) return;
++    if (pending_source == DRAG_TOUCH) {
++        if (id != pending_id) return;
++        pending_commit();
++    } else if (pending_source != DRAG_NONE) return;
++    kbd_release_key(&keyboard, time);
++}
++
++void
++wl_touch_motion(void *data, struct wl_touch *wl_touch, uint32_t time,
++                int32_t id, wl_fixed_t x, wl_fixed_t y)
++{
++    if(!layer_surface_configured || !popup_xdg_surface_configured) {
++        return;
++    }
++
++    int touch_x, touch_y;
+@@ -261,36 +486,10 @@
 -    kbd_unpress_key(&keyboard, time);
 -
 -    next_key = kbd_get_key(&keyboard, touch_x, touch_y);
@@ -180,23 +255,32 @@
 -        kbd_switch_layout(&keyboard, keyboard.prevlayout,
 -                          keyboard.last_abc_index);
 -    }
-+    if (drag_source != DRAG_NONE || animating || pending_source != DRAG_NONE) return;
-+    if (surface == draw_surf.surf)
-+        pending_begin(DRAG_TOUCH, id, wl_fixed_to_int(x), wl_fixed_to_int(y), time);
-@@ -280,0 +419,9 @@
-+    if (drag_source == DRAG_TOUCH) {
-+        if (id == drag_touch_id) drag_finish(false, time);
-+        return;
-+    }
-+    if (drag_source != DRAG_NONE || animating) return;
-+    if (pending_source == DRAG_TOUCH) {
-+        if (id != pending_id) return;
-+        pending_commit();
-+    } else if (pending_source != DRAG_NONE) return;
-@@ -292 +439 @@
+-}
+-
+-void
+-wl_touch_up(void *data, struct wl_touch *wl_touch, uint32_t serial,
+-            uint32_t time, int32_t id)
+-{
+-    if(!layer_surface_configured || !popup_xdg_surface_configured) {
+-        return;
+-    }
+-
+-    kbd_release_key(&keyboard, time);
+-}
+-
+-void
+-wl_touch_motion(void *data, struct wl_touch *wl_touch, uint32_t time,
+-                int32_t id, wl_fixed_t x, wl_fixed_t y)
+-{
+-    if(!layer_surface_configured || !popup_xdg_surface_configured) {
+-        return;
+-    }
+-
 -    uint32_t touch_x, touch_y;
-+    int touch_x, touch_y;
-@@ -296,0 +444,10 @@
+-
+-    touch_x = wl_fixed_to_int(x);
+-    touch_y = wl_fixed_to_int(y);
+-
 +    if (drag_source == DRAG_TOUCH) {
 +        if (id == drag_touch_id) drag_motion(touch_y, time);
 +        return;
@@ -207,42 +291,47 @@
 +        return;
 +    }
 +    if (pending_source != DRAG_NONE) return;
-@@ -307,0 +465,3 @@
-+    if (pending_source == DRAG_TOUCH) pending_source = DRAG_NONE;
+@@ -307,0 +507,6 @@
++    if (pending_source == DRAG_TOUCH) {
++        pending_preview_clear();
++        pending_source = DRAG_NONE;
++    }
 +    if (drag_source == DRAG_TOUCH) drag_finish(true, drag_last_time);
 +    else if (layer_surface_configured) kbd_release_key(&keyboard, 0);
-@@ -326,0 +487,2 @@
+@@ -326,0 +532,2 @@
 +    cur_x = wl_fixed_to_int(surface_x);
 +    cur_y = wl_fixed_to_int(surface_y);
-@@ -347,2 +509,3 @@
+@@ -333,0 +541,4 @@
++    if (pending_source == DRAG_POINTER) {
++        pending_preview_clear();
++        pending_source = DRAG_NONE;
++    }
+@@ -347,2 +558,7 @@
 -    if (cur_press) {
 -        kbd_motion_key(&keyboard, time, cur_x, cur_y);
 +    if (drag_source == DRAG_POINTER) {
 +        drag_motion(cur_y, time);
 +        return;
-@@ -349,0 +513,4 @@
++    }
 +    if (cur_press && drag_source == DRAG_NONE && !animating) {
 +        if (pending_source == DRAG_POINTER) pending_motion(cur_x, cur_y, time);
 +        else if (pending_source == DRAG_NONE) kbd_motion_key(&keyboard, time, cur_x, cur_y);
-+    }
-@@ -360 +527 @@
+@@ -360 +576 @@
 -    struct key *next_key;
 +    if (button != BTN_LEFT) return;
-@@ -362 +529,5 @@
+@@ -362 +578,5 @@
 -
 +    if (drag_source == DRAG_POINTER) {
 +        if (!cur_press) drag_finish(false, time);
 +        return;
 +    }
 +    if (drag_source != DRAG_NONE || animating) return;
-@@ -364 +535,2 @@
+@@ -364 +584,2 @@
 -        kbd_unpress_key(&keyboard, time);
 +        if (pending_source == DRAG_NONE && cur_x >= 0 && cur_y >= 0)
 +            pending_begin(DRAG_POINTER, 0, cur_x, cur_y, time);
-@@ -365,0 +538,2 @@
-+        if (pending_source == DRAG_POINTER) pending_commit();
-+        else if (pending_source != DRAG_NONE) return;
-@@ -368,11 +541,0 @@
+@@ -366,11 +587,2 @@
+-    }
 -
 -    if (cur_press && cur_x >= 0 && cur_y >= 0) {
 -        next_key = kbd_get_key(&keyboard, cur_x, cur_y);
@@ -253,20 +342,70 @@
 -            kbd_switch_layout(&keyboard, keyboard.prevlayout,
 -                              keyboard.last_abc_index);
 -        }
--    }
-@@ -607,0 +771 @@
++        if (pending_source == DRAG_POINTER) pending_commit();
++        else if (pending_source != DRAG_NONE) return;
+@@ -525 +737 @@
+-    hide();
++    request_hide();
+@@ -589,0 +809,1 @@
++        resize_show = !hidden && !(animating && animation_hide);
+@@ -596,0 +817,3 @@
++        /* Still acknowledge: an unanswered configure makes the compositor
++         * consider this surface unsettled for as long as it lives. */
++        zwlr_layer_surface_v1_ack_configure(surface, serial);
+@@ -607,0 +820 @@
 +    report_visibility(true);
-@@ -721,0 +886,5 @@
+@@ -641,0 +860,13 @@
++    /* First buffer is mapped below the edge; animate every show path but
++     * the rebuild after a resize, where the keyboard was already up. */
++    if (resize_show) {
++        resize_show = false;
++        animating = false;
++        drag_position(0);
++    } else {
++        animation_from = height;
++        animation_to = 0;
++        animation_hide = false;
++        animation_started = monotonic_ms();
++        animating = true;
++    }
+@@ -721,0 +941,6 @@
 +    animating = false;
 +    drag_source = DRAG_NONE;
 +    pending_source = DRAG_NONE;
++    pending_preview_visible = false;
 +    drag_offset = 0;
 +    cur_press = false;
-@@ -760,0 +930 @@
+@@ -760,0 +986 @@
 +    report_visibility(false);
-@@ -1185 +1355,4 @@
+@@ -766,0 +993,7 @@
++        if (animating && animation_hide) {
++            animation_from = drag_offset;
++            animation_to = 0;
++            animation_hide = false;
++            animation_started = monotonic_ms();
++            animating = animation_from != animation_to;
++        }
+@@ -791,0 +1025,4 @@
++    /* Set the offscreen position before the first buffer, avoiding a flash.
++     * Compensate the negative margin to reserve one stable keyboard height. */
++    drag_offset = height;
++    zwlr_layer_surface_v1_set_margin(layer_surface, 0, 0, -(int)height, 0);
+@@ -793 +1030 @@
+-        zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, height);
++        zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, height * 2);
+@@ -804 +1041 @@
+-    if (hidden)
++    if (hidden || (animating && animation_hide))
+@@ -807 +1044 @@
+-        hide();
++        request_hide();
+@@ -1185 +1422,4 @@
 -        poll(fds, 2, -1);
 +        poll(fds, 2, (animating || pending_source != DRAG_NONE) ? 16 : -1);
 +        animation_tick();
 +        if (pending_source != DRAG_NONE && monotonic_ms() - pending_started >= 300)
 +            pending_commit();
+@@ -1202 +1442 @@
+-                hide();
++                request_hide();

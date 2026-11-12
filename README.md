@@ -43,9 +43,20 @@ RAM experiments and device bring-up happen in orchard itself, with its
 A release covers every device orchard describes: one root image, and
 orchard's kernel, device trees and modules for each platform. How well a device
 works is orchard's device data, which the installer shows before it changes
-anything. Today the iPad 6 Wi-Fi (`iPad7,5`, J71b) is supported, without GPU
-acceleration; the others are experimental. See orchard's
+anything. Today the iPad 6 Wi-Fi (`iPad7,5`, J71b) is supported; the others
+are experimental. See orchard's
 [devices](https://github.com/OrchardLinux/orchard/tree/main/devices).
+
+The desktop finds the hardware at login. On the iPad 6 and iPad 7 (A10) it
+draws on the GPU, and Firefox plays H.264 video, YouTube included, through the
+hardware video decoder. On every other device it draws in software, as before.
+To start an A10 device on the software desktop once, boot with
+`modprobe.blacklist=powervr`.
+
+Firefox reaches the video decoder only with its media decoding sandbox
+switched off (`MOZ_DISABLE_RDD_SANDBOX=1`, set by the login session on those
+devices): a video that exploits a decoder bug is then not contained by that
+sandbox. The sandbox around web pages stays on.
 
 This image uses **tethered boot**: starting Linux after a cold restart requires a host computer running `orchard launch`.
 
