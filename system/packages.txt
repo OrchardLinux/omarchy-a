@@ -51,3 +51,7 @@ wayland
 
 kexec-tools
 libnotify
+
+# USB link probes and network recovery.
+iputils
+iproute2

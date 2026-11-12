@@ -1,0 +1,219 @@
+#!/usr/bin/python3
+"""Recover carrier loss or a previously reachable USB peer that stops replying."""
+import fcntl
+import os
+from pathlib import Path
+import signal
+import subprocess
+import time
+
+
+def read(path):
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return ''
+
+
+def peer_reachable():
+    try:
+        return subprocess.run(['ping', '-n', '-I', 'usb0', '-c', '1', '-W', '1',
+                               '-w', '2', '172.16.42.2'], timeout=3,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def link_state(state):
+    subprocess.run(['ip', 'link', 'set', 'dev', 'usb0', state], check=True,
+                   timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def kernel_log(message):
+    try:
+        with open('/dev/kmsg', 'w') as stream:
+            stream.write('<5>omarchy-usb-recover: ' + message + '\n')
+    except OSError:
+        pass
+
+
+class Recovery:
+    def __init__(self, sysfs=Path('/sys'), pause=time.sleep, log=print,
+                 probe=peer_reachable, link=link_state, kmsg=kernel_log):
+        self.sysfs, self.pause, self.log = sysfs, pause, log
+        self.probe, self.link, self.kmsg = probe, link, kmsg
+        self.seen_peer = False
+        self.peer_lost_at = None
+        self.stall_retry_after = 0
+        self.stall_attempts = 0
+        self.seen_carrier = False
+        self.lost_at = None
+        self.retry_after = 0
+        self.attempts = 0
+
+    def binding(self):
+        """Only the bound gadget with an active ECM or NCM function owning usb0."""
+        matches = []
+        for gadget in (self.sysfs / 'kernel/config/usb_gadget').glob('*'):
+            udc = read(gadget / 'UDC')
+            if not udc or '/' in udc:
+                continue
+            for function in (gadget / 'functions').glob('*'):
+                if not function.name.startswith(('ecm.', 'ncm.')):
+                    continue
+                if read(function / 'ifname') != 'usb0':
+                    continue
+                if any(link.is_symlink() and link.resolve() == function.resolve()
+                       for link in (gadget / 'configs').glob('*/*')):
+                    matches.append((gadget / 'UDC', udc))
+        return matches[0] if len(matches) == 1 else None
+
+    def powered(self):
+        for supply in (self.sysfs / 'class/power_supply').glob('*'):
+            try:
+                if read(supply/'type') != 'Battery' and read(supply/'online') == '1' and int(read(supply/'current_max')) > 0:
+                    return True
+            except ValueError:
+                pass
+        return False
+
+    def ready(self):
+        net = self.sysfs / 'class/net/usb0'
+        try:
+            return self.powered() and int(read(net/'flags'),16)&1 and read(net/'carrier')=='0'
+        except ValueError:
+            return False
+
+    def live_binding(self):
+        # Network liveness is independent of the charger's current_max. A
+        # configured session can be alive even when its power budget is unknown.
+        binding = self.binding()
+        if not binding:
+            return None
+        path, udc = binding
+        online = any(read(p/'type') != 'Battery' and read(p/'online') == '1'
+                     for p in (self.sysfs/'class/power_supply').glob('*'))
+        try:
+            up = int(read(self.sysfs/'class/net/usb0/flags'), 16) & 1
+        except ValueError:
+            up = False
+        if online and up and read(self.sysfs/'class/udc'/udc/'state') == 'configured':
+            return path, udc
+        return None
+
+    def stalled_peer(self, now):
+        if not self.live_binding():
+            self.seen_peer = False
+            self.peer_lost_at = None
+            return
+        if self.probe():
+            self.seen_peer = True
+            self.peer_lost_at = None
+            self.stall_attempts = 0
+            return
+        # Hosts may intentionally block ICMP or have no USB address. Arm only
+        # after we actually reached this peer during this configured session.
+        if not self.seen_peer:
+            return
+        if self.peer_lost_at is None:
+            self.peer_lost_at = now
+        if (now - self.peer_lost_at < 15 or now < self.stall_retry_after or
+                self.stall_attempts >= 3):
+            return
+        binding = self.live_binding()
+        if not binding or read(self.sysfs/'class/net/usb0/carrier') != '1':
+            return
+        self.stall_attempts += 1
+        self.stall_retry_after = now + 60
+        counters = ' '.join(f'{key}={read(self.sysfs/"class/net/usb0/statistics"/key)}'
+                            for key in ('rx_packets', 'tx_packets', 'rx_dropped', 'tx_dropped'))
+        message = (f'usb0-stall-bounce peer=172.16.42.2 unreachable>=15s '
+                   f'attempt={self.stall_attempts}/3 {counters}')
+        self.log(message, flush=True)
+        self.kmsg(message)
+        try:
+            try:
+                self.link('down')
+            finally:
+                # Restore after command failure/termination, without adopting
+                # a new gadget or changing UDC/serial/current-grant ownership.
+                if self.binding() == binding:
+                    self.link('up')
+        except (OSError, subprocess.SubprocessError) as error:
+            self.log(f'usb0 stall bounce failed: {error}', flush=True)
+        self.peer_lost_at = None
+
+    def step(self, now):
+        net = self.sysfs / 'class/net/usb0'
+        if read(net/'carrier') == '1':
+            self.stalled_peer(now)
+        else:
+            self.seen_peer = False
+            self.peer_lost_at = None
+        if not self.powered():
+            self.seen_carrier = False
+            self.attempts = 0
+            self.lost_at = None
+            self.retry_after = 0
+            return
+        if read(net / 'carrier') == '1':
+            self.seen_carrier = True
+            self.lost_at = None
+            return
+        if not self.seen_carrier or not self.ready():
+            self.lost_at = None
+            return
+        if self.lost_at is None:
+            self.lost_at = now
+        if now - self.lost_at < 10 or now < self.retry_after or self.attempts >= 3:
+            return
+        binding = self.binding()
+        if not binding:
+            return
+        path, udc = binding
+        if read(self.sysfs / 'class/udc' / udc / 'state') != 'configured':
+            return
+        # Recheck immediately before disconnecting; never adopt an unbound gadget.
+        if not self.ready() or read(path) != udc:
+            return
+        self.attempts += 1
+        self.retry_after = now + 60
+        self.log(f'usb0 carrier lost with VBUS present; rebinding {udc} '
+                 f'(attempt {self.attempts}/3)', flush=True)
+        try:
+            path.write_text('\n')
+            try:
+                self.pause(0.2)
+            finally:
+                # Restore even on stop/error, but do not overwrite another maintainer.
+                if read(path) == '':
+                    path.write_text(udc + '\n')
+        except OSError as error:
+            self.log(f'USB gadget rebind failed: {error}', flush=True)
+        self.lost_at = None
+
+
+def main():
+    if os.major(os.stat('/').st_dev) == 43 or any(' / ' in line and '/dev/nbd' in line for line in Path('/proc/mounts').read_text().splitlines()):
+        print('USB recovery disabled on NBD root', flush=True)
+        return
+    running = True
+
+    def stop(_signum, _frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    # systemd supplies the directory; also prevent a second manual instance.
+    with open('/run/omarchy-usb-recover/lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        recovery = Recovery()
+        while running:
+            recovery.step(time.monotonic())
+            if running:
+                time.sleep(2)
+
+
+if __name__ == '__main__':
+    main()
