@@ -306,6 +306,8 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                           'omarchy-powerd.service', 'omarchy-wifi-country.service')]
                 wants += [('multi-user.target.wants/' + unit, unit) for unit in
                           ('orchard-kexec-provenance.service', 'orchard-kexec-load.service', 'orchard-kexec-refresh.path', 'orchard-kexec-health.service')]
+                wants.append(('multi-user.target.wants/omarchy-bluetooth-connectable.service', 'omarchy-bluetooth-connectable.service'))
+                wants.append(('timers.target.wants/omarchy-bluetooth-connectable.timer', 'omarchy-bluetooth-connectable.timer'))
                 wants.append(('getty.target.wants/serial-getty@ttyGS0.service', 'serial-getty@.service'))
                 # BindsTo stops the USB network when usb0 goes; usb0's return starts it again
                 wants.append(('sys-subsystem-net-devices-usb0.device.wants/orchard-usb-network.service',
