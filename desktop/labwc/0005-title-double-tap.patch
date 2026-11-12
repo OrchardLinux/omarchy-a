@@ -1,0 +1,26 @@
+--- a/src/input/cursor.c
++++ b/src/input/cursor.c
+@@ -1029,6 +1029,10 @@
+ is_double_click(long double_click_speed, uint32_t button,
+ 		struct cursor_context *ctx)
+ {
++	/* Text and blank titlebar space are one target for imprecise taps.
++	 * Keep buttons and resize borders distinct. */
++	enum lab_node_type type = node_type_contains(LAB_NODE_TITLE, ctx->type)
++		? LAB_NODE_TITLE : ctx->type;
+ 	static enum lab_node_type last_type;
+ 	static uint32_t last_button;
+ 	static struct view *last_view;
+@@ -1040,10 +1044,10 @@
+ 		(now.tv_nsec - last_click.tv_nsec) / 1000000;
+ 	last_click = now;
+ 	if (last_button != button || last_view != ctx->view
+-			|| last_type != ctx->type) {
++			|| last_type != type) {
+ 		last_button = button;
+ 		last_view = ctx->view;
+-		last_type = ctx->type;
++		last_type = type;
+ 		return false;
+ 	}
+ 	if (ms < double_click_speed && ms >= 0) {

@@ -87,3 +87,13 @@ class KeyboardShortcutTests(unittest.TestCase):
         for key in ('Super_L', 'Super_R'):
             binding = [b for b in self.bindings if b.get('key') == key][0]
             self.assertEqual(binding.get('onRelease'), 'yes')
+
+class TitleTap(unittest.TestCase):
+    def test_windows_keep_normal_size_and_title_taps_share_a_target(self):
+        import xml.etree.ElementTree as ET
+        tree=ET.parse(PROJECT/'desktop/shell/labwc-rc.xml')
+        self.assertFalse(tree.findall('./windowRules/windowRule/action[@name="Maximize"]'))
+        patch=(PROJECT/'desktop/labwc/0005-title-double-tap.patch').read_text()
+        self.assertIn('node_type_contains(LAB_NODE_TITLE, ctx->type)',patch)
+        self.assertIn('last_type != type',patch)
+
