@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# omarchy:summary=Take a screenshot
+# omarchy:group=capture
+# omarchy:args=[smart|region|windows|fullscreen|scroll] [copy|save]
+# omarchy:examples=omarchy screenshot | omarchy capture screenshot region
+# omarchy:aliases=omarchy screenshot
+
+# Upstream's command and defaults on labwc: upstream hands the capture to
+# Omasnap, which finds outputs and windows through hyprctl. Here grim takes
+# the whole screen (the mode Home + Power uses); the other modes do the same
+# until a selection tool runs on labwc. A shot is saved to
+# ~/Pictures/Screenshots (or OMASNAP_SCREENSHOT_DIR / OMARCHY_SCREENSHOT_DIR),
+# copied when wl-copy is there, and announced; the screen flashes once taken.
+
+set -euo pipefail
+
+mode=fullscreen
+destination=both
+for arg in "$@"; do
+  case "$arg" in
+    smart|region|windows|fullscreen|scroll) mode=$arg ;;
+    copy) destination=copy ;;
+    save) destination=save ;;
+    slurp) ;;
+    *) echo "omarchy-capture-screenshot: unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+[[ $mode == fullscreen ]] || echo "omarchy-capture-screenshot: $mode is not available on labwc yet; taking the whole screen" >&2
+
+# Started from omarchy-powerd, the session's display is not in the environment.
+if [[ -z ${WAYLAND_DISPLAY:-} ]]; then
+  for socket in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/wayland-[0-9]; do
+    [[ -S $socket ]] && export WAYLAND_DISPLAY=${socket##*/} && break
+  done
+fi
+
+dir=${OMASNAP_SCREENSHOT_DIR:-${OMARCHY_SCREENSHOT_DIR:-$HOME/Pictures/Screenshots}}
+file=$dir/screenshot-$(date +%Y-%m-%d_%H-%M-%S).png
+mkdir -p "$dir"
+# Uncompressed, the capture takes about 80 ms on an iPad 6 (grim's default
+# compression 1.5 s): the flash follows the shot at once, and the file is
+# compressed afterwards in the background.
+grim -l 0 "$file"
+omarchy-shell -q flash show >/dev/null 2>&1 || true
+compress_png() {
+  python3 - "$1" <<'PY' 2>/dev/null || true
+import os, struct, sys, zlib
+path = sys.argv[1]
+data = open(path, 'rb').read()
+if data[:8] != b'\x89PNG\r\n\x1a\n':
+    sys.exit(0)
+chunks, idat, pos = [], b'', 8
+while pos < len(data):
+    length, kind = struct.unpack('>I4s', data[pos:pos + 8])
+    body = data[pos + 8:pos + 8 + length]
+    pos += 12 + length
+    if kind == b'IDAT':
+        idat += body
+        if not any(c[0] == b'IDAT' for c in chunks):
+            chunks.append((b'IDAT', None))
+    else:
+        chunks.append((kind, body))
+packed = zlib.compress(zlib.decompress(idat), 6)
+out = bytearray(data[:8])
+for kind, body in chunks:
+    body = packed if kind == b'IDAT' else body
+    out += struct.pack('>I', len(body)) + kind + body + struct.pack('>I', zlib.crc32(kind + body))
+tmp = path + '.tmp'
+open(tmp, 'wb').write(out)
+os.replace(tmp, path)
+PY
+}
+
+# Without wl-copy a shot can only be kept as a file.
+command -v wl-copy >/dev/null || destination=save
+if [[ $destination != save ]]; then
+  wl-copy --type image/png < "$file"
+fi
+if [[ $destination == copy ]]; then
+  rm -f "$file"
+  notify-send -a Screenshot -i camera-photo "Screenshot copied" >/dev/null 2>&1 || true
+else
+  notify-send -a Screenshot -i "$file" "Screenshot saved" "${file/#$HOME/\~}" >/dev/null 2>&1 || true
+  compress_png "$file" >/dev/null 2>&1 &
+fi

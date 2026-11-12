@@ -1,9 +1,9 @@
 # ARMv7 desktop components
 
 `desktop/build --architecture armv7h` builds the same desktop payload for an
-ARMv7 Arch Linux ARM userspace. The existing AArch64 signed Omacalc input
-continues to serve AArch64 builds. ARMv7 builds compile Omacalc from the source
-recorded in `sources.json`, with the recipe in `../packages/omacalc`.
+ARMv7 Arch Linux ARM userspace. AArch64 images install Omacalc from upstream
+Omarchy's package repository, which has no ARMv7 build, so ARMv7 builds compile
+it from the source recorded in `sources.json`, with the recipe in `../packages/omacalc`.
 
 The Omacalc archive is pinned to upstream v0.3.1, commit
 `573d7106f5c6c0225864eb8634ae37ddcb657f63`. Its SHA-256 was measured from the

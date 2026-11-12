@@ -392,6 +392,27 @@ function layoutWidgets(layout, memo) {
   return { sections: bySection, keys: Object.keys(next).sort(), entries: entries }
 }
 
+// The layout a narrow bar shows, such as a phone's in portrait, where the
+// widgets of a tablet's bar run into the clock. It is made from the one layout
+// in shell.json by each entry's `narrow` setting: false leaves the widget
+// out, a section's name moves it to the end of that section, and an entry
+// without the setting stays where it is. The entries themselves are passed
+// on untouched, so a widget keeps its settings in either layout.
+function narrowLayout(layout) {
+  var source = isPlainObject(layout) ? layout : {}
+  var out = {}
+  for (var s = 0; s < sections.length; s++) out[sections[s]] = []
+  for (var r = 0; r < sections.length; r++) {
+    var list = Array.isArray(source[sections[r]]) ? source[sections[r]] : []
+    for (var i = 0; i < list.length; i++) {
+      var hint = isPlainObject(list[i]) ? list[i].narrow : undefined
+      if (hint === false) continue
+      out[sections.indexOf(hint) !== -1 ? hint : sections[r]].push(list[i])
+    }
+  }
+  return out
+}
+
 // The rows a section's model shows: one per widget, under its key
 // (layoutWidgets), and a spacer before the widget at each index in `places`,
 // or after the last for the section's length. A row holds nothing but its
@@ -634,6 +655,7 @@ if (typeof module !== "undefined") {
     dropRoom: dropRoom,
     sectionRows: sectionRows,
     layoutWidgets: layoutWidgets,
+    narrowLayout: narrowLayout,
     fadeShares: fadeShares,
     roomLengths: roomLengths,
     moveEntry: moveEntry,

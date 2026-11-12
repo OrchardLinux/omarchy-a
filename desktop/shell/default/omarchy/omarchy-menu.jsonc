@@ -38,8 +38,9 @@
   "system.suspend": {"icon":"󰒲","label":"Suspend","when":"! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled","action":"systemctl suspend"},
   "system.hibernate": {"icon":"󰤁","label":"Hibernate","when":"omarchy-hibernation-available && ! omarchy-sleep-disabled","action":"systemctl hibernate"},
   "system.logout": {"icon":"󰍃","label":"Logout","action":"omarchy-system logout"},
-  "system.reboot": {"icon":"󰜉","label":"Reboot","action":"systemctl reboot"},
-  "system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"systemctl poweroff"},
+  // Orchard: a reboot does not come back into Linux. The device's own boot chain starts its own system; Linux returns through DFU.
+  "system.reboot": {"icon":"󰜉","label":"Reboot (leaves Linux)","action":"omarchy-system reboot"},
+  "system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system shutdown"},
 
   // Learn
   "learn.keybindings": {"icon":"","label":"Keybindings","action":"omarchy-menu-keybindings"},
@@ -156,6 +157,8 @@
   "trigger.share": {"icon":"","label":"Share","aliases":["share"]},
   "trigger.hardware": {"icon":"","label":"Hardware","aliases":["hardware","hw"]},
   "trigger.tests": {"icon":"󰓅","label":"Speed Test"},
+  // Orchard: Omactivity, the touch task manager, where upstream opens btop (Super+Shift+T, "Activity").
+  "trigger.activity": {"icon":"󰐰","label":"Activity","when":"omarchy-cmd-present omactivity","action":"omarchy-launch-or-focus omactivity"},
   "trigger.hardware.laptop-display-on": {"icon":"󰛧","label":"Laptop Display On","when":"omarchy-hw-laptop && omarchy-hyprland-toggle-enabled internal-monitor-disable","action":"omarchy-hyprland-monitor-internal toggle"},
   "trigger.hardware.laptop-display-off": {"icon":"󰛧","label":"Laptop Display Off","when":"omarchy-hw-laptop && ! omarchy-hyprland-toggle-enabled internal-monitor-disable","action":"omarchy-hyprland-monitor-internal toggle"},
   "trigger.hardware.mirror-display-on": {"icon":"󰍹","label":"Display Mirroring On","when":"omarchy-hw-laptop && ! omarchy-hyprland-toggle-enabled internal-monitor-mirror","action":"omarchy-hyprland-monitor-internal-mirror toggle"},
@@ -181,8 +184,6 @@
   "trigger.tests.disk-speedtest": {"icon":"󰋊","label":"Disk Speed Test","action":"omarchy-shell shell summon omarchy.disk-speedtest"},
 
   // Setup
-  "setup.tablet": {"icon":"󰦧","label":"Tablet"},
-  "setup.tablet.rotation-lock": {"icon":"󰿆","label":"Rotation Lock","checked":"omarchy-rotation-lock enabled","action":"omarchy-rotation-lock toggle"},
   "setup.monitors": {"icon":"󰍹","label":"Monitors","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/monitors.lua\""},
   "setup.keybindings": {"icon":"","label":"Keybindings","when":"[[ -f ~/.config/hypr/bindings.lua ]]","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/bindings.lua\""},
   "setup.input": {"icon":"","label":"Input","when":"[[ -f ~/.config/hypr/input.lua ]]","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/input.lua\""},
@@ -452,5 +453,4 @@
   "update.hardware.trackpad": {"icon":"󰟸","label":"Trackpad","action":"omarchy-launch-floating-terminal-with-presentation omarchy-restart-trackpad"},
   "update.password.drive": {"icon":"","label":"Drive Encryption","action":"omarchy-launch-floating-terminal-with-presentation omarchy-drive-password"},
   "update.password.user": {"icon":"","label":"User","action":"omarchy-launch-floating-terminal-with-presentation passwd"},
-  "setup.tablet.rotate": {"icon": "󰑢", "label": "Rotate Once and Lock", "action": "omarchy-rotate next"},
 }

@@ -13,6 +13,7 @@ from pathlib import Path
 import pwd
 import queue
 import select
+import signal
 import socket
 import struct
 import subprocess
@@ -20,10 +21,13 @@ import sys
 import threading
 import time
 
-ON, SETTLING, DARK, SUSPENDING = 'ON', 'SETTLING', 'DARK', 'SUSPENDING'
-STATES = (ON, SETTLING, DARK, SUSPENDING)
+ON, GRACE, SETTLING, DARK, SUSPENDING = 'ON', 'GRACE', 'SETTLING', 'DARK', 'SUSPENDING'
+STATES = (ON, GRACE, SETTLING, DARK, SUSPENDING)
 EVENTS = ('power', 'home', 'wake', 'idle', 'settle', 'lock-ok', 'lock-failed', 'playing', 'not-playing',
-          'suspend-refused', 'suspend-blocked', 'suspend-busy', 'sleep-signal', 'sleep-ended', 'timeout')
+          'suspend-refused', 'suspend-blocked', 'suspend-busy', 'sleep-signal', 'sleep-ended', 'timeout',
+          'grace-ended', 'lock')
+IDLE_GRACE_SECONDS = 8.0
+FADE_SECONDS = 0.24
 SETTLE_SECONDS = 10.0
 TICK_SECONDS = 0.05
 # Ticks of this loop: they count the time it ran, on a kernel whatever its clocks do in sleep.
@@ -70,8 +74,10 @@ class Machine:
     def _external_sleep(self, *first):
         # Someone else asked logind to sleep: dark and locked first, then let it.
         actions = list(first)
-        if self.state == ON:
+        if self.state in (ON, GRACE):
             self.lock_ok = False
+            if self.state == GRACE:
+                actions += ['cancel-grace']
             actions += ['dark', 'lock']
         self.state, self.inflight = SUSPENDING, True
         if self.lock_ok:
@@ -105,8 +111,12 @@ class Machine:
         return getattr(self, '_' + self.state.lower())(event)
 
     def _on(self, event):
-        if event in ('power', 'idle'):
+        if event in ('power', 'lock'):
             return self._darken()
+        if event == 'idle':
+            self.state = GRACE
+            self.lock_ok = False
+            return ['dark', 'arm-grace']
         if event == 'sleep-signal':
             return [] if self.inflight else self._external_sleep()
         if event == 'lock-ok':
@@ -114,6 +124,17 @@ class Machine:
         if event == 'lock-failed':
             return self._lock_answer(False)
         return []  # home and wake: already lit; playing, settle: not relevant while lit
+
+    def _grace(self, event):
+        if event in ('power', 'home', 'wake'):
+            return self._light('cancel-grace')
+        if event == 'grace-ended':
+            return self._darken()
+        if event == 'lock':  # asked for explicitly: no more grace
+            return ['cancel-grace'] + self._darken()
+        if event == 'sleep-signal':
+            return self._external_sleep()
+        return []
 
     def _settling(self, event):
         if event in ('power', 'home', 'wake'):
@@ -239,15 +260,85 @@ SHELL_ROOT = '.local/share/omarchy-ipad'
 STATS = Path('/sys/power/suspend_stats')
 WAKEUP_COUNT = Path('/sys/power/wakeup_count')
 BACKLIGHTS = Path('/sys/class/backlight')
+BRIGHTNESS = Path('/var/lib/omarchy-powerd/brightness')
 
 
-def key_presses(data):
-    """(event name, kernel seconds) of every key press in evdev bytes."""
-    presses = []
+# A longer hold of Power is not a press: it is the start of a forced restart or DFU.
+LONG_HOLD_SECONDS = 1.5
+
+
+def key_edges(data):
+    """(key name, down, kernel seconds) of every Power and Home press and release in evdev bytes."""
+    edges = []
     for sec, usec, kind, code, value in INPUT_EVENT.iter_unpack(data):
-        if kind == EV_KEY and value == 1 and code in (KEY_POWER, KEY_HOMEPAGE):
-            presses.append(('power' if code == KEY_POWER else 'home', sec + usec / 1e6))
-    return presses
+        if kind == EV_KEY and value in (0, 1) and code in (KEY_POWER, KEY_HOMEPAGE):
+            edges.append(('power' if code == KEY_POWER else 'home', value == 1, sec + usec / 1e6))
+    return edges
+
+
+class Buttons:
+    """The machine's key events from Power and Home edges.
+
+    Home and a Power press on a dark screen act at once, so a wake stays as
+    fast as the press. On a lit screen Power darkens on release, and only
+    after a short press alone. Home and Power pressed together on a lit
+    screen take a screenshot when the first of them comes up, if that is
+    soon: held (the DFU and restart combination), they do nothing, and a
+    restart never releases them at all.
+    """
+
+    def __init__(self):
+        self.held = None        # Power down on a lit screen since
+        self.spoiled = False    # that Power press is not a press alone
+        self.home_down = None   # Home down since
+        self.combo = None       # both down on a lit screen since
+        self.combo_spent = False
+        self.home_in_combo = False  # the last Home press was part of a combination
+        self.home_woke = False      # the last Home press came on a dark screen and woke it
+
+    def _start_combo(self, when):
+        self.spoiled = True
+        self.combo, self.combo_spent, self.home_in_combo = when, False, True
+
+    def _end_combo(self, when):
+        if self.combo is None or self.combo_spent:
+            return None
+        self.combo_spent = True
+        return 'screenshot' if when - self.combo < LONG_HOLD_SECONDS else None
+
+    def _both_up(self):
+        if self.held is None and self.home_down is None:
+            self.combo = None
+
+    def edge(self, name, down, when, lit):
+        """The event of one edge (a machine event or 'screenshot'), or None."""
+        if name == 'home':
+            if down:
+                self.home_down, self.home_in_combo, self.home_woke = when, False, not lit
+                if self.held is not None:
+                    self._start_combo(when)
+                return 'home'
+            self.home_down = None
+            event = self._end_combo(when)
+            self._both_up()
+            return event
+        if down:
+            if not lit:
+                self.held = None
+                return 'power'
+            self.held, self.spoiled = when, False
+            if self.home_down is not None:
+                self._start_combo(when)
+            return None
+        if self.held is None:
+            return None
+        event = self._end_combo(when)
+        short = when - self.held < LONG_HOLD_SECONDS and not self.spoiled
+        self.held = None
+        self._both_up()
+        if event or self.combo is not None or self.spoiled:
+            return event
+        return 'power' if short else None
 
 
 def command(*argv, timeout=5, **options):
@@ -271,19 +362,26 @@ def as_user(user, *argv, timeout=5):
     root = f'{user.pw_dir}/{SHELL_ROOT}'
     env = {'HOME': user.pw_dir, 'USER': user.pw_name, 'XDG_RUNTIME_DIR': f'/run/user/{user.pw_uid}',
            'OMARCHY_PATH': root, 'PATH': f'{root}/bin:/usr/local/bin:/usr/bin'}
-    return command(*argv, timeout=timeout, env=env, user=user.pw_uid, group=user.pw_gid,
-                   extra_groups=os.getgrouplist(user.pw_name, user.pw_gid), cwd='/')
+    # setpriv looks the groups up in the child. In here, os.getgrouplist holds
+    # Python's interpreter lock through NSS, and nss-systemd (group merges
+    # with it) answers only once systemd has finished a sleep: the whole
+    # daemon, the wake's backlight fade included, stood still up to a second.
+    return command('setpriv', f'--reuid={user.pw_uid}', f'--regid={user.pw_gid}', '--init-groups', '--',
+                   *argv, timeout=timeout, env=env, cwd='/')
 
 
 class Daemon:
     def __init__(self):
         self.machine = Machine()
+        self.buttons = Buttons()
         self.events = queue.Queue()
         self.wake_read, self.wake_write = os.pipe()
         os.set_blocking(self.wake_read, False)
         self.keys = {}
         self.next_scan = 0.0
         self.settle_at = None
+        self.grace_at = None
+        self.fade = None
         self.saved = None
         self.counters = None
         self.sleep_started = None
@@ -409,15 +507,74 @@ class Daemon:
         panel = self.backlight()
         if panel:
             current = int((panel / 'brightness').read_text())
-            if current > 0:
+            if current > 0 and self.fade is None:
                 self.saved = current
-            (panel / 'brightness').write_text('0\n')
+                self.remember_brightness(current)
+            self.start_fade(panel, 0)
+
+    def start_fade(self, panel, target):
+        current = int((panel / 'brightness').read_text())
+        if FADE_SECONDS <= 0 or current == target:
+            self.fade = None
+            (panel / 'brightness').write_text(f'{target}\n')
+            return
+        self.fade = (panel, current, target, time.monotonic())
+
+    def tick_fade(self):
+        if self.fade is None:
+            return
+        panel, start, target, began = self.fade
+        t = min(1.0, max(0.0, (time.monotonic() - began) / FADE_SECONDS))
+        eased = t * t * (3.0 - 2.0 * t)
+        (panel / 'brightness').write_text(f'{round(start + (target - start) * eased)}\n')
+        if t >= 1.0:
+            self.fade = None
+
+    def finish_dark_fade(self):
+        # A suspend must never freeze halfway through a visual transition.
+        if self.fade is not None and self.fade[2] == 0:
+            (self.fade[0] / 'brightness').write_text('0\n')
+            self.fade = None
+
+    def remember_brightness(self, level):
+        """The last lit level, for the next boot; a hard reset keeps it too."""
+        try:
+            BRIGHTNESS.parent.mkdir(parents=True, exist_ok=True)
+            temporary = BRIGHTNESS.with_suffix('.new')
+            temporary.write_text(f'{level}\n')
+            os.replace(temporary, BRIGHTNESS)
+        except OSError as error:
+            log(f'brightness not remembered: {error}')
+
+    def restore_brightness(self):
+        """First start of a boot: the remembered level, never too dim to see; full on the first boot."""
+        panel = self.backlight()
+        if not panel:
+            return
+        maximum = int((panel / 'max_brightness').read_text())
+        try:
+            level = max(int(BRIGHTNESS.read_text()), max(1, maximum // 20))
+        except (OSError, ValueError):
+            level = maximum
+        self.saved = min(level, maximum)
+        (panel / 'brightness').write_text(f'{self.saved}\n')
+
+    def stop_brightness(self, *_):
+        """Shutdown: a level changed since the last dark, unless the panel is dark now."""
+        panel = self.backlight()
+        if panel:
+            current = int((panel / 'brightness').read_text())
+            if self.fade is not None and self.saved:
+                self.remember_brightness(self.saved)
+            elif current > 0:
+                self.remember_brightness(current)
+        raise SystemExit(0)
 
     def do_light(self, origin):
         panel = self.backlight()
         if panel:
             maximum = int((panel / 'max_brightness').read_text())
-            (panel / 'brightness').write_text(f'{min(self.saved or max(1, maximum // 2), maximum)}\n')
+            self.start_fade(panel, min(self.saved or max(1, maximum // 2), maximum))
         lit = self.lit_at = time.monotonic()
         came_from = 'ASLEEP-or-entering' if origin == SUSPENDING else origin
         log(f'wake from={came_from} press={self.key_time:.6f} lit={lit:.6f} '
@@ -432,6 +589,12 @@ class Daemon:
     def do_notify(self, _):
         self.session_jobs.put('notify')
 
+    def do_arm_grace(self, _):
+        self.grace_at = time.monotonic() + IDLE_GRACE_SECONDS
+
+    def do_cancel_grace(self, _):
+        self.grace_at = None
+
     def do_arm_settle(self, _):
         self.settle_at = time.monotonic() + SETTLE_SECONDS
 
@@ -442,6 +605,7 @@ class Daemon:
         self.take_inhibitor()
 
     def do_release_inhibitor(self, _):
+        self.finish_dark_fade()
         self.release_inhibitor()
 
     def do_cancel_suspend(self, _):
@@ -463,6 +627,7 @@ class Daemon:
         self.watching_unit = False
 
     def do_suspend(self, _):
+        self.finish_dark_fade()
         self.settle_at = None
         self.lit_at = None
         self.cancel.clear()
@@ -506,6 +671,9 @@ class Daemon:
                     self.post('lock-ok' if user is None or self.lock_session(user) else 'lock-failed')
                 elif user is not None and job == 'woke':
                     as_user(user, 'omarchy-shell', '-q', 'lock', 'woke')
+                elif user is not None and job == 'screenshot':
+                    # Omarchy's capture service; it flashes the screen once the shot is taken.
+                    as_user(user, 'omarchy-capture-screenshot', 'fullscreen', timeout=15)
                 elif user is not None and job == 'notify':
                     as_user(user, 'notify-send', 'Unable to lock', 'The screen stays on.')
             except (OSError, KeyError, ValueError, subprocess.SubprocessError) as error:
@@ -549,10 +717,17 @@ class Daemon:
             try:
                 request = connection.recv(64).decode().strip()
                 if request == 'input':
+                    if self.machine.state == GRACE:
+                        self.feed('wake')
                     connection.sendall(b'lit\n' if self.machine.state == ON else b'dark\n')
+                elif request == 'home':
+                    # labwc's Home binding asks: a Home press that took a screenshot or
+                    # woke the screen (dark in the grace before the lock) opens nothing.
+                    answer = 'combo' if self.buttons.home_in_combo else 'wake' if self.buttons.home_woke else 'alone'
+                    connection.sendall(answer.encode() + b'\n')
                 elif request == 'status':
                     connection.sendall(self.machine.state.encode() + b'\n')
-                elif request in ('idle', 'wake'):
+                elif request in ('idle', 'wake', 'lock'):
                     self.feed(request)
                     connection.sendall(b'ok\n')
                 else:
@@ -575,9 +750,13 @@ class Daemon:
         if now >= self.next_scan and not self.keys:
             self.scan_keys()
             self.next_scan = now + 5
-        if self.machine.inflight:
-            return TICK_SECONDS
-        return min(1.0, max(0.0, self.settle_at - now)) if self.settle_at is not None else 1.0
+        delay = TICK_SECONDS if self.machine.inflight else 1.0
+        if self.fade is not None:
+            delay = min(delay, 1 / 60)
+        for deadline in (self.settle_at, self.grace_at):
+            if deadline is not None:
+                delay = min(delay, max(0.0, deadline - now))
+        return delay
 
     def watch_kernel(self):
         """A kernel attempt ending is not the sleep ending: systemd-sleep may try again."""
@@ -620,6 +799,8 @@ class Daemon:
         self.feed('sleep-ended')
 
     def run(self):
+        if not os.path.exists(SOCKET):  # /run: gone only at boot, kept by a restart
+            self.restore_brightness()
         panel = self.backlight()
         if panel and int((panel / 'brightness').read_text()) == 0:
             # State ON after a restart: never dark without an owner.
@@ -641,7 +822,14 @@ class Daemon:
             # Keys first: a press that woke the tablet decides before the sleep's end is seen.
             for fd in [fd for fd in readable if fd in self.keys]:
                 try:
-                    for name, when in key_presses(os.read(fd, INPUT_EVENT.size * 64)):
+                    for key, down, when in key_edges(os.read(fd, INPUT_EVENT.size * 64)):
+                        name = self.buttons.edge(key, down, when, self.machine.state == ON)
+                        if name is None:
+                            continue
+                        if name == 'screenshot':
+                            log(f't={when:.6f} screenshot')
+                            self.session_jobs.put('screenshot')
+                            continue
                         # Pressed before this wake's panel lit: that wake took care of it.
                         if self.machine.inflight and self.lit_at is not None and when <= self.lit_at:
                             log(f't={when:.6f} {name}: consumed by the wake')
@@ -681,8 +869,12 @@ class Daemon:
                 self.control(server)
             if self.uevents in readable:
                 self.read_uevents()
+            self.tick_fade()
             self.watch_kernel()
             self.keep_inhibitor()
+            if self.grace_at is not None and time.monotonic() >= self.grace_at:
+                self.grace_at = None
+                self.feed('grace-ended')
             if self.settle_at is not None and time.monotonic() >= self.settle_at:
                 self.settle_at = None
                 self.feed('settle')
@@ -695,6 +887,8 @@ class Daemon:
 
 if __name__ == '__main__':
     try:
-        Daemon().run()
+        daemon = Daemon()
+        signal.signal(signal.SIGTERM, daemon.stop_brightness)
+        daemon.run()
     except KeyboardInterrupt:
         sys.exit(0)
