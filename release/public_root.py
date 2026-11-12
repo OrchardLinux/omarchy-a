@@ -33,16 +33,23 @@ def safe_name(name):
 def desktop_replacements():
     prefix = 'home/tablet/.local/share/omarchy-ipad/'
     replacements = {prefix + name: (PROJECT / 'desktop/shell' / name).read_bytes() for name in (
-        'shell/shell.qml', 'shell/Ui/BarIconButton.qml', 'labwc-rc.xml',
+        'shell/shell.qml', 'shell/Ui/BarIconButton.qml', 'shell/Ui/ScreenMoveRemap.qml', 'labwc-rc.xml',
         'shell/plugins/panels/power/Panel.qml', 'shell/plugins/panels/power/Model.js',
         'shell/plugins/panels/bluetooth/Model.js', 'shell/plugins/panels/bluetooth/Panel.qml',
-        'bin/omarchy-bluetooth-device')}
+        'bin/omarchy-bluetooth-device', 'bin/omarchy-keyboard',
+        'shell/plugins/panels/monitor/Panel.qml', 'shell/plugins/services/idle/Service.qml',
+        'shell/plugins/background/Background.qml')}
     replacements['home/tablet/.config/labwc/rc.xml'] = (PROJECT / 'desktop/shell/labwc-rc.xml').read_bytes()
     replacements['home/tablet/.config/labwc/autostart'] = (PROJECT / 'desktop/configuration/labwc-autostart').read_bytes()
-    replacements[prefix + 'shell/plugins/services/idle/Service.qml'] = (PROJECT / 'desktop/shell/shell/plugins/services/idle/Service.qml').read_bytes()
-    menu = (PROJECT / 'desktop/shell/default/omarchy/omarchy-menu.jsonc').read_text()
-    menu = menu.replace('! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled', 'command -v ipadlinux-suspend-ready >/dev/null && ipadlinux-suspend-ready')
-    replacements[prefix + 'default/omarchy/omarchy-menu.jsonc'] = menu.encode()
+    replacements['usr/local/libexec/arch-ipad-rotate-output'] = (PROJECT / 'desktop/configuration/rotate-output').read_bytes()
+    replacements['usr/local/libexec/arch-ipad-scale-output'] = (PROJECT / 'desktop/configuration/scale-output').read_bytes()
+    replacements[prefix + 'shell/plugins/panels/monitor/Panel.qml'] = (PROJECT / 'desktop/shell/shell/plugins/panels/monitor/Panel.qml').read_bytes()
+    replacements[prefix + 'default/i18n/en/shell.json'] = (PROJECT / 'desktop/shell/default/i18n/en/shell.json').read_bytes()
+    replacements[prefix + 'default/omarchy/omarchy-menu.jsonc'] = (PROJECT / 'desktop/shell/default/omarchy/omarchy-menu.jsonc').read_bytes()
+    replacements[prefix + 'bin/omarchy-menu-images'] = (PROJECT / 'desktop/shell/bin/omarchy-menu-images').read_bytes()
+    replacements[prefix + 'bin/omarchy-picker-process'] = (PROJECT / 'desktop/shell/bin/omarchy-picker-process').read_bytes()
+    replacements[prefix + 'shell/picker.qml'] = (PROJECT / 'desktop/shell/shell/picker.qml').read_bytes()
+    replacements[prefix + 'shell/plugins/image-picker/ImagePicker.qml'] = (PROJECT / 'desktop/shell/shell/plugins/image-picker/ImagePicker.qml').read_bytes()
     return replacements
 
 
@@ -105,7 +112,8 @@ def labwc_files(directory, architecture='aarch64'):
     if record.get('architecture', 'aarch64') != architecture:
         raise ValueError('Labwc component architecture differs from root')
     expected = {'labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
-                'packages.lock', 'compiler.txt', 'version.txt'}
+                '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
+                '0004-overview.patch', 'packages.lock', 'compiler.txt', 'version.txt'}
     if record.get('files', {}).keys() != expected:
         raise ValueError('Incomplete Labwc component')
     files = {}
@@ -118,7 +126,11 @@ def labwc_files(directory, architecture='aarch64'):
         if name == 'labwc' and (data.startswith(b'\x7fELF') or 'architecture' in record or architecture == 'armv7h'):
             check_elf(data, architecture, 'Labwc')
         files[destination] = (data, 0o755 if name == 'labwc' else 0o644)
-    if record['files']['source.tar.gz'] != pin['sha256'] or record['files']['0001-cancel-super-tap-on-pointer.patch'] != pin['patch_sha256']:
+    if (record['files']['source.tar.gz'] != pin['sha256']
+            or record['files']['0001-cancel-super-tap-on-pointer.patch'] != pin['patch_sha256']
+            or record['files']['0002-bottom-edge-swipe.patch'] != pin['edge_patch_sha256']
+            or record['files']['0003-session-transitions.patch'] != pin['transitions_patch_sha256']
+            or record['files']['0004-overview.patch'] != pin['overview_patch_sha256']):
         raise ValueError('Labwc corresponding source differs from pin')
     files['etc/omarchy/labwc-helper.json'] = (json.dumps(record, sort_keys=True).encode(), 0o644)
     return files
@@ -126,20 +138,28 @@ def labwc_files(directory, architecture='aarch64'):
 
 def desktop_additions():
     prefix = 'home/tablet/.local/share/omarchy-ipad/'
-    files = {prefix + 'shell/bluetooth-pairing/shell.qml': ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644)}
-    files[prefix + 'bin/omarchy-system'] = ((PROJECT / 'desktop/shell/bin/omarchy-system').read_bytes(), 0o755)
-    files['usr/local/bin/omarchy-system'] = files[prefix + 'bin/omarchy-system']
-    return files
+    return {
+        'home/tablet/.config/omarchy-ipad/shell.json':
+            ((PROJECT / 'desktop/shell/config/omarchy/shell.json').read_bytes(), 0o644),
+        'usr/local/bin/omarchy-rotate': ((PROJECT / 'desktop/shell/bin/omarchy-rotate').read_bytes(), 0o755),
+        'home/tablet/.local/share/omarchy-ipad/bin/omarchy-rotate': ((PROJECT / 'desktop/shell/bin/omarchy-rotate').read_bytes(), 0o755),
+        'usr/local/bin/omarchy-rotation-lock': ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755),
+        'usr/local/libexec/arch-ipad-auto-brightness': ((PROJECT / 'desktop/configuration/auto-brightness').read_bytes(), 0o755),
+        'usr/local/bin/omarchy-auto-brightness': ((PROJECT / 'desktop/shell/bin/omarchy-auto-brightness').read_bytes(), 0o755),
+        'usr/local/bin/omarchy-display-scale': ((PROJECT / 'desktop/shell/bin/omarchy-display-scale').read_bytes(), 0o755),
+        'home/tablet/.local/share/omarchy-ipad/bin/omarchy-rotation-lock': ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755),
+        'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml': ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644),
+    }
 
 
 def system_files():
     additions = {}
     for path in sorted(SYSTEM.rglob('*')):
-        if path.is_file() and not path.is_symlink() and '__pycache__' not in path.parts:
+        if path.is_file() and not path.is_symlink():
             name = path.relative_to(SYSTEM).as_posix()
             data = path.read_bytes()
             mode = 0o440 if name.startswith('etc/sudoers.d/') else (
-                0o755 if name.startswith(('usr/libexec/', 'usr/bin/')) else 0o644)
+                0o755 if name.startswith(('usr/libexec/', 'usr/bin/', 'usr/local/bin/', 'etc/NetworkManager/dispatcher.d/')) or name in ('usr/lib/orchard-kexec/quiesce-gpu', 'usr/lib/orchard-kexec/fdt-merge') else 0o644)
             additions[name] = (data, mode)
     return additions
 
@@ -198,10 +218,11 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
         temporary = Path(temp)
         archive = temporary / 'rootfs.tar.zst'
         with archive.open('wb') as raw, subprocess.Popen(
-                # -19 --long: 39% smaller than -1 for the same root (704 vs 1154 MiB), so
-                # 39% less to send over the device's ~12 MB/s USB link; decompression
-                # stays fast and needs no option (the window stays at zstd's default limit).
-                ['zstd', '-T0', '-19', '--long', '--check', '-q', '-c'], stdin=subprocess.PIPE, stdout=raw) as compressor:
+                # zstd's default level: this archive only carries the root to the block
+                # image (orchard.image.root_image), the audit and the smoke test; it is
+                # never published. What the device downloads is root.blocks.zst, compressed
+                # there. -19 --long here cost about five and a half minutes per build.
+                ['zstd', '-T0', '--check', '-q', '-c'], stdin=subprocess.PIPE, stdout=raw) as compressor:
             with tarfile.open(fileobj=compressor.stdin, mode='w|') as target:
                 def add(member, data=None):
                     nonlocal expanded, count
@@ -241,6 +262,11 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                             data = group_membership(data, shadow=member.name == 'etc/gshadow')
                         if member.name in replacements:
                             data = replacements[member.name]
+                            # A base made by older staging code may lack executable bits.
+                            if (member.name.startswith(('usr/local/libexec/', 'usr/local/bin/',
+                                                        'home/tablet/.local/share/omarchy-ipad/bin/'))
+                                    or member.name.endswith('/labwc/autostart')):
+                                member.mode = 0o755
                         if member.name == 'arch-ipad-ui-manifest.json':
                             manifest = json.loads(data)
                             for name, replacement in replacements.items():
@@ -276,10 +302,7 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                 # A login on orchard's USB serial console as well, like minimal-linux.
                 wants = [('multi-user.target.wants/' + unit, unit) for unit in
                          ('omarchy-pacman-init.service', 'orchard-usb-network.service', 'orchard-ssh.service',
-                          'omarchy-powerd.service')]
-                wants.append(('multi-user.target.wants/orchard-kexec-provenance.service', 'orchard-kexec-provenance.service'))
-                wants.append(('multi-user.target.wants/orchard-kexec-load.service', 'orchard-kexec-load.service'))
-                wants.append(('multi-user.target.wants/orchard-kexec-health.service', 'orchard-kexec-health.service'))
+                          'omarchy-powerd.service', 'omarchy-wifi-country.service')]
                 wants.append(('getty.target.wants/serial-getty@ttyGS0.service', 'serial-getty@.service'))
                 # BindsTo stops the USB network when usb0 goes; usb0's return starts it again
                 wants.append(('sys-subsystem-net-devices-usb0.device.wants/orchard-usb-network.service',

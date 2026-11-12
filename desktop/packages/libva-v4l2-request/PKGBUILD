@@ -1,0 +1,29 @@
+# omarchy-a: Ondrej Jirman's VA-API driver for V4L2 stateless decoders
+# (https://xff.cz/git/libva-v4l2_request). Firefox, mpv and anything else that
+# speaks VA-API reach orchard's hardware video decoders through it. Its
+# repository offers no source archive, so the pinned commit's tree is in
+# desktop/arm64/inputs (git archive, prefix libva-v4l2_request-COMMIT/).
+
+pkgname=libva-v4l2-request
+_commit=cac6ece0e23ac1f944dd3af266680aff0c3184df
+pkgver=1.2.r2.cac6ece
+pkgrel=1
+pkgdesc="VA-API driver for V4L2 stateless video decoders"
+url="https://xff.cz/git/libva-v4l2_request"
+license=('GPL-3.0-only')
+arch=('aarch64')
+options=('!lto' '!debug')
+depends=('glibc' 'libdrm' 'libva')
+makedepends=('linux-api-headers' 'meson' 'ninja')
+source=('libva-v4l2_request-1.2-2-gcac6ece.tar.gz')
+sha256sums=('da289b5af9ef4a0090cbbb860f609c5d6cbde21a5fe9845f68f52089d01fdc08')
+
+build() {
+	arch-meson "libva-v4l2_request-${_commit}" build
+	ninja -C build
+}
+
+package() {
+	DESTDIR="${pkgdir}" ninja -C build install
+	install -Dm 644 "libva-v4l2_request-${_commit}/COPYING" "${pkgdir}/usr/share/licenses/${pkgname}/COPYING"
+}

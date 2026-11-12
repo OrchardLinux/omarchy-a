@@ -29,3 +29,4 @@ osd.label.text.color: #a9b1d6
 osd.border.color: #7aa2f7
 osd.border.width: 2
 
+overview.attention.color: #e0af68

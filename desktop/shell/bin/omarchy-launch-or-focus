@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# omarchy:summary=Launch an app or focus an existing window matching a pattern
+# omarchy:args=<window-pattern> <launch-command>
+
+# Labwc port of upstream's command. Upstream asks Hyprland for the window; here
+# the shell finds and focuses it over wlr-foreign-toplevel. When the shell does
+# not answer, the app is launched all the same.
+
+if (($# == 0)); then
+  echo "Usage: omarchy-launch-or-focus [window-pattern] [launch-command]"
+  exit 1
+fi
+
+# labwc runs key bindings without the session's OMARCHY_PATH (labwc-autostart's).
+export OMARCHY_PATH=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
+
+WINDOW_PATTERN="$1"
+LAUNCH_COMMAND="${2:-"uwsm-app -- $WINDOW_PATTERN"}"
+
+if [[ $(OMARCHY_SHELL_IPC_TIMEOUT=1s omarchy-shell shell focusWindow "$WINDOW_PATTERN" 2>/dev/null) != true ]]; then
+  eval "exec setsid $LAUNCH_COMMAND"
+fi

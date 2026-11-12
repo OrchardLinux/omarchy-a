@@ -17,7 +17,7 @@ def python_files():
             continue
         if path.suffix == '.py':
             yield path
-        elif not path.suffix and path.read_bytes().splitlines()[0].startswith(b'#!') and b'python' in path.read_bytes().splitlines()[0]:
+        elif not path.suffix and path.read_bytes()[:64].startswith(b'#!') and b'python' in path.read_bytes()[:64]:
             yield path
 
 

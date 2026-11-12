@@ -5,16 +5,15 @@
     "position": "top",
     "background": "opaque",
     "layout": {
-      "left": [{ "id": "omarchy.menu" }],
-      "centerBegin": [],
+      "left": [{ "id": "omarchy.menu" }, { "id": "ipadlinux.keyboard" }],
+      "centerBegin": [{ "id": "omarchy.indicators", "items": ["StayAwake"] }],
       "center": [{ "id": "omarchy.clock", "format": "HH:mm" }],
       "centerEnd": [],
       "right": [
-        { "id": "ipadlinux.keyboard" },
-        { "id": "omarchy.audio" },
-        { "id": "omarchy.bluetooth" },
-        { "id": "omarchy.network" },
-        { "id": "omarchy.monitor" },
+        { "id": "omarchy.audio", "narrow": false },
+        { "id": "omarchy.bluetooth", "narrow": false },
+        { "id": "omarchy.network", "narrow": "left" },
+        { "id": "omarchy.monitor", "narrow": false },
         { "id": "omarchy.power" }
       ]
     }

@@ -60,7 +60,8 @@ class ReleaseArchitecture(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             names = ('labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
-                     'packages.lock', 'compiler.txt', 'version.txt')
+                     '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
+                     '0004-overview.patch', 'packages.lock', 'compiler.txt', 'version.txt')
             contents = {name: elf('armv7h') if name == 'labwc' else b'fixture' for name in names}
             for name, data in contents.items():
                 (root / name).write_bytes(data)

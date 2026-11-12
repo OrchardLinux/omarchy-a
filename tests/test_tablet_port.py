@@ -19,23 +19,20 @@ def load(name, path):
 p=load('power','system/overlay/usr/libexec/omarchy-powerd')
 
 class TabletPort(unittest.TestCase):
+    pass
 
 
 
 
 
-    def test_home_power_overlap_in_either_order_cancels_power(self):
-        event=lambda code,v: p.INPUT_EVENT.pack(1,0,1,code,v)
-        for codes in ([(116,1),(172,1),(172,0),(116,0)],[(172,1),(116,1),(172,0),(116,0)]):
-            f=p.KeyFilter(); result=[]
-            for code,v in codes: result+=f.events(event(code,v))
-            self.assertNotIn('power',[name for name,when in result])
-        f=p.KeyFilter()
-        self.assertEqual(f.events(event(116,1)),[])
-        self.assertEqual(f.events(event(116,0)),[('power',1.0)])
-
-
-
+    def test_home_power_overlap_uses_upstream_screenshot_buttons(self):
+        p=load('power', 'system/overlay/usr/libexec/omarchy-powerd')
+        for edges in ((('power', True), ('home', True), ('power', False), ('home', False)),
+                      (('home', True), ('power', True), ('home', False), ('power', False))):
+            buttons=p.Buttons()
+            result=[buttons.edge(name, down, 10+i/10, True) for i,(name,down) in enumerate(edges)]
+            self.assertEqual([x for x in result if x], ['home', 'screenshot'])
+            self.assertTrue(buttons.home_in_combo)
 
 
 if __name__=='__main__': unittest.main()

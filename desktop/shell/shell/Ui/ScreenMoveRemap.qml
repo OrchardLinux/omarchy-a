@@ -16,6 +16,25 @@ Item {
 
   // Fold into the window's binding: visible: <shown> && !guard.remapping
   property bool remapping: false
+  property var lastPosition: null
+
+  function rememberPosition() {
+    lastPosition = screen ? Qt.point(screen.x, screen.y) : null
+  }
+
+  function checkPosition() {
+    if (!screen) { lastPosition = null; return }
+    var next = Qt.point(screen.x, screen.y)
+    // Qt may emit xChanged/yChanged for a size-only geometry change. A
+    // rotation at the same origin must never hide the bar or wallpaper.
+    if (lastPosition === null) { lastPosition = next; return }
+    if (next.x === lastPosition.x && next.y === lastPosition.y) return
+    lastPosition = next
+    settleTimer.restart()
+  }
+
+  onScreenChanged: rememberPosition()
+  Component.onCompleted: rememberPosition()
 
   visible: false
 
@@ -37,7 +56,7 @@ Item {
 
   Connections {
     target: root.screen
-    function onXChanged() { settleTimer.restart() }
-    function onYChanged() { settleTimer.restart() }
+    function onXChanged() { root.checkPosition() }
+    function onYChanged() { root.checkPosition() }
   }
 }

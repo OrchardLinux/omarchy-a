@@ -57,12 +57,19 @@ class GreeterStagingTests(unittest.TestCase):
                              (stage.HERE / 'greeter/greetd.toml').stat().st_mode & 0o777)
             self.assertEqual((target / 'usr/local/libexec/arch-ipad-login-session').stat().st_mode & 0o777, 0o755)
             menu = target / 'home/tablet/.local/share/omarchy-ipad/default/omarchy/omarchy-menu.jsonc'
-            self.assertIn('"system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"systemctl poweroff"}', menu.read_text())
-            self.assertIn('"system.reboot": {"icon":"󰜉","label":"Restart","action":"orchard-restart"}', menu.read_text())
+            self.assertIn('"system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system shutdown"}', menu.read_text())
+            self.assertIn('"system.reboot": {"icon":"󰜉","label":"Reboot (leaves Linux)","action":"omarchy-system reboot"}', menu.read_text())
+            self.assertIn('"label":"Logout","action":"omarchy-system logout"}', menu.read_text())
+            for command in ('omarchy-system', 'omarchy-system-lock', 'omarchy-system-wake'):
+                self.assertTrue((target / 'usr/local/bin' / command).is_symlink(), command)
             greeter = target / 'usr/share/omarchy-greeter'
             self.assertEqual((greeter / 'plugins/lock/LockView.qml').read_bytes(),
                              (stage.PORT / 'shell/plugins/lock/LockView.qml').read_bytes())
             self.assertTrue((greeter / 'Commons/Color.qml').is_file())
+            menu = 'default/omarchy/omarchy-menu.jsonc'
+            staged_menu = target / 'home/tablet/.local/share/omarchy-ipad' / menu
+            self.assertEqual(staged_menu.read_bytes(), (stage.PORT / menu).read_bytes())
+            self.assertIn('/usr/local/bin/ipadlinux-suspend-ready', staged_menu.read_text())
             jade = stage.HERE / 'themes/jade-horse'
             self.assertEqual((greeter / 'default-theme/background').read_bytes(),
                              (jade / 'backgrounds/01-mountain-horses.webp').read_bytes())

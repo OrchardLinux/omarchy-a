@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# omarchy:summary=Close all open windows
+# omarchy:args=[--wait]
+
+# Labwc port, under upstream's name so omarchy-system stays as it is upstream.
+# The shell closes the windows over wlr-foreign-toplevel. That protocol names no
+# process, so --wait ends when the windows are gone, not when their owners exit.
+omarchy-shell shell closeAllWindows >/dev/null || exit 1
+
+if [[ ${1:-} == "--wait" ]]; then
+  while count=$(omarchy-shell shell windowCount) && (( count > 0 )); do
+    sleep 0.1
+  done
+fi

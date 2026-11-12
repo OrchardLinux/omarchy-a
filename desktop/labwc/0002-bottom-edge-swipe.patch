@@ -1,0 +1,464 @@
+--- a/include/config/touch.h
++++ b/include/config/touch.h
+@@ -11,0 +12,2 @@
++	char *bottom_swipe_command;
++	char *bottom_swipe_ignore_namespace;
+--- a/include/labwc.h
++++ b/include/labwc.h
+@@ -130,0 +131 @@
++	struct wl_listener touch_cancel;
+--- a/src/config/rcxml.c
++++ b/src/config/rcxml.c
+@@ -674,0 +675,4 @@
++		} else if (!strcasecmp(key, "bottomSwipeCommand")) {
++			xstrdup_replace(touch_config->bottom_swipe_command, content);
++		} else if (!strcasecmp(key, "bottomSwipeIgnoreNamespace")) {
++			xstrdup_replace(touch_config->bottom_swipe_ignore_namespace, content);
+@@ -2103,0 +2108,2 @@
++		zfree(touch_config->bottom_swipe_command);
++		zfree(touch_config->bottom_swipe_ignore_namespace);
+--- a/src/input/touch.c
++++ b/src/input/touch.c
+@@ -2,0 +3 @@
++#include <string.h>
+@@ -7,0 +9,2 @@
++#include <wlr/types/wlr_output_layout.h>
++#include <wlr/types/wlr_layer_shell_v1.h>
+@@ -12,0 +16 @@
++#include "common/spawn.h"
+@@ -17,0 +22 @@
++#include "input/bottom-swipe.h"
+@@ -18,0 +24,4 @@
++#include "layers.h"
++#include "node.h"
++#include "output.h"
++#include "session-lock.h"
+@@ -28,0 +38,6 @@
++	struct wlr_touch *device;
++	struct bottom_swipe swipe;
++	bool consumed;
++	bool mouse_deferred;
++	double start_x, start_y; /* device-normalized coordinates for mouse replay */
++	uint32_t start_time;
+@@ -35,5 +49,0 @@
+-	/*
+-	 * Do not return a surface when mouse emulation is enforced. Not
+-	 * having a surface will trigger the fallback to cursor move/button
+-	 * emulation in the touch signal handlers.
+-	 */
+@@ -45,11 +54,0 @@
+-
+-	/*
+-	 * Do not return a surface when a labwc menu is still open.
+-	 * The idea is: when a client supports touch, but a labwc root or
+-	 * client menu is open, use mouse emulation for the first touch
+-	 * interaction. Mouse emulation for this first touch then runs through
+-	 * the normal cursor logic which closes the menu. All touch interaction
+-	 * after that do use the touch protocol because the menu is now closed.
+-	 * This matches normal pointer/mouse behavior where the first click on
+-	 * a surface closes a root/client menu.
+-	 */
+@@ -59,2 +57,0 @@
+-
+-	/* Convert coordinates: first [0, 1] => layout, then layout => surface */
+@@ -64 +60,0 @@
+-
+@@ -68 +63,0 @@
+-
+@@ -71,2 +65,0 @@
+-
+-	/* Find the surface and return it if it accepts touch events */
+@@ -74 +66,0 @@
+-
+@@ -80,0 +73,136 @@
++static bool
++bottom_swipe_locked(void)
++{
++	return server.session_lock_manager && server.session_lock_manager->locked;
++}
++
++static struct bottom_swipe_box
++bottom_swipe_output(double lx, double ly, struct output **lab_output)
++{
++	/* Clamp the absolute 1.0 endpoint to the output layout for edge touches. */
++	double cx, cy;
++	wlr_output_layout_closest_point(server.output_layout, NULL, lx, ly, &cx, &cy);
++	struct wlr_output *output = wlr_output_layout_output_at(server.output_layout, cx, cy);
++	*lab_output = output ? output_from_wlr_output(output) : NULL;
++	if (!output) {
++		return (struct bottom_swipe_box){0};
++	}
++	struct wlr_box box;
++	wlr_output_layout_get_box(server.output_layout, output, &box);
++	return (struct bottom_swipe_box){box.x, box.y, box.width, box.height};
++}
++
++static bool
++bottom_swipe_ignored(struct output *output, const char *namespace)
++{
++	if (!output || !namespace || !*namespace) {
++		return false;
++	}
++	for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); ++i) {
++		struct wlr_scene_node *node;
++		wl_list_for_each(node, &output->layer_tree[i]->children, link) {
++			struct lab_layer_surface *layer = node_layer_surface_from_node(node);
++			if (layer->mapped && layer->layer_surface->namespace
++					&& !strcmp(layer->layer_surface->namespace, namespace)) {
++				return true;
++			}
++		}
++	}
++	return false;
++}
++
++static struct touch_config_entry *
++bottom_swipe_config(struct wlr_touch *device)
++{
++	struct touch_config_entry *config = touch_find_config_for_device(device->base.name);
++	/* Output-mapping entries are generated per touchscreen. They must not
++	 * erase the default gesture binding merely by omitting gesture fields.
++	 * A named empty command still explicitly disables the gesture. */
++	if (config && config->bottom_swipe_command) {
++		return config;
++	}
++	wl_list_for_each_reverse(config, &rc.touch_configs, link) {
++		if (!config->device_name && config->bottom_swipe_command) {
++			return config;
++		}
++	}
++	return NULL;
++}
++
++static bool
++bottom_swipe_allowed(struct touch_config_entry *config, struct output *output)
++{
++	return config && config->bottom_swipe_command && *config->bottom_swipe_command
++		&& !bottom_swipe_locked() && server.input_mode == LAB_INPUT_STATE_PASSTHROUGH
++		&& !bottom_swipe_ignored(output, config->bottom_swipe_ignore_namespace);
++}
++
++static void
++flush_deferred_mouse(struct seat *seat, struct touch_point *point)
++{
++	if (!point->mouse_deferred) {
++		return;
++	}
++	point->mouse_deferred = false;
++	cursor_emulate_move_absolute(seat, &point->device->base,
++		point->start_x, point->start_y, point->start_time);
++	cursor_emulate_button(seat, BTN_LEFT, WL_POINTER_BUTTON_STATE_PRESSED,
++		point->start_time);
++}
++
++static void
++cancel_touch_client(struct seat *seat, struct touch_point *point)
++{
++	struct wlr_touch_point *wlr_point = wlr_seat_touch_get_point(seat->wlr_seat,
++		point->touch_id);
++	if (wlr_point) {
++		wlr_seat_touch_notify_cancel(seat->wlr_seat, wlr_point->client);
++		/* wl_touch.cancel ends the whole client's sequence, not just one ID.
++		 * wlroots has removed those points; consume their remaining events. */
++		struct touch_point *other;
++		wl_list_for_each(other, &seat->touch_points, link) {
++			if (other->surface && !wlr_seat_touch_get_point(seat->wlr_seat, other->touch_id)) {
++				other->consumed = true;
++				other->swipe.pending = false;
++			}
++		}
++	}
++	point->consumed = true;
++	point->swipe.pending = false;
++	point->mouse_deferred = false;
++}
++
++static bool
++handle_bottom_swipe_motion(struct seat *seat, struct touch_point *point,
++		struct wlr_touch_motion_event *event)
++{
++	if (point->consumed) {
++		return true;
++	}
++	if (!point->swipe.pending) {
++		return false;
++	}
++	double lx, ly;
++	wlr_cursor_absolute_to_layout_coords(seat->cursor, &event->touch->base,
++		event->x, event->y, &lx, &ly);
++	struct output *output;
++	struct bottom_swipe_box box = bottom_swipe_output(lx, ly, &output);
++	/* Resolve config on every motion: reconfigure must not leave stale pointers. */
++	struct touch_config_entry *config = bottom_swipe_config(event->touch);
++	enum bottom_swipe_result result = bottom_swipe_motion(&point->swipe, box,
++		lx, ly, event->time_msec, bottom_swipe_allowed(config, output));
++	if (result == BOTTOM_CLAIM || result == BOTTOM_CANCEL) {
++		cancel_touch_client(seat, point);
++		if (result == BOTTOM_CLAIM) {
++			spawn_async_no_shell(config->bottom_swipe_command);
++		}
++		return true;
++	}
++	if (result == BOTTOM_PASS) {
++		flush_deferred_mouse(seat, point);
++	}
++	/* Native clients see a cancellable touch sequence until the claim.
++	 * Pointer emulation has no cancel protocol, so do not click it early. */
++	return point->mouse_deferred;
++}
++
+@@ -86 +213,0 @@
+-
+@@ -88 +214,0 @@
+-
+@@ -90,2 +215,0 @@
+-
+-	/* Find existing touch point to determine initial offsets to subtract */
+@@ -94,22 +218,15 @@
+-		if (touch_point->touch_id == event->touch_id) {
+-			if (touch_point->surface) {
+-				/* Convert coordinates: first [0, 1] => layout */
+-				double lx, ly;
+-				wlr_cursor_absolute_to_layout_coords(seat->cursor,
+-					&event->touch->base, event->x, event->y, &lx, &ly);
+-
+-				/* Apply offsets to get surface coords before reporting event */
+-				double sx = lx - touch_point->x_offset;
+-				double sy = ly - touch_point->y_offset;
+-
+-				if (touch_point_count == 1) {
+-					wlr_cursor_warp_absolute(seat->cursor, &event->touch->base,
+-						event->x, event->y);
+-				}
+-				wlr_seat_touch_notify_motion(seat->wlr_seat, event->time_msec,
+-					event->touch_id, sx, sy);
+-			} else {
+-				if (touch_point_count == 1) {
+-					cursor_emulate_move_absolute(seat, &event->touch->base,
+-						event->x, event->y, event->time_msec);
+-				}
++		if (touch_point->touch_id != event->touch_id) {
++			continue;
++		}
++		if (handle_bottom_swipe_motion(seat, touch_point, event)) {
++			return;
++		}
++		if (touch_point->surface) {
++			double lx, ly;
++			wlr_cursor_absolute_to_layout_coords(seat->cursor,
++				&event->touch->base, event->x, event->y, &lx, &ly);
++			double sx = lx - touch_point->x_offset;
++			double sy = ly - touch_point->y_offset;
++			if (touch_point_count == 1) {
++				wlr_cursor_warp_absolute(seat->cursor, &event->touch->base,
++					event->x, event->y);
+@@ -117,2 +234,7 @@
+-			return;
+-		}
++			wlr_seat_touch_notify_motion(seat->wlr_seat, event->time_msec,
++				event->touch_id, sx, sy);
++		} else if (touch_point_count == 1) {
++			cursor_emulate_move_absolute(seat, &event->touch->base,
++				event->x, event->y, event->time_msec);
++		}
++		return;
+@@ -126 +247,0 @@
+-
+@@ -136 +256,0 @@
+-
+@@ -139 +259,14 @@
+-	/* Compute layout => surface offset and save for this touch point */
++	/* A second finger disqualifies pending gestures. If the compositor
++	 * already claimed this sequence, swallow extra fingers until lift. */
++	bool consumed = false;
++	struct touch_point *other;
++	wl_list_for_each(other, &seat->touch_points, link) {
++		if (other->swipe.pending && bottom_swipe_locked()) {
++			cancel_touch_client(seat, other);
++		}
++		consumed |= other->consumed;
++		other->swipe.pending = false;
++		if (!other->consumed) {
++			flush_deferred_mouse(seat, other);
++		}
++	}
+@@ -141,2 +274,10 @@
+-	double x_offset = 0.0, y_offset = 0.0;
+-	touch_point->surface = touch_get_coords(seat, event->touch,
++	touch_point->device = event->touch;
++	touch_point->start_x = event->x;
++	touch_point->start_y = event->y;
++	touch_point->start_time = event->time_msec;
++	touch_point->touch_id = event->touch_id;
++	touch_point->consumed = consumed;
++
++	double x_offset = 0, y_offset = 0;
++	if (!consumed) {
++		touch_point->surface = touch_get_coords(seat, event->touch,
+@@ -144 +285 @@
+-	touch_point->touch_id = event->touch_id;
++	}
+@@ -147 +287,0 @@
+-
+@@ -150,3 +290,13 @@
+-
+-	/* hide the cursor when starting touch input */
+-	cursor_set_visible(seat, /* visible */ false);
++	cursor_set_visible(seat, false);
++	if (consumed) {
++		return;
++	}
++
++	double lx, ly;
++	wlr_cursor_absolute_to_layout_coords(seat->cursor, &event->touch->base,
++		event->x, event->y, &lx, &ly);
++	struct output *output;
++	struct bottom_swipe_box box = bottom_swipe_output(lx, ly, &output);
++	struct touch_config_entry *config = bottom_swipe_config(event->touch);
++	bottom_swipe_begin(&touch_point->swipe, box, lx, ly, event->time_msec,
++		touch_point_count == 1 && bottom_swipe_allowed(config, output));
+@@ -156 +305,0 @@
+-		/* Clear focus to not interfere with touch input */
+@@ -158,10 +306,0 @@
+-
+-		/* Convert coordinates: first [0, 1] => layout */
+-		double lx, ly;
+-		wlr_cursor_absolute_to_layout_coords(seat->cursor,
+-			&event->touch->base, event->x, event->y, &lx, &ly);
+-
+-		/* Apply offsets to get surface coords before reporting event */
+-		double sx = lx - x_offset;
+-		double sy = ly - y_offset;
+-
+@@ -177 +315,0 @@
+-
+@@ -183 +321,3 @@
+-			event->time_msec, event->touch_id, sx, sy);
++			event->time_msec, event->touch_id, lx - x_offset, ly - y_offset);
++	} else if (touch_point->swipe.pending) {
++		touch_point->mouse_deferred = true;
+@@ -199 +338,0 @@
+-
+@@ -201,2 +339,0 @@
+-
+-	/* Remove the touch point from the seat */
+@@ -205,13 +342,41 @@
+-		if (touch_point->touch_id == event->touch_id) {
+-			if (touch_point->surface) {
+-				wlr_seat_touch_notify_up(seat->wlr_seat, event->time_msec,
+-					event->touch_id);
+-			} else {
+-				cursor_emulate_button(seat, BTN_LEFT,
+-					WL_POINTER_BUTTON_STATE_RELEASED, event->time_msec);
+-				ssd_update_hovered_button(NULL);
+-			}
+-			wl_list_remove(&touch_point->link);
+-			zfree(touch_point);
+-			break;
+-		}
++		if (touch_point->touch_id != event->touch_id) {
++			continue;
++		}
++		if (touch_point->swipe.pending && bottom_swipe_locked()) {
++			cancel_touch_client(seat, touch_point);
++		}
++		if (!touch_point->consumed && touch_point->surface) {
++			wlr_seat_touch_notify_up(seat->wlr_seat, event->time_msec, event->touch_id);
++		} else if (!touch_point->consumed) {
++			/* An edge tap that never crossed the threshold is still a tap. */
++			flush_deferred_mouse(seat, touch_point);
++			cursor_emulate_button(seat, BTN_LEFT,
++				WL_POINTER_BUTTON_STATE_RELEASED, event->time_msec);
++			ssd_update_hovered_button(NULL);
++		}
++		wl_list_remove(&touch_point->link);
++		zfree(touch_point);
++		break;
++	}
++}
++
++static void
++handle_touch_cancel(struct wl_listener *listener, void *data)
++{
++	struct seat *seat = wl_container_of(listener, seat, touch_cancel);
++	struct wlr_touch_cancel_event *event = data;
++	struct touch_point *point, *tmp;
++	wl_list_for_each_safe(point, tmp, &seat->touch_points, link) {
++		if (point->device != event->touch || point->touch_id != event->touch_id) {
++			continue;
++		}
++		if (point->surface) {
++			cancel_touch_client(seat, point);
++		} else if (!point->consumed && !point->mouse_deferred) {
++			cursor_emulate_button(seat, BTN_LEFT,
++				WL_POINTER_BUTTON_STATE_RELEASED, event->time_msec);
++			ssd_update_hovered_button(NULL);
++		}
++		wl_list_remove(&point->link);
++		zfree(point);
++		break;
+@@ -227,0 +393 @@
++	CONNECT_SIGNAL(seat->cursor, seat, touch_cancel);
+@@ -237 +403,7 @@
+-}
++	wl_list_remove(&seat->touch_cancel.link);
++	struct touch_point *point, *tmp;
++	wl_list_for_each_safe(point, tmp, &seat->touch_points, link) {
++		wl_list_remove(&point->link);
++		zfree(point);
++	}
++}
+--- /dev/null
++++ b/include/input/bottom-swipe.h
+@@ -0,0 +1,51 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#ifndef LABWC_BOTTOM_SWIPE_H
++#define LABWC_BOTTOM_SWIPE_H
++#include <stdbool.h>
++#include <stdint.h>
++#include <math.h>
++
++/* Logical output coordinates, after device/output rotation and scale. */
++struct bottom_swipe_box { double x, y, width, height; };
++struct bottom_swipe {
++	bool pending;
++	double x, y;
++	uint32_t time;
++	struct bottom_swipe_box box;
++};
++enum bottom_swipe_result { BOTTOM_PASS, BOTTOM_WAIT, BOTTOM_CLAIM, BOTTOM_CANCEL };
++
++static inline void
++bottom_swipe_begin(struct bottom_swipe *s, struct bottom_swipe_box box,
++		double x, double y, uint32_t time, bool allowed)
++{
++	*s = (struct bottom_swipe){ .x = x, .y = y, .time = time, .box = box };
++	s->pending = allowed && box.width > 0 && box.height > 0
++		&& x >= box.x && x <= box.x + box.width
++		&& y >= box.y + box.height - 12 && y <= box.y + box.height;
++}
++
++static inline enum bottom_swipe_result
++bottom_swipe_motion(struct bottom_swipe *s, struct bottom_swipe_box box,
++		double x, double y, uint32_t time, bool allowed)
++{
++	if (!s->pending) {
++		return BOTTOM_PASS;
++	}
++	if (!allowed || box.x != s->box.x || box.y != s->box.y
++			|| box.width != s->box.width || box.height != s->box.height) {
++		s->pending = false;
++		return BOTTOM_CANCEL;
++	}
++	double dx = fabs(x - s->x), dy = s->y - y;
++	if ((uint32_t)(time - s->time) > 700 || dx > 24 || dy < -12) {
++		s->pending = false;
++		return BOTTOM_PASS;
++	}
++	if (dy >= 40 && dy > dx * 1.5) {
++		s->pending = false;
++		return BOTTOM_CLAIM;
++	}
++	return BOTTOM_WAIT;
++}
++#endif

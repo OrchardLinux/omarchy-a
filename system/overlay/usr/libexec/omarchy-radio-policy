@@ -1,0 +1,13 @@
+#!/bin/sh
+# Per-login generated config: BCM4355 shares 2.4 GHz, expensive codecs cost CPU.
+set -eu
+conf=${XDG_CONFIG_HOME:-$HOME/.config}/wireplumber/wireplumber.conf.d/61-omarchy-a-radio.conf
+rm -f "$conf"
+if [ "$(getconf _NPROCESSORS_ONLN)" -gt 2 ]; then exit 0; fi
+for node in $(find /sys/firmware/devicetree/base/ -name compatible 2>/dev/null); do
+    [ -r "$node" ] || continue
+    tr '\000' '\n' < "$node" | grep -Eq '^brcm,bcm4355c[01]-bt$' || continue
+    mkdir -p "${conf%/*}"
+    printf 'monitor.bluez.properties = { bluez5.codecs = [ aac sbc_xq sbc ] }\n' > "$conf"
+    break
+done

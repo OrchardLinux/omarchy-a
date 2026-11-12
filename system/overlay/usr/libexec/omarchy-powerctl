@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Tell omarchy-powerd about the session: idle, wake, or ask with input/status.
+"""Tell omarchy-powerd about the session: idle, wake, lock, or ask with input/status.
 
 input: exit 0 while the panel is lit, 3 while it is dark (a dark screen ignores
 taps). See docs/power-and-lock.md.

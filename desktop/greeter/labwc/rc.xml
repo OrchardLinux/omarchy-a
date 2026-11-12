@@ -1,6 +1,12 @@
 <?xml version="1.0"?>
 <labwc_config>
-  <core><decoration>server</decoration></core>
+  <!-- Session transitions (labwc/0003), as the desktop's rc.xml. -->
+  <core>
+    <decoration>server</decoration>
+    <handoverDirectory>/run/omarchy-handover</handoverDirectory>
+    <startupFade>yes</startupFade>
+    <startupSignal>yes</startupSignal>
+  </core>
   <keyboard>
     <!-- Startup-only reserved chord, as the desktop's: hides the cursor. -->
     <keybind key="A-W-h">

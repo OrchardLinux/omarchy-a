@@ -18,6 +18,9 @@ def source_pins(architecture):
     pins = json.loads((here / 'sources.json').read_text())
     if architecture == 'armv7h':
         pins.update(json.loads((here / 'armv7/sources.json').read_text()))
+    else:
+        # The GPU's Vulkan driver: 64-bit boards only.
+        pins.update(json.loads((here / 'arm64/sources.json').read_text()))
     return pins
 
 
