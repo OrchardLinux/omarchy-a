@@ -36,6 +36,31 @@ def warm_file(name):
         'usr/lib/orchard-kexec/', 'usr/lib/systemd/system/orchard-kexec-'))
 
 
+BASE_SHELL=PROJECT/'release/v0.2.0-desktop-shell.tree'
+
+
+def ls_tree(lines):
+    """{path: (mode, object)} from `git ls-tree -r` lines; '#' lines are comments."""
+    entries={}
+    for line in lines:
+        if not line or line.startswith('#'): continue
+        meta,path=line.split('\t',1)
+        mode,_,oid=meta.split()
+        entries[path]=(mode,oid)
+    return entries
+
+
+def changed_since_base():
+    """desktop/shell paths that differ between v0.2.0 and HEAD, as
+    `git diff --name-only v0.2.0 HEAD -- desktop/shell` lists them, but against
+    the recorded v0.2.0 tree: a shallow checkout without tags (CI) has HEAD's
+    tree, not the tag."""
+    base=ls_tree(BASE_SHELL.read_text().splitlines())
+    head=ls_tree(subprocess.check_output(['git','ls-tree','-r','HEAD','--','desktop/shell'],
+                                         cwd=PROJECT,text=True).splitlines())
+    return sorted(name for name in base.keys()|head.keys() if base.get(name)!=head.get(name))
+
+
 def stage(output, package):
     if output.exists():
         raise ValueError('Choose a nonexistent output directory')
@@ -46,7 +71,7 @@ def stage(output, package):
     files.update(desktop_additions())
     # Upgrade the complete native picker/Bluetooth/charging path from v0.2.0,
     # rather than staging a new caller against an old IPC implementation.
-    changed=subprocess.check_output(['git','diff','--name-only','v0.2.0','HEAD','--','desktop/shell'],cwd=PROJECT,text=True).splitlines()
+    changed=changed_since_base()
     changed += ['desktop/shell/shell/Commons/Style.qml','desktop/shell/shell/Ui/ScreenMoveRemap.qml',
                 'desktop/shell/shell/plugins/services/idle/Service.qml','desktop/shell/bin/omarchy-keyboard']
     removed = ['home/tablet/.local/share/omarchy-ipad/bin/omarchy-tablet-power', 'usr/local/bin/omarchy-tablet-power']

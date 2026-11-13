@@ -1,8 +1,10 @@
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from release.tablet_overlay import stage, WARM_REQUIRED
+from release.common import PROJECT
+from release.tablet_overlay import BASE_SHELL, changed_since_base, ls_tree, stage, WARM_REQUIRED
 from release.apply_tablet_overlay import apply, verified
 
 class TabletOverlay(unittest.TestCase):
@@ -87,5 +89,28 @@ class TabletOverlay(unittest.TestCase):
             menu=(target/manifest['warm_restart']['menu']).read_bytes()
             self.assertIn(b'"action":"systemctl reboot"',menu)
             self.assertNotIn(b'"action":"orchard-restart"',menu)
+
+    def test_changes_come_from_the_recorded_base_and_head_alone(self):
+        # Only HEAD's tree is read from git, so a shallow checkout without
+        # tags (CI) stages the same files as a full clone.
+        base=ls_tree(BASE_SHELL.read_text().splitlines())
+        (same,(m1,o1)),(edited,(m2,o2)),(chmod,(m3,o3)),(removed,_)=sorted(base.items())[:4]
+        head=[f'{m1} blob {o1}\t{same}',f'{m2} blob {"0"*40}\t{edited}',
+              f'{"100755" if m3=="100644" else "100644"} blob {o3}\t{chmod}',
+              f'100644 blob {"1"*40}\tdesktop/shell/new-file']
+        head+=[f'{m} blob {o}\t{p}' for p,(m,o) in sorted(base.items())[4:]]
+        with patch('release.tablet_overlay.subprocess.check_output',return_value='\n'.join(head)+'\n') as git:
+            self.assertEqual(changed_since_base(),sorted([edited,chmod,removed,'desktop/shell/new-file']))
+        self.assertEqual(git.call_args.args[0],['git','ls-tree','-r','HEAD','--','desktop/shell'])
+
+    def test_recorded_base_is_the_v0_2_0_tree(self):
+        # A full clone checks the record against the tag; a shallow checkout
+        # without tags has nothing to compare with.
+        tag=subprocess.run(['git','rev-parse','-q','--verify','v0.2.0^{commit}'],cwd=PROJECT,capture_output=True,text=True)
+        if tag.returncode: self.skipTest('v0.2.0 is not in this checkout (shallow clone without tags)')
+        listed=subprocess.check_output(['git','ls-tree','-r','v0.2.0','--','desktop/shell'],cwd=PROJECT,text=True)
+        self.assertEqual(ls_tree(BASE_SHELL.read_text().splitlines()),ls_tree(listed.splitlines()))
+        diff=subprocess.check_output(['git','diff','--name-only','v0.2.0','HEAD','--','desktop/shell'],cwd=PROJECT,text=True)
+        self.assertEqual(changed_since_base(),sorted(diff.splitlines()))
 
 if __name__=='__main__':unittest.main()
