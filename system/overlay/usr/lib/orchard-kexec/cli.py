@@ -16,12 +16,17 @@ import reset
 
 
 def warm_supported():
-    helper = Path('/usr/lib/orchard/device-feature')
+    """Whether this system has what a warm restart uses: the running kernel's
+    kexec support, kexec-tools and the kernel's tethered reset guard. Without
+    them Restart is an ordinary reboot. The guard is the board's own: only a
+    kernel whose watchdog describes the tethered boot provides it."""
     try:
-        return helper.is_file() and subprocess.run(
-            [str(helper), 'warm_restart', 'working'], check=False).returncode == 0
-    except OSError:
+        if not Path('/sys/kernel/kexec_loaded').exists() or shutil.which('kexec') is None:
+            return False
+        reset.backend()
+    except (OSError, ValueError):
         return False
+    return True
 
 
 def load(stage):
@@ -184,7 +189,7 @@ def main():
     sub=ap.add_subparsers(dest='action',required=True)
     for action in ('load','reboot','select'):
         p=sub.add_parser(action);p.add_argument('entry',nargs='?',default='default')
-    for action in ('snapshot','refresh','dispatch','ios','cold','status','update','prepare-reboot'):
+    for action in ('snapshot','refresh','dispatch','ios','cold','status','update','prepare-reboot','supported'):
         sub.add_parser(action)
     p=sub.add_parser('stage',help='developer wrapper: staged matching bundle, same engine')
     p.add_argument('directory',type=Path);p.add_argument('operation',choices=('prepare','load','diagnose','bisect'))
@@ -195,6 +200,8 @@ def main():
     p.add_argument('--outgoing-no-ans-handoff',action='store_true');p.add_argument('--outgoing-quiesce-gpu',action='store_true')
     p.add_argument('--outgoing-offline-cpu1',action='store_true')
     a=ap.parse_args()
+    if a.action == 'supported':
+        raise SystemExit(0 if warm_supported() else 1)
     if a.action == 'prepare-reboot':
         prepare_reboot()
         return
@@ -202,7 +209,7 @@ def main():
         qualified = warm_supported()
         if not qualified:
             if a.action == 'dispatch':
-                if cold_reset('warm restart is not qualified for this board') is False:
+                if cold_reset('this system has no kexec support or reset guard for a warm restart') is False:
                     raise SystemExit(1)
             elif a.action == 'reboot':
                 d.run('systemctl', 'reboot')
