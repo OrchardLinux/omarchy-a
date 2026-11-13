@@ -73,13 +73,27 @@ def backup_file(root,backup,name,record):
         record[name].update(uid=info.st_uid,gid=info.st_gid,mode=stat.S_IMODE(info.st_mode))
 
 
+def running_warm_mechanism():
+    # What orchard-kexec's warm restart uses in the running kernel: kexec
+    # support and the tethered reset guard, read as reset.backend() reads it.
+    if not Path('/sys/kernel/kexec_loaded').exists(): return False
+    if Path('/sys/module/apple_wdt/parameters/cold_restart').exists(): return True
+    if not Path('/sys/kernel/reboot/mode').exists(): return False
+    for node in Path('/proc/device-tree').rglob('apple,tethered-boot'):
+        compatible=node.parent/'compatible'; status=node.parent/'status'
+        if (compatible.exists() and b'apple,wdt' in compatible.read_bytes().split(b'\0')
+                and (not status.exists() or status.read_bytes().rstrip(b'\0') in (b'ok',b'okay'))):
+            return True
+    return False
+
+
 def target_warm_supported(root):
-    helper=root/'usr/lib/orchard/device-feature'
+    # The complete stack only where it can run: kexec-tools in the target
+    # root, kexec and the reset guard in the running kernel.
     try:
-        return helper.is_file() and subprocess.run(
-            [str(helper),'warm_restart','working'],check=False,timeout=10,
-            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode == 0
-    except (OSError,subprocess.SubprocessError):
+        tools=any((root/name).exists() or (root/name).is_symlink() for name in ('usr/bin/kexec','usr/sbin/kexec'))
+        return tools and running_warm_mechanism()
+    except OSError:
         return False
 
 

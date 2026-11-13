@@ -18,5 +18,6 @@ No kernel, firmware or Mesa package is installed by this command.
 The installer adds iio-sensor-proxy, udiskie and udisks2 with the matching
 wlroots package. It does not add alsa-utils or change headphone routing.
 Warm restart is installed as a complete unit/helper/polkit set only when
-the target Orchard layer reports it working; otherwise Restart uses
-ordinary reboot. Boot-time restart units are enabled for the next boot.
+it can run: kexec-tools in the target root, and kexec support plus the
+tethered reset guard in the running kernel (what `orchard-kexec supported`
+checks); otherwise Restart uses ordinary reboot. Boot-time restart units are enabled for the next boot.

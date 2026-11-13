@@ -48,6 +48,35 @@ class TabletOverlay(unittest.TestCase):
             self.assertTrue(WARM_REQUIRED <= set(manifest['warm_restart']['files']))
             self.assertIn(b'"action":"orchard-restart"',files[manifest['warm_restart']['menu']])
 
+    def test_warm_stack_follows_kexec_tools_kexec_and_reset_guard(self):
+        import release.apply_tablet_overlay as overlay
+        import sys
+        sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'system/overlay/usr/lib/orchard-kexec'))
+        import reset
+        with tempfile.TemporaryDirectory() as tmp:
+            host=Path(tmp)/'host';target=Path(tmp)/'target'
+            def path(name): return host/str(name).lstrip('/')
+            def guard():
+                try: reset.backend(); return True
+                except ValueError: return False
+            path('/sys/kernel').mkdir(parents=True);path('/sys/kernel/kexec_loaded').write_text('0\n')
+            path('/sys/kernel/reboot').mkdir();path('/sys/kernel/reboot/mode').write_text('cold\n')
+            node=path('/proc/device-tree/soc/watchdog@1');node.mkdir(parents=True)
+            (node/'compatible').write_bytes(b'apple,s8000-wdt\0apple,wdt\0')
+            (target/'usr/bin').mkdir(parents=True)
+            with patch.object(overlay,'Path',side_effect=path),patch.object(reset,'Path',side_effect=path):
+                for tethered in (False,True):  # the same guard orchard-kexec reads
+                    (node/'apple,tethered-boot').touch() if tethered else None
+                    self.assertEqual(overlay.running_warm_mechanism(),guard())
+                self.assertFalse(overlay.target_warm_supported(target))  # no kexec-tools
+                (target/'usr/bin/kexec').touch()
+                self.assertTrue(overlay.target_warm_supported(target))
+                (node/'apple,tethered-boot').unlink()  # J71b and every other board today
+                self.assertFalse(overlay.target_warm_supported(target))
+                (node/'apple,tethered-boot').touch();path('/sys/kernel/kexec_loaded').unlink()
+                self.assertFalse(overlay.target_warm_supported(target))
+        self.assertNotIn('device-feature',(Path(overlay.__file__)).read_text())
+
     def test_unqualified_target_gets_no_partial_restart_stack(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);bundle=self.bundle(root);target=root/'target';target.mkdir()
