@@ -223,22 +223,6 @@ when `user.slice` thaws.
 fixed window after resume), `omarchy-screen-toggle` and `omarchy-greeter-wake`
 (a second and third writer of the backlight).
 
-## J71t Mac USB current profile
-
-`/etc/orchard/mac-usb-current` opts into Orchard's J71t Mac-current profile.
-Merge and install the matching Orchard #108 hardware bundle first. Gadget
-identity, host-grant handling and board/pack limits remain Orchard's policy;
-this flag does not override the charger limits or host authorization.
-
-Pair with Orchard's stable USB serial path (#110). No root service should
-rewrite the initrd's identity during switch-root. Cold and warm charging,
-stable serial and USB traffic require exact-revision device checks. The
-previous warm 500 mA observation remains unresolved; the flag alone does not
-prove a higher current grant. Remove the flag and reboot to disable the profile.
-
-Use a freshly matched initrd from the integrated Orchard kernel bundle so its
-stable USB identity and current-grant handling travel with the kernel modules.
-
 ## Suspend qualification and readiness
 
 The root overlay installs `/usr/local/bin/ipadlinux-suspend-ready` for both
