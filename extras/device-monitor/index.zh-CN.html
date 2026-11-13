@@ -1,0 +1,98 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>iPad 设备与电池监测</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:light dark;--bg:#f4f6f4;--panel:#fff;--text:#203028;--muted:#68766e;--border:#dfe5df;--line:#267a52;--line2:#6978d7;--grid:#c8d2cb;--hint:#e9f1eb}*{box-sizing:border-box}body{max-width:1180px;margin:auto;padding:28px 20px;background:var(--bg);color:var(--text);line-height:1.6}a{color:var(--line);text-underline-offset:4px}header,.toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}h1{font-size:28px;line-height:1.3;margin:12px 0 6px}h2{font-size:18px;margin:0}h3{font-size:16px;margin:0 0 14px}.muted,.small{font-size:13px;color:var(--muted)}.controls{display:flex;gap:10px;align-items:center}button,select{font:inherit;min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;color:inherit;background:var(--panel)}button{cursor:pointer}button:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--line);outline-offset:3px}.section-title{margin:28px 0 12px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.battery-cards{grid-template-columns:repeat(6,minmax(0,1fr))}.card,.chart-panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:18px;min-width:0}.label{font-size:13px;color:var(--muted)}.value{font-size:clamp(21px,2.7vw,28px);font-weight:650;line-height:1.4;margin:10px 0 3px;overflow-wrap:anywhere}.sub{font-size:12px;color:var(--muted);min-height:20px}.notice{margin:14px 0;padding:13px 16px;border-radius:12px;background:var(--hint);font-size:14px}.notice.warning{background:#fff1d2;color:#795000}.charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}.chart-panel .small{margin:6px 0 0}.legend{display:flex;gap:18px;color:var(--muted);font-size:12px;margin-bottom:5px;flex-wrap:wrap}.legend span:before{content:"";display:inline-block;width:16px;height:3px;vertical-align:middle;margin-right:6px;background:var(--line)}.legend span.second:before{background:var(--line2)}svg{display:block;width:100%;height:auto;overflow:visible}svg text{fill:var(--muted);font:11px system-ui}svg .grid{stroke:var(--grid);stroke-width:1;opacity:.6}svg .series{stroke:var(--line);stroke-width:2;vector-effect:non-scaling-stroke;fill:none}svg .second{stroke:var(--line2)}.empty{min-height:170px;display:grid;place-items:center;text-align:center;color:var(--muted);font-size:14px}.summary{margin:14px 0}.summary .value{font-size:22px}footer{border-top:1px solid var(--border);padding-top:18px;margin-top:26px;color:var(--muted);font-size:13px}footer p{margin:6px 0}.heading-link{font-size:13px}.unit{font-size:13px;font-weight:400}
+@media(max-width:900px){.battery-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:680px){body{padding:20px 12px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.charts{grid-template-columns:1fr}.card,.chart-panel{padding:14px}.value{font-size:23px}h1{font-size:24px}.controls{width:100%;justify-content:space-between}.section-title{margin-top:24px}}
+@media(prefers-color-scheme:dark){:root{--bg:#151c18;--panel:#1c2720;--text:#e5eee7;--muted:#a5b5aa;--border:#34453a;--line:#8bcea3;--line2:#acb8ff;--grid:#455b4c;--hint:#263d2e}.notice.warning{background:#483c1f;color:#ffe4a4}}
+.jump{display:flex;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:2;background:var(--bg);padding:10px 0;margin-top:12px}.jump a{display:inline-flex;align-items:center;min-height:44px;padding:8px 13px;border:1px solid var(--border);border-radius:10px;text-decoration:none;background:var(--panel);font-size:14px}h2[id],div[id="system-history"]{scroll-margin-top:78px}</style></head><body>
+<header><div><a class="heading-link" href="/">English</a><h1>iPad 设备与电池监测</h1><div id="updated" class="muted" role="status">正在读取设备状态…</div></div><div class="controls"><label class="small">统计范围 <select id="hours" aria-label="历史时间范围"><option value="1">最近 1 小时</option><option value="6">最近 6 小时</option><option value="24" selected>最近 24 小时</option></select></label><button id="refresh" type="button">刷新</button></div></header><nav class="jump" aria-label="页面分区"><a href="#system-overview">运行状态</a><a href="#system-history">历史曲线</a><a href="#battery-overview">电池与充电</a></nav>
+<h2 id="system-overview" class="section-title">机器运行概览</h2><div class="cards">
+<div class="card"><div class="label">CPU 使用率</div><div id="cpu" class="value">—</div><div id="cpu-sub" class="sub">读取 CPU 计数器</div></div>
+<div class="card"><div class="label">内存使用</div><div id="memory" class="value">—</div><div id="memory-sub" class="sub">—</div></div>
+<div class="card"><div class="label">Swap 使用</div><div id="swap" class="value">—</div><div id="swap-sub" class="sub">—</div></div>
+<div class="card"><div class="label">磁盘 · Linux 分区</div><div id="disk" class="value">—</div><div id="disk-sub" class="sub">—</div></div>
+<div class="card"><div class="label">网络 · 接收 / 发送</div><div id="network" class="value">—</div><div id="network-sub" class="sub">—</div></div>
+<div class="card"><div class="label">Linux 分区 I/O · 读 / 写</div><div id="io" class="value">—</div><div id="io-sub" class="sub">—</div></div>
+<div class="card"><div class="label">系统平均负载</div><div id="load" class="value">—</div><div class="sub">1 分钟 / 5 分钟负载</div></div>
+<div class="card"><div class="label">机器连续运行</div><div id="uptime" class="value">—</div><div class="sub">从本次 Linux 启动起计算</div></div>
+</div>
+<h2 id="summary-title" class="section-title">最近 24 小时统计</h2><div class="cards summary">
+<div class="card"><div class="label">CPU 采样均值 / 峰值</div><div id="cpu-summary" class="value">—</div><div class="sub">峰值取原始每分钟采样</div></div>
+<div class="card"><div class="label">内存使用峰值</div><div id="memory-summary" class="value">—</div><div class="sub">已用量 = 总量 − 可用量</div></div>
+<div class="card"><div class="label">累计网络流量</div><div id="network-summary" class="value">—</div><div id="network-summary-sub" class="sub">—</div></div>
+<div class="card"><div class="label">累计磁盘读写</div><div id="disk-summary" class="value">—</div><div id="disk-summary-sub" class="sub">—</div></div>
+</div><div id="history-notice" class="notice" role="status">系统历史从启用后开始积累，不会补造过去的数据。</div>
+<div id="system-history" class="charts">
+<section class="chart-panel"><h3>CPU 使用率 · %</h3><div id="cpu-chart"></div></section>
+<section class="chart-panel"><h3>内存与 Swap · MiB</h3><div class="legend"><span>已用内存</span><span class="second">已用 Swap</span></div><div id="memory-chart"></div></section>
+<section class="chart-panel"><h3>网络速率 · KiB/s</h3><div class="legend"><span>接收</span><span class="second">发送</span></div><div id="network-chart"></div></section>
+<section class="chart-panel"><h3>Linux 分区 I/O · KiB/s</h3><div class="legend"><span>读取</span><span class="second">写入</span></div><div id="io-chart"></div></section>
+<section class="chart-panel"><h3>系统平均负载</h3><div class="legend"><span>1 分钟</span><span class="second">5 分钟</span></div><div id="load-chart"></div></section>
+<section class="chart-panel"><h3>Linux 分区已用空间 · GiB</h3><div id="disk-chart"></div></section>
+</div>
+<h2 id="battery-overview" class="section-title">电池与充电</h2><div class="cards battery-cards">
+<div class="card"><div class="label">电量</div><div class="value" id="capacity">—</div></div><div class="card"><div class="label">电池状态</div><div class="value" id="status">—</div></div><div class="card"><div class="label">电池净电流</div><div class="value" id="current">—</div></div><div class="card"><div class="label">电池温度</div><div class="value" id="temperature">—</div></div><div class="card"><div class="label">输入限流</div><div class="value" id="limit">—</div></div><div class="card"><div class="label">电池电压</div><div class="value" id="voltage">—</div></div>
+</div><div id="notice" class="notice">正在读取充电来源…</div><div class="charts"><section class="chart-panel"><h3>电量变化 · %</h3><div id="capacity-chart"></div></section><section class="chart-panel"><h3>电池净电流 · A</h3><div id="current-chart"></div><p class="small">正数表示电流流入电池，负数表示电池净放电。输入限流不是实际充电电流；短时读数可能不同步。</p></section></div>
+<footer><p id="history-updated">正在载入历史…</p><p>当前状态每 20 秒刷新；每分钟保存一次采样，历史曲线每 5 分钟更新。系统历史保留 24 小时，原有电池历史保留 7 天。后台标签页暂停刷新。</p><p>24 小时曲线按 4 分钟汇总显示，原始每分钟数据仍保留；统计峰值来自原始采样，不能代表瞬时尖峰。流量和磁盘累计只统计未重启、计数器未重置的连续采样段；缺测处不会连线。</p><p>只读系统计数器，不做网络测速，不采集 IP 地址、访问记录、进程列表或学习内容，不控制充电、电流和驱动。图形由当前浏览设备绘制。</p></footer>
+<script>
+const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';let cached=null,currentBusy=false,historySequence=0,historyController,lastHistory=0,lastCurrent=0;
+const statusNames={Charging:'正在充电',Discharging:'正在放电',Full:'已充满','Not charging':'未充电',Unknown:'未知'};
+const valid=v=>typeof v==='number'&&Number.isFinite(v),num=(v,s=1,n=0)=>valid(v)?(v/s).toFixed(n):'—';
+function bytes(v){if(!valid(v))return '—';const units=['B','KiB','MiB','GiB','TiB'];let i=0;while(v>=1024&&i<units.length-1){v/=1024;i++;}return v.toFixed(i?1:0)+' '+units[i];}
+function speed(v){return valid(v)?bytes(v)+'/s':'待下一次采样';}
+function duration(v){if(!valid(v))return '—';let m=Math.floor(v/60),h=Math.floor(m/60),d=Math.floor(h/24);return d?d+' 天 '+h%24+' 小时':h?h+' 小时 '+m%60+' 分钟':m+' 分钟';}
+function shape(tag,attrs,text){const e=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e;}
+function draw(id,rows,series,label,minimum=0,maximum=null){
+ const host=$(id);host.replaceChildren();const values=rows.flatMap(r=>series.filter(s=>valid(r[s.key])).map(s=>r[s.key]/s.scale));
+ if(!values.length){const e=document.createElement('div');e.className='empty';e.textContent='正在积累有效采样，首次速率需等待下一次读取';host.append(e);return;}
+ let low=minimum??Math.min(0,...values),high=maximum??Math.max(0,...values,low);if(high-low<.01)high=low+1;
+ const width=Math.max(260,host.clientWidth),left=48,right=width-12,top=12,bottom=152;
+ const t0=cached.window_start,t1=cached.window_end,x=t=>left+(t-t0)/(t1-t0)*(right-left),y=v=>bottom-(v-low)/(high-low)*(bottom-top);
+ const svg=shape('svg',{viewBox:`0 0 ${width} 190`,role:'img','aria-label':label});
+ for(let i=0;i<4;i++){let value=low+(high-low)*i/3,yy=y(value);svg.append(shape('line',{x1:left,y1:yy,x2:right,y2:yy,class:'grid'}),shape('text',{x:left-7,y:yy+4,'text-anchor':'end'},value.toFixed(high-low<5?1:0)));}
+ series.forEach((s,index)=>{let path='',previous=null,points=0,lastPoint;
+  rows.forEach(r=>{if(!valid(r[s.key])){previous=null;return;}const move=!previous||r.break_before||r.timestamp-previous.timestamp>Math.max(150,cached.display_interval_seconds*1.8);const xx=x(r.timestamp),yy=y(r[s.key]/s.scale);path+=(move?'M':'L')+xx.toFixed(1)+','+yy.toFixed(1)+' ';previous=r;points++;lastPoint={xx,yy};});
+  svg.append(shape('path',{d:path,class:'series'+(index?' second':'')}));if(points===1)svg.append(shape('circle',{cx:lastPoint.xx,cy:lastPoint.yy,r:3,fill:index?'var(--line2)':'var(--line)'}));
+ });
+ const fmt=t=>t1-t0>=86340?new Date(t*1000).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):new Date(t*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+ svg.append(shape('text',{x:left,y:178},fmt(t0)),shape('text',{x:right,y:178,'text-anchor':'end'},fmt(t1)));host.append(svg);
+}
+function renderHistory(){
+ if(!cached)return;const rows=cached.system.history,summary=cached.system.summary;
+ draw('cpu-chart',rows,[{key:'cpu_percent',scale:1}],'CPU 使用率历史',0,100);
+ draw('memory-chart',rows,[{key:'mem_used_bytes',scale:1048576},{key:'swap_used_bytes',scale:1048576}],'内存和 Swap 历史');
+ draw('network-chart',rows,[{key:'net_rx_Bps',scale:1024},{key:'net_tx_Bps',scale:1024}],'网络速率历史');
+ draw('io-chart',rows,[{key:'disk_read_Bps',scale:1024},{key:'disk_write_Bps',scale:1024}],'磁盘读写速率历史');
+ draw('load-chart',rows,[{key:'load_1',scale:1},{key:'load_5',scale:1}],'系统负载历史');
+ draw('disk-chart',rows,[{key:'disk_used_bytes',scale:1073741824}],'Linux 分区已用空间历史');
+ draw('capacity-chart',cached.history,[{key:'capacity',scale:1}],'电量历史',0,100);
+ draw('current-chart',cached.history,[{key:'current_uA',scale:1e6}],'电池净电流历史',null);
+ $('summary-title').textContent='最近 '+$('hours').value+' 小时统计';
+ $('cpu-summary').textContent=num(summary.cpu_average_percent,1,1)+'% / '+num(summary.cpu_peak_percent,1,1)+'%';
+ $('memory-summary').textContent=bytes(summary.memory_peak_bytes);
+ $('network-summary').textContent='↓ '+bytes(summary.network_rx_bytes);$('network-summary-sub').textContent='↑ '+bytes(summary.network_tx_bytes)+' · 连续记录 '+duration(summary.network_coverage_seconds);
+ $('disk-summary').textContent='读 '+bytes(summary.disk_read_bytes);$('disk-summary-sub').textContent='写 '+bytes(summary.disk_write_bytes)+' · 连续记录 '+duration(summary.disk_coverage_seconds);
+ $('history-notice').textContent='系统已记录 '+summary.samples+' 个采样，覆盖 '+duration(summary.coverage_seconds)+'。曲线按 '+cached.display_interval_seconds/60+' 分钟汇总显示；空白处表示尚无数据。';
+ $('history-updated').textContent='历史更新于 '+new Date(cached.window_end*1000).toLocaleString('zh-CN')+'；首次启用后需要逐步积累完整 24 小时系统历史。';
+}
+function current(d){
+ const c=d.current,s=d.system.current;if(c.timestamp<lastCurrent)return;lastCurrent=c.timestamp;
+ $('cpu').textContent=num(s.cpu_percent,1,1)+'%';$('cpu-sub').textContent=s.cpu_count+' 核 · 全部核心满载为 100%';
+ $('memory').textContent=bytes(s.mem_used_bytes);$('memory-sub').textContent='总量 '+bytes(s.mem_total_bytes)+' · 可用 '+bytes(s.mem_available_bytes);
+ $('swap').textContent=bytes(s.swap_used_bytes);$('swap-sub').textContent='总量 '+bytes(s.swap_total_bytes);
+ $('disk').textContent=valid(s.disk_total_bytes)&&s.disk_total_bytes?num(100*s.disk_used_bytes/s.disk_total_bytes,1,1)+'%':'—';$('disk-sub').textContent='已用 '+bytes(s.disk_used_bytes)+' / '+bytes(s.disk_total_bytes)+' · 可用 '+bytes(s.disk_available_bytes);
+ $('network').textContent='↓ '+speed(s.net_rx_Bps);$('network-sub').textContent='↑ '+speed(s.net_tx_Bps)+' · '+(s.network_interfaces||'无活动网卡');
+ $('io').textContent='读 '+speed(s.disk_read_Bps);$('io-sub').textContent='写 '+speed(s.disk_write_Bps);
+ $('load').textContent=num(s.load_1,1,2)+' / '+num(s.load_5,1,2);$('uptime').textContent=duration(s.uptime_seconds);
+ $('capacity').textContent=num(c.capacity)+'%';$('status').textContent=statusNames[c.status]||c.status||'未知';$('current').textContent=num(c.current_uA,1e6,2)+' A';$('temperature').textContent=num(c.temperature_deciC,10,1)+'℃';$('limit').textContent=num(c.input_limit_uA,1e6,2)+' A';$('voltage').textContent=num(c.voltage_uV,1e6,2)+' V';
+ $('updated').textContent='当前状态更新于 '+new Date(c.timestamp*1000).toLocaleString('zh-CN');
+ const source=(c.usb_type||'').match(/\[([^\]]+)\]/)?.[1]||'未知',notice=$('notice');notice.className='notice';let text=c.online===1?'已连接电源 · 来源 '+source:'未连接外部电源';if(c.online===1&&valid(c.current_uA)&&c.current_uA<0){text+='。当前电池净放电，请观察充电是否恢复。';notice.classList.add('warning');}if(valid(c.temperature_deciC)&&c.temperature_deciC>=400){text+=' 电池温度偏高。';notice.classList.add('warning');}if(valid(c.capacity)&&c.capacity<=15){text+=' 电量较低。';notice.classList.add('warning');}notice.textContent=text;
+}
+async function request(query,signal){const r=await fetch('/api/battery?'+query,{cache:'no-store',signal});if(!r.ok)throw Error('数据暂不可用');return r.json();}
+async function refreshCurrent(){if(currentBusy)return;currentBusy=true;const c=new AbortController(),timer=setTimeout(()=>c.abort(),8000);try{current(await request('view=current',c.signal));}catch(_){$('updated').textContent='暂未取得新状态，保留上次显示；请稍后刷新。';}finally{clearTimeout(timer);currentBusy=false;}}
+async function refreshHistory(){const sequence=++historySequence;historyController?.abort();historyController=new AbortController();const controller=historyController,timer=setTimeout(()=>controller.abort(),12000);try{const d=await request('hours='+$('hours').value,controller.signal);if(sequence!==historySequence)return;cached=d;current(d);renderHistory();lastHistory=Date.now();}catch(_){if(sequence===historySequence)$('history-notice').textContent='历史暂未更新，保留上次显示；请稍后刷新。';}finally{clearTimeout(timer);}}
+$('refresh').onclick=refreshHistory;$('hours').onchange=refreshHistory;refreshHistory();
+setInterval(()=>{if(!document.hidden)refreshCurrent();},20000);setInterval(()=>{if(!document.hidden)refreshHistory();},300000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshCurrent();if(Date.now()-lastHistory>300000)refreshHistory();}});
+let resizing;window.addEventListener('resize',()=>{clearTimeout(resizing);resizing=setTimeout(renderHistory,180);});
+</script></body></html>

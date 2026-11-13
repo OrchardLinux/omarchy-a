@@ -1,0 +1,98 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Device and battery monitor</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:light dark;--bg:#f4f6f4;--panel:#fff;--text:#203028;--muted:#68766e;--border:#dfe5df;--line:#267a52;--line2:#6978d7;--grid:#c8d2cb;--hint:#e9f1eb}*{box-sizing:border-box}body{max-width:1180px;margin:auto;padding:28px 20px;background:var(--bg);color:var(--text);line-height:1.6}a{color:var(--line);text-underline-offset:4px}header,.toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}h1{font-size:28px;line-height:1.3;margin:12px 0 6px}h2{font-size:18px;margin:0}h3{font-size:16px;margin:0 0 14px}.muted,.small{font-size:13px;color:var(--muted)}.controls{display:flex;gap:10px;align-items:center}button,select{font:inherit;min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;color:inherit;background:var(--panel)}button{cursor:pointer}button:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--line);outline-offset:3px}.section-title{margin:28px 0 12px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.battery-cards{grid-template-columns:repeat(6,minmax(0,1fr))}.card,.chart-panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:18px;min-width:0}.label{font-size:13px;color:var(--muted)}.value{font-size:clamp(21px,2.7vw,28px);font-weight:650;line-height:1.4;margin:10px 0 3px;overflow-wrap:anywhere}.sub{font-size:12px;color:var(--muted);min-height:20px}.notice{margin:14px 0;padding:13px 16px;border-radius:12px;background:var(--hint);font-size:14px}.notice.warning{background:#fff1d2;color:#795000}.charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}.chart-panel .small{margin:6px 0 0}.legend{display:flex;gap:18px;color:var(--muted);font-size:12px;margin-bottom:5px;flex-wrap:wrap}.legend span:before{content:"";display:inline-block;width:16px;height:3px;vertical-align:middle;margin-right:6px;background:var(--line)}.legend span.second:before{background:var(--line2)}svg{display:block;width:100%;height:auto;overflow:visible}svg text{fill:var(--muted);font:11px system-ui}svg .grid{stroke:var(--grid);stroke-width:1;opacity:.6}svg .series{stroke:var(--line);stroke-width:2;vector-effect:non-scaling-stroke;fill:none}svg .second{stroke:var(--line2)}.empty{min-height:170px;display:grid;place-items:center;text-align:center;color:var(--muted);font-size:14px}.summary{margin:14px 0}.summary .value{font-size:22px}footer{border-top:1px solid var(--border);padding-top:18px;margin-top:26px;color:var(--muted);font-size:13px}footer p{margin:6px 0}.heading-link{font-size:13px}.unit{font-size:13px;font-weight:400}
+@media(max-width:900px){.battery-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:680px){body{padding:20px 12px}.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.charts{grid-template-columns:1fr}.card,.chart-panel{padding:14px}.value{font-size:23px}h1{font-size:24px}.controls{width:100%;justify-content:space-between}.section-title{margin-top:24px}}
+@media(prefers-color-scheme:dark){:root{--bg:#151c18;--panel:#1c2720;--text:#e5eee7;--muted:#a5b5aa;--border:#34453a;--line:#8bcea3;--line2:#acb8ff;--grid:#455b4c;--hint:#263d2e}.notice.warning{background:#483c1f;color:#ffe4a4}}
+.jump{display:flex;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:2;background:var(--bg);padding:10px 0;margin-top:12px}.jump a{display:inline-flex;align-items:center;min-height:44px;padding:8px 13px;border:1px solid var(--border);border-radius:10px;text-decoration:none;background:var(--panel);font-size:14px}h2[id],div[id="system-history"]{scroll-margin-top:78px}</style></head><body>
+<header><div><a class="heading-link" href="/zh-CN">简体中文</a><h1>Device and battery monitor</h1><div id="updated" class="muted" role="status">Reading device status…</div></div><div class="controls"><label class="small">Window <select id="hours" aria-label="History window"><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="24" selected>Last 24 hours</option></select></label><button id="refresh" type="button">Refresh</button></div></header><nav class="jump" aria-label="Page sections"><a href="#system-overview">System status</a><a href="#system-history">History charts</a><a href="#battery-overview">Battery and charging</a></nav>
+<h2 id="system-overview" class="section-title">System overview</h2><div class="cards">
+<div class="card"><div class="label">CPU utilization</div><div id="cpu" class="value">—</div><div id="cpu-sub" class="sub">Reading CPU counters</div></div>
+<div class="card"><div class="label">Memory used</div><div id="memory" class="value">—</div><div id="memory-sub" class="sub">—</div></div>
+<div class="card"><div class="label">Swap used</div><div id="swap" class="value">—</div><div id="swap-sub" class="sub">—</div></div>
+<div class="card"><div class="label">Disk · root filesystem</div><div id="disk" class="value">—</div><div id="disk-sub" class="sub">—</div></div>
+<div class="card"><div class="label">Network · receive / send</div><div id="network" class="value">—</div><div id="network-sub" class="sub">—</div></div>
+<div class="card"><div class="label">Root partition I/O · read / write</div><div id="io" class="value">—</div><div id="io-sub" class="sub">—</div></div>
+<div class="card"><div class="label">System load</div><div id="load" class="value">—</div><div class="sub">1-minute / 5-minute load</div></div>
+<div class="card"><div class="label">Uptime</div><div id="uptime" class="value">—</div><div class="sub">Since the current Linux boot</div></div>
+</div>
+<h2 id="summary-title" class="section-title">Last 24 hours</h2><div class="cards summary">
+<div class="card"><div class="label">CPU mean / peak</div><div id="cpu-summary" class="value">—</div><div class="sub">Peak from raw minute samples</div></div>
+<div class="card"><div class="label">Peak memory used</div><div id="memory-summary" class="value">—</div><div class="sub">Used = total minus available</div></div>
+<div class="card"><div class="label">Network totals</div><div id="network-summary" class="value">—</div><div id="network-summary-sub" class="sub">—</div></div>
+<div class="card"><div class="label">Disk read / write totals</div><div id="disk-summary" class="value">—</div><div id="disk-summary-sub" class="sub">—</div></div>
+</div><div id="history-notice" class="notice" role="status">History starts when monitoring is enabled. Past data is not fabricated.</div>
+<div id="system-history" class="charts">
+<section class="chart-panel"><h3>CPU utilization · %</h3><div id="cpu-chart"></div></section>
+<section class="chart-panel"><h3>Memory and swap · MiB</h3><div class="legend"><span>Memory used</span><span class="second">Swap used</span></div><div id="memory-chart"></div></section>
+<section class="chart-panel"><h3>Network rate · KiB/s</h3><div class="legend"><span>Receive</span><span class="second">Send</span></div><div id="network-chart"></div></section>
+<section class="chart-panel"><h3>Root partition I/O · KiB/s</h3><div class="legend"><span>Read</span><span class="second">Write</span></div><div id="io-chart"></div></section>
+<section class="chart-panel"><h3>System load</h3><div class="legend"><span>1 minute</span><span class="second">5 minutes</span></div><div id="load-chart"></div></section>
+<section class="chart-panel"><h3>Root filesystem used · GiB</h3><div id="disk-chart"></div></section>
+</div>
+<h2 id="battery-overview" class="section-title">Battery and charging</h2><div class="cards battery-cards">
+<div class="card"><div class="label">Capacity</div><div class="value" id="capacity">—</div></div><div class="card"><div class="label">Battery status</div><div class="value" id="status">—</div></div><div class="card"><div class="label">Battery net current</div><div class="value" id="current">—</div></div><div class="card"><div class="label">Battery temperature</div><div class="value" id="temperature">—</div></div><div class="card"><div class="label">Input current limit</div><div class="value" id="limit">—</div></div><div class="card"><div class="label">Battery voltage</div><div class="value" id="voltage">—</div></div>
+</div><div id="notice" class="notice">Reading power source…</div><div class="charts"><section class="chart-panel"><h3>Battery capacity · %</h3><div id="capacity-chart"></div></section><section class="chart-panel"><h3>Battery net current · A</h3><div id="current-chart"></div><p class="small">Positive current flows into the battery; negative current indicates net discharge. The input limit is not actual charging current. Sensor readings may briefly differ.</p></section></div>
+<footer><p id="history-updated">Loading history…</p><p>Current values refresh every 20 seconds; samples are saved every minute and charts refresh every five minutes. System history is kept for 24 hours and battery history for seven days. Refresh pauses in background tabs.</p><p>24-hour charts show four-minute averages; raw minute samples remain stored. Peaks are sampled peaks, not instantaneous spikes. Traffic and I/O totals count continuous intervals only, excluding reboots and counter resets. Gaps are not joined.</p><p>Reads system counters only. No speed tests, IP addresses, browsing history, process lists or user content are collected. Charging and drivers are never controlled. Charts render in your browser.</p></footer>
+<script>
+const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';let cached=null,currentBusy=false,historySequence=0,historyController,lastHistory=0,lastCurrent=0;
+const statusNames={Charging:'Charging',Discharging:'Discharging',Full:'Full','Not charging':'Not charging',Unknown:'Unknown'};
+const valid=v=>typeof v==='number'&&Number.isFinite(v),num=(v,s=1,n=0)=>valid(v)?(v/s).toFixed(n):'—';
+function bytes(v){if(!valid(v))return '—';const units=['B','KiB','MiB','GiB','TiB'];let i=0;while(v>=1024&&i<units.length-1){v/=1024;i++;}return v.toFixed(i?1:0)+' '+units[i];}
+function speed(v){return valid(v)?bytes(v)+'/s':'Awaiting next sample';}
+function duration(v){if(!valid(v))return '—';let m=Math.floor(v/60),h=Math.floor(m/60),d=Math.floor(h/24);return d?d+'d '+h%24+'h':h?h+'h '+m%60+'min':m+'min';}
+function shape(tag,attrs,text){const e=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e;}
+function draw(id,rows,series,label,minimum=0,maximum=null){
+ const host=$(id);host.replaceChildren();const values=rows.flatMap(r=>series.filter(s=>valid(r[s.key])).map(s=>r[s.key]/s.scale));
+ if(!values.length){const e=document.createElement('div');e.className='empty';e.textContent='Collecting samples; rates require a second reading.';host.append(e);return;}
+ let low=minimum??Math.min(0,...values),high=maximum??Math.max(0,...values,low);if(high-low<.01)high=low+1;
+ const width=Math.max(260,host.clientWidth),left=48,right=width-12,top=12,bottom=152;
+ const t0=cached.window_start,t1=cached.window_end,x=t=>left+(t-t0)/(t1-t0)*(right-left),y=v=>bottom-(v-low)/(high-low)*(bottom-top);
+ const svg=shape('svg',{viewBox:`0 0 ${width} 190`,role:'img','aria-label':label});
+ for(let i=0;i<4;i++){let value=low+(high-low)*i/3,yy=y(value);svg.append(shape('line',{x1:left,y1:yy,x2:right,y2:yy,class:'grid'}),shape('text',{x:left-7,y:yy+4,'text-anchor':'end'},value.toFixed(high-low<5?1:0)));}
+ series.forEach((s,index)=>{let path='',previous=null,points=0,lastPoint;
+  rows.forEach(r=>{if(!valid(r[s.key])){previous=null;return;}const move=!previous||r.break_before||r.timestamp-previous.timestamp>Math.max(150,cached.display_interval_seconds*1.8);const xx=x(r.timestamp),yy=y(r[s.key]/s.scale);path+=(move?'M':'L')+xx.toFixed(1)+','+yy.toFixed(1)+' ';previous=r;points++;lastPoint={xx,yy};});
+  svg.append(shape('path',{d:path,class:'series'+(index?' second':'')}));if(points===1)svg.append(shape('circle',{cx:lastPoint.xx,cy:lastPoint.yy,r:3,fill:index?'var(--line2)':'var(--line)'}));
+ });
+ const fmt=t=>t1-t0>=86340?new Date(t*1000).toLocaleString(undefined,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):new Date(t*1000).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+ svg.append(shape('text',{x:left,y:178},fmt(t0)),shape('text',{x:right,y:178,'text-anchor':'end'},fmt(t1)));host.append(svg);
+}
+function renderHistory(){
+ if(!cached)return;const rows=cached.system.history,summary=cached.system.summary;
+ draw('cpu-chart',rows,[{key:'cpu_percent',scale:1}],'CPU utilization history',0,100);
+ draw('memory-chart',rows,[{key:'mem_used_bytes',scale:1048576},{key:'swap_used_bytes',scale:1048576}],'Memory and swap history');
+ draw('network-chart',rows,[{key:'net_rx_Bps',scale:1024},{key:'net_tx_Bps',scale:1024}],'Network rate history');
+ draw('io-chart',rows,[{key:'disk_read_Bps',scale:1024},{key:'disk_write_Bps',scale:1024}],'Disk I/O rate history');
+ draw('load-chart',rows,[{key:'load_1',scale:1},{key:'load_5',scale:1}],'System load history');
+ draw('disk-chart',rows,[{key:'disk_used_bytes',scale:1073741824}],'Root filesystem usage history');
+ draw('capacity-chart',cached.history,[{key:'capacity',scale:1}],'Battery capacity history',0,100);
+ draw('current-chart',cached.history,[{key:'current_uA',scale:1e6}],'Battery current history',null);
+ $('summary-title').textContent='Last '+$('hours').value+' hours';
+ $('cpu-summary').textContent=num(summary.cpu_average_percent,1,1)+'% / '+num(summary.cpu_peak_percent,1,1)+'%';
+ $('memory-summary').textContent=bytes(summary.memory_peak_bytes);
+ $('network-summary').textContent='↓ '+bytes(summary.network_rx_bytes);$('network-summary-sub').textContent='↑ '+bytes(summary.network_tx_bytes)+' · covered: '+duration(summary.network_coverage_seconds);
+ $('disk-summary').textContent='Read '+bytes(summary.disk_read_bytes);$('disk-summary-sub').textContent='Write '+bytes(summary.disk_write_bytes)+' · covered: '+duration(summary.disk_coverage_seconds);
+ $('history-notice').textContent='Samples: '+summary.samples+'; span: '+duration(summary.coverage_seconds)+'. '+cached.display_interval_seconds/60+'-minute chart buckets. Blank areas have no data.';
+ $('history-updated').textContent='History updated: '+new Date(cached.window_end*1000).toLocaleString(undefined)+'; a full 24-hour history accumulates after monitoring starts.';
+}
+function current(d){
+ const c=d.current,s=d.system.current;if(c.timestamp<lastCurrent)return;lastCurrent=c.timestamp;
+ $('cpu').textContent=num(s.cpu_percent,1,1)+'%';$('cpu-sub').textContent=s.cpu_count+' cores; 100% means all cores busy';
+ $('memory').textContent=bytes(s.mem_used_bytes);$('memory-sub').textContent='Total: '+bytes(s.mem_total_bytes)+' · available: '+bytes(s.mem_available_bytes);
+ $('swap').textContent=bytes(s.swap_used_bytes);$('swap-sub').textContent='Total: '+bytes(s.swap_total_bytes);
+ $('disk').textContent=valid(s.disk_total_bytes)&&s.disk_total_bytes?num(100*s.disk_used_bytes/s.disk_total_bytes,1,1)+'%':'—';$('disk-sub').textContent='Used: '+bytes(s.disk_used_bytes)+' / '+bytes(s.disk_total_bytes)+' · available: '+bytes(s.disk_available_bytes);
+ $('network').textContent='↓ '+speed(s.net_rx_Bps);$('network-sub').textContent='↑ '+speed(s.net_tx_Bps)+' · '+(s.network_interfaces||'No active interface');
+ $('io').textContent='Read '+speed(s.disk_read_Bps);$('io-sub').textContent='Write '+speed(s.disk_write_Bps);
+ $('load').textContent=num(s.load_1,1,2)+' / '+num(s.load_5,1,2);$('uptime').textContent=duration(s.uptime_seconds);
+ $('capacity').textContent=num(c.capacity)+'%';$('status').textContent=statusNames[c.status]||c.status||'Unknown';$('current').textContent=num(c.current_uA,1e6,2)+' A';$('temperature').textContent=num(c.temperature_deciC,10,1)+'℃';$('limit').textContent=num(c.input_limit_uA,1e6,2)+' A';$('voltage').textContent=num(c.voltage_uV,1e6,2)+' V';
+ $('updated').textContent='Current values updated: '+new Date(c.timestamp*1000).toLocaleString(undefined);
+ const source=(c.usb_type||'').match(/\[([^\]]+)\]/)?.[1]||'Unknown',notice=$('notice');notice.className='notice';let text=c.online===1?'External power connected; source: '+source:'No external power';if(c.online===1&&valid(c.current_uA)&&c.current_uA<0){text+='. The battery is currently discharging; check whether charging resumes.';notice.classList.add('warning');}if(valid(c.temperature_deciC)&&c.temperature_deciC>=400){text+=' Battery temperature is high.';notice.classList.add('warning');}if(valid(c.capacity)&&c.capacity<=15){text+=' Battery is low.';notice.classList.add('warning');}notice.textContent=text;
+}
+async function request(query,signal){const r=await fetch('/api/battery?'+query,{cache:'no-store',signal});if(!r.ok)throw Error('Data unavailable');return r.json();}
+async function refreshCurrent(){if(currentBusy)return;currentBusy=true;const c=new AbortController(),timer=setTimeout(()=>c.abort(),8000);try{current(await request('view=current',c.signal));}catch(_){$('updated').textContent='Current refresh failed; showing previous values. Try refreshing later.';}finally{clearTimeout(timer);currentBusy=false;}}
+async function refreshHistory(){const sequence=++historySequence;historyController?.abort();historyController=new AbortController();const controller=historyController,timer=setTimeout(()=>controller.abort(),12000);try{const d=await request('hours='+$('hours').value,controller.signal);if(sequence!==historySequence)return;cached=d;current(d);renderHistory();lastHistory=Date.now();}catch(_){if(sequence===historySequence)$('history-notice').textContent='History refresh failed; showing previous values. Try refreshing later.';}finally{clearTimeout(timer);}}
+$('refresh').onclick=refreshHistory;$('hours').onchange=refreshHistory;refreshHistory();
+setInterval(()=>{if(!document.hidden)refreshCurrent();},20000);setInterval(()=>{if(!document.hidden)refreshHistory();},300000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshCurrent();if(Date.now()-lastHistory>300000)refreshHistory();}});
+let resizing;window.addEventListener('resize',()=>{clearTimeout(resizing);resizing=setTimeout(renderHistory,180);});
+</script></body></html>
