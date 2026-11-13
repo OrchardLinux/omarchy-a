@@ -1,6 +1,6 @@
 # Power, lock and sleep: the state model
 
-`omarchy-powerd` (`system/overlay/usr/libexec/omarchy-powerd`) is the one maintainer
+`omarchy-powerd` (`system/overlay/usr/libexec/omarchy-powerd`) is the one owner
 of the screen, the lock request and sleep. Its state machine, the `Machine`
 class, has no I/O and no clocks; `tests/test_powerd.py` walks every reachable
 state with every input and checks the invariants below. Whether a board may
@@ -29,7 +29,7 @@ this model decides when. Unqualified boards retain dim, blank and wake.
 9. Being plugged in lights the screen, as on any tablet, asleep or awake. Being
    unplugged wakes the kernel (orchard) but stays dark and sleeps again.
 
-## One maintainer
+## One owner
 
 A system service, because it serves the greeter and the desktop alike, and
 because system services thaw with the kernel while `user.slice` stays frozen a
