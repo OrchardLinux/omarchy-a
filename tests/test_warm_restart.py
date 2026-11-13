@@ -17,13 +17,55 @@ import cli
 import diagnostics
 import health
 
+WARM_SUPPORTED = cli.warm_supported  # the real probe, before setUp replaces it
+
 class WarmRestart(unittest.TestCase):
     def setUp(self):
-        # The state-machine fixtures model the qualified chain; runtime policy
-        # is checked separately and defaults to normal reboot.
+        # The state-machine fixtures model a system with the warm restart
+        # mechanisms; the probe is checked separately and defaults to reboot.
         gate = patch.object(cli, 'warm_supported', return_value=True)
         gate.start()
         self.addCleanup(gate.stop)
+
+    def test_warm_support_comes_from_kexec_and_the_reset_guard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def path(name): return root / str(name).lstrip('/')
+            loaded = path('/sys/kernel/kexec_loaded')
+            loaded.parent.mkdir(parents=True); loaded.write_text('0\n')
+            mode = path('/sys/kernel/reboot/mode'); mode.parent.mkdir(parents=True); mode.write_text('cold\n')
+            node = path('/proc/device-tree/soc/watchdog@123'); node.mkdir(parents=True)
+            (node/'compatible').write_bytes(b'apple,s8000-wdt\0apple,wdt\0')
+            (node/'apple,tethered-boot').touch()
+            with patch.object(cli, 'Path', side_effect=path), patch.object(cli.reset, 'Path', side_effect=path), \
+                 patch.object(cli.shutil, 'which', return_value='/usr/bin/kexec') as which:
+                self.assertTrue(self.real_warm_supported())
+                which.assert_called_with('kexec')
+                which.return_value = None
+                self.assertFalse(self.real_warm_supported())
+                which.return_value = '/usr/bin/kexec'
+                (node/'apple,tethered-boot').unlink()  # no guard: J71b and every other board today
+                self.assertFalse(self.real_warm_supported())
+                (node/'apple,tethered-boot').touch(); loaded.unlink()  # no kexec in the kernel
+                self.assertFalse(self.real_warm_supported())
+                loaded.write_text('0\n')
+                self.assertTrue(self.real_warm_supported())
+            source = (LIB/'cli.py').read_text() + (ROOT/'system/overlay/usr/bin/orchard-restart').read_text()
+            self.assertNotIn('device-feature', source)
+
+    def real_warm_supported(self):
+        return WARM_SUPPORTED()
+
+    def test_supported_action_reports_the_probe_as_exit_status(self):
+        for answer, code in ((True, 0), (False, 1)):
+            with patch.object(cli, 'warm_supported', return_value=answer), \
+                 patch.object(sys, 'argv', ['tool', 'supported']), patch.object(device, 'run') as command:
+                with self.assertRaises(SystemExit) as exit:
+                    cli.main()
+                self.assertEqual(exit.exception.code, code)
+                command.assert_not_called()
+        script = (ROOT/'system/overlay/usr/bin/orchard-restart').read_text()
+        self.assertIn('/usr/bin/orchard-kexec supported || exec systemctl reboot', script)
 
     def test_unqualified_restart_uses_normal_reboot(self):
         with patch.object(cli, 'warm_supported', return_value=False), \
@@ -187,11 +229,10 @@ class WarmRestart(unittest.TestCase):
         script = (LIB/'quiesce-gpu').read_text()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            feature = root/'feature'; feature.write_text('#!/bin/sh\nexit 0\n'); feature.chmod(0o755)
             command = root/'gpu/command'; command.parent.mkdir()
             command.mkdir()  # Opening a directory for output fails on every host.
-            rewritten = script.replace('/usr/lib/orchard/device-feature', str(feature)) \
-                .replace('/run/orchard-kexec', str(root/'run')) \
+            self.assertNotIn('device-feature', script)
+            rewritten = script.replace('/run/orchard-kexec', str(root/'run')) \
                 .replace('/sys/bus/platform/drivers/apple-g5p-drm/*/command', str(command)) \
                 .replace('/dev/kmsg', str(root/'kmsg'))
             result = subprocess.run(['sh', '-c', rewritten], capture_output=True, timeout=5)
@@ -202,6 +243,17 @@ class WarmRestart(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((root/'run/gpu-quiesce-failed').exists())
             self.assertEqual(command.read_text(), 'td-kexec\n')
+
+    def test_quiesce_without_a_gpu_handover_command_arms_nothing(self):
+        script = (LIB/'quiesce-gpu').read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rewritten = script.replace('/run/orchard-kexec', str(root/'run')) \
+                .replace('/sys/bus/platform/drivers/apple-g5p-drm', str(root/'no-g5p')) \
+                .replace('/dev/kmsg', str(root/'kmsg'))
+            result = subprocess.run(['sh', '-c', rewritten], capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((root/'run').exists())
 
     def test_dispatch_without_ready_image_uses_cold_escape(self):
         with tempfile.TemporaryDirectory() as tmp:
