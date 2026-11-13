@@ -4,8 +4,10 @@
 # firmware to quiesce (td-kexec) before the next kernel takes it over. Without this,
 # a warm restart from a running desktop hangs in the incoming kernel's GPU warm start
 # (device journal 2026-11-08: "origin=warm-uncycled ... cmd8-consumed", then silence).
-# Matched by driver, not by board; harmless when there is no G5P.
-[ -x /usr/lib/orchard/device-feature ] && /usr/lib/orchard/device-feature warm_restart working || exit 0
+# Matched by driver, not by board: without the G5P driver's handover command
+# there is nothing to quiesce, and nothing is armed.
+set -- /sys/bus/platform/drivers/apple-g5p-drm/*/command
+[ -e "$1" ] || exit 0
 # Arm failure before touching sysfs so interruption/timeout is also a failure.
 # dispatch consumes this receipt; success alone removes it.
 mkdir -p /run/orchard-kexec || exit 1
