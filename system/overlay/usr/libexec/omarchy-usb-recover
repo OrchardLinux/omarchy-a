@@ -185,7 +185,7 @@ class Recovery:
             try:
                 self.pause(0.2)
             finally:
-                # Restore even on stop/error, but do not overwrite another maintainer.
+                # Restore even on stop/error, but do not overwrite another owner.
                 if read(path) == '':
                     path.write_text(udc + '\n')
         except OSError as error:
