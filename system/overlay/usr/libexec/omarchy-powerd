@@ -915,7 +915,7 @@ class Daemon:
             self.restore_brightness()
         panel = self.backlight()
         if panel and int((panel / 'brightness').read_text()) == 0:
-            # State ON after a restart: never dark without an maintainer.
+            # State ON after a restart: never dark without an owner.
             self.key_time = time.monotonic()
             self.do_light(ON)
         server = self.open_socket()
