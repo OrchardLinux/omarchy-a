@@ -723,7 +723,7 @@ class Daemon:
     def request_suspend(self):
         try:
             # Shared with the final menu and systemd's direct suspend guard:
-            # public qualification first, then non-reserving kernel admission.
+            # the kernel's non-reserving admission query.
             if not platform_suspend_ready():
                 log('no suspend: platform readiness contract refused')
                 self.post('suspend-refused')
