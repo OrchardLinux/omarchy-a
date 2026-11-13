@@ -46,6 +46,11 @@ measured as 3.36 s); the key timestamps can. It:
   the lock, when the session is still unlocked) opens nothing either:
   `omarchy-powerctl home` answers `wake`. Volume stays with labwc, `allowWhenLocked`, and never
   touches the panel or the state;
+- reads every input device that reports `SW_MACHINE_COVER` (the iPad
+  Smart Cover; the kernel names two hall sensors, each its own device). The
+  cover is closed while any sensor says so: closing it is a `lock`, opening
+  it a `wake`. The kernel wakes the iPad from sleep when the cover opens;
+  the sensors are polled and report the opening right after resume;
 - owns the backlight: brightness 0 is dark. The display pipeline stays on, so
   lighting it again needs no modeset and shows the lock screen it last showed;
 - remembers the last lit level in `/var/lib/omarchy-powerd/brightness` each
@@ -98,8 +103,8 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 |---|---|
 | `power`, `home` | gpio-keys, with the kernel timestamp: Home and a Power on a dark screen on key **down**; Power on a lit screen on key **up** after a short lone press. Home + Power is not a machine event: it runs the screenshot in the session |
 | `idle` | shell: idle timeout, or the lock screen's blank timeout |
-| `lock` | the menu's Lock (`omarchy-system-lock`): lock at once, no grace |
-| `wake` | lock screen: input while lit |
+| `lock` | the menu's Lock (`omarchy-system-lock`): lock at once, no grace; closing the Smart Cover |
+| `wake` | lock screen: input while lit; opening the Smart Cover |
 | `settle` | settle timer |
 | `grace-ended` | eight-second idle grace timer |
 | `lock-ok`, `lock-failed` | the shell's answer to the lock request |
@@ -259,9 +264,9 @@ admission. The answer is advisory; the real suspend reserves and checks again.
 
 The source menu used by both desktop staging and `release/public_root.py` uses
 this helper for visibility and again before its suspend action. Powerd uses it
-for every sleep request (Power, idle and `cover-suspend`); a refusal leaves the
-screen dark until touch/Home/Power wake, without retrying sleep. Cover-close
-itself only locks/blanks. Logind ignores lid, idle, suspend and power keys;
+for every sleep request (Power, idle and closing the Smart Cover); a refusal
+leaves the screen dark until touch, Home, Power or opening the cover wakes it,
+without retrying sleep. Logind ignores lid, idle, suspend and power keys;
 keyboard or direct logind/systemctl requests still pass the same helper in
 `systemd-suspend.service`'s `ExecStartPre`. Hibernation, hybrid sleep and
 suspend-then-hibernate remain disabled and their targets masked. No static
@@ -279,8 +284,8 @@ timeout -k 5 10 systemctl suspend
 On the current unqualified J71t all three must refuse; the journal must name
 qualification rather than a kernel suspend attempt, and suspend success
 counters must not advance. Check that the final session menu omits Suspend.
-Use `timeout -k 5 5 omarchy-powerctl idle`, cover-close/cover-suspend, and a
-short Power press separately; each must blank without sleep and touch/Power
-must wake. Dim/undim must still restore the previous brightness. Repeat after
+Use `timeout -k 5 5 omarchy-powerctl idle`, closing the Smart Cover, and a
+short Power press separately; each must blank without sleep, and touch, Power
+or opening the cover must wake. Dim/undim must still restore the previous brightness. Repeat after
 reboot with the installed platform data; do not edit qualification on hardware
 just to exercise sleep. These are pending device checks, not host-test results.
