@@ -40,7 +40,7 @@ class AutoBrightness(unittest.TestCase):
         self.assertAlmostEqual(smooth.lux,20)
 
     def test_brightening_is_fast_and_darkening_slow(self):
-        # maintainer 2026-11-08: a flashlight took seconds to register, then moved in steps.
+        # Hands-on test 2026-11-08: a flashlight took seconds to register, then moved in steps.
         up=a.Smoother(3.0,tau_up=0.4); down=a.Smoother(3.0,tau_up=0.4)
         for t in (0.0,0.25,0.5): up.feed(20,t); down.feed(2000,t)
         for t in (0.75,1.0,1.25,1.5): up.feed(2000,t); down.feed(20,t)
