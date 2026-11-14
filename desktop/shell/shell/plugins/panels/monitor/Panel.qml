@@ -15,6 +15,9 @@ Panel {
   property bool brightnessAvailable: false
   property int brightnessPercent: 0
   property int queuedPercent: -1
+  // Ambient-light auto-brightness (omarchy-auto-brightness); hidden when the tool is absent.
+  property bool autoAvailable: false
+  property bool autoOn: false
   // The shell's idle service owns Stay Awake (state file, bar indicator, IPC).
   readonly property var idleService: bar?.shell?.firstPartyServiceFor("omarchy.idle")
   readonly property bool stayAwake: idleService ? idleService.stayAwake === true : false
@@ -23,8 +26,16 @@ Panel {
   readonly property string rotationHelper: (Quickshell.env("OMARCHY_PATH") ||
     Quickshell.env("HOME") + "/.local/share/omarchy-ipad") + "/bin/omarchy-rotation-lock"
 
+  function setAuto(on) {
+    if (!autoAvailable || autoWriteProc.running) return
+    root.autoOn = on  // optimistic: the switch moves at once
+    autoWriteProc.command = ["omarchy-auto-brightness", on ? "on" : "off"]
+    autoWriteProc.running = true
+  }
+
   function refresh() {
     if (!readProc.running && !writeProc.running) readProc.running = true
+    if (!autoReadProc.running && !autoWriteProc.running) autoReadProc.running = true
     if (!rotationRead.running && !rotationWrite.running) rotationRead.running = true
   }
   function setBrightness(value) {
@@ -86,8 +97,26 @@ Panel {
     }
   }
   Process {
+    id: autoReadProc
+    command: ["omarchy-auto-brightness", "status"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var m = /^auto-brightness:\s*(on|off)/m.exec(String(text || ""))
+        root.autoAvailable = m !== null
+        if (m) root.autoOn = m[1] === "on"
+      }
+    }
+  }
+  Process {
     id: rotationWrite
     onExited: function(exitCode, exitStatus) { root.refresh() }
+  }
+
+  Process {
+    id: autoWriteProc
+    stdout: StdioCollector { waitForEnd: true }
+    onRunningChanged: if (!running) root.refresh()
   }
 
   BarIconButton {
@@ -181,6 +210,16 @@ Panel {
           value: root.brightnessPercent
           onMoved: function(v) { root.setBrightness(v) }
           onReleased: function(v) { root.setBrightness(v) }
+        }
+        Toggle {
+          width: parent.width
+          visible: root.autoAvailable
+          label: Commons.I18n.t("monitor.autoBrightness")
+          description: Commons.I18n.t("monitor.autoBrightnessHint")
+          checked: root.autoOn
+          foreground: root.bar.foreground
+          fontFamily: root.bar.fontFamily
+          onClicked: root.setAuto(!root.autoOn)
         }
       }
     }

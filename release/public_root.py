@@ -42,6 +42,8 @@ def desktop_replacements():
     replacements['home/tablet/.config/labwc/rc.xml'] = (PROJECT / 'desktop/shell/labwc-rc.xml').read_bytes()
     replacements['home/tablet/.config/labwc/autostart'] = (PROJECT / 'desktop/configuration/labwc-autostart').read_bytes()
     replacements['usr/local/libexec/arch-ipad-rotate-output'] = (PROJECT / 'desktop/configuration/rotate-output').read_bytes()
+    replacements[prefix + 'shell/plugins/panels/monitor/Panel.qml'] = (PROJECT / 'desktop/shell/shell/plugins/panels/monitor/Panel.qml').read_bytes()
+    replacements[prefix + 'default/i18n/en/shell.json'] = (PROJECT / 'desktop/shell/default/i18n/en/shell.json').read_bytes()
     return replacements
 
 
@@ -133,7 +135,11 @@ def desktop_additions():
     name = 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml'
     return {name: ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644),
             'home/tablet/.local/share/omarchy-ipad/bin/omarchy-rotation-lock':
-                ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755)}
+                ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755),
+            'usr/local/libexec/arch-ipad-auto-brightness':
+                ((PROJECT / 'desktop/configuration/auto-brightness').read_bytes(), 0o755),
+            'usr/local/bin/omarchy-auto-brightness':
+                ((PROJECT / 'desktop/shell/bin/omarchy-auto-brightness').read_bytes(), 0o755)}
 
 
 def system_files():

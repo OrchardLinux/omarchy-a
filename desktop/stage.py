@@ -101,6 +101,7 @@ def main():
         PORT / "fastfetch/about-compact.txt": config / "omarchy/branding/about-compact.txt",
         CONFIG / "first-theme": target / "usr/local/libexec/arch-ipad-first-theme",
         CONFIG / "scale-output": target / "usr/local/libexec/arch-ipad-scale-output",
+        CONFIG / "auto-brightness": target / "usr/local/libexec/arch-ipad-auto-brightness",
         CONFIG / "rotate-output": target / "usr/local/libexec/arch-ipad-rotate-output",
         CONFIG / "touch-output": target / "usr/local/libexec/arch-ipad-touch-output",
         CONFIG / "login-session": target / "usr/local/libexec/arch-ipad-login-session",
@@ -133,6 +134,7 @@ def main():
     (target / "usr/local/libexec/arch-ipad-first-theme").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-scale-output").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-rotate-output").chmod(0o755)
+    (target / "usr/local/libexec/arch-ipad-auto-brightness").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-touch-output").chmod(0o755)
     (target / "usr/local/libexec/arch-ipad-login-session").chmod(0o755)
     # The base overlay preserves directory modes. Set the target layout
