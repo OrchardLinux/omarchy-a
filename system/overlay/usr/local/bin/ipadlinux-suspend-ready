@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Read-only suspend policy probe; 0 permits a request, 1 refuses, 2 is usage.
+
+This never performs a suspend or reserves admission. The kernel remains the
+final authority at the actual transition. The answer comes from the kernel's
+own admission query, /sys/power/suspend_ready ("ready", or
+"not-ready <who> <errno>"), on every board. A kernel without that query
+cannot show that its drivers and platform prechecks would admit a suspend, so
+suspend is refused there; PM callback presence, a loaded module and
+power/state's "freeze" are not proof of admission.
+"""
+from pathlib import Path
+import sys
+
+READINESS = Path('/sys/power/suspend_ready')
+
+
+def admission():
+    """The kernel's readiness answer; None when it reports ready."""
+    try:
+        report = READINESS.read_text(encoding='ascii').strip()
+    except FileNotFoundError:
+        return ('the kernel has no suspend readiness query (/sys/power/suspend_ready); '
+                'driver admission and platform prechecks cannot be verified')
+    except (OSError, UnicodeDecodeError) as error:
+        return f'cannot read kernel suspend readiness: {error}'
+    if report == 'ready':
+        return None
+    words = report.split()
+    if len(words) == 3 and words[0] == 'not-ready':
+        return f'kernel admission refused by {words[1]} ({words[2]})'
+    return f'malformed kernel suspend readiness: {report!r}'
+
+
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv:
+        print('Usage: ipadlinux-suspend-ready', file=sys.stderr)
+        return 2
+    reason = admission()
+    if reason:
+        print(f'Suspend unavailable: {reason}', file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

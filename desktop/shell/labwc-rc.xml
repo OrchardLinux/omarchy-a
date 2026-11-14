@@ -123,6 +123,18 @@
     <keybind key="W-Tab">
       <action name="ToggleOverview" />
     </keybind>
+    <!-- Gather: every window to this workspace, placed on screen and raised.
+         Rescues windows dragged off the panel. -->
+    <keybind key="W-S-g">
+      <action name="ForEach">
+        <query />
+        <then>
+          <action name="SendToDesktop" to="current" follow="no" />
+          <action name="AutoPlace" policy="automatic" />
+          <action name="Raise" />
+        </then>
+      </action>
+    </keybind>
     <keybind key="A-Tab">
       <action name="NextWindow" />
     </keybind>
