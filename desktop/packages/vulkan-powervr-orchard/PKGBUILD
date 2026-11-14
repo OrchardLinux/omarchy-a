@@ -5,9 +5,9 @@
 # to Arch's Mesa. The kernel side is orchard's.
 
 pkgname=vulkan-powervr-orchard
-_commit=7446eebebec5722cbdc6d3670e834c08d6ea9607
-pkgver=27.0.0.dev.7446eebebec
-pkgrel=2
+_commit=2c1aa767d8d8836739260177144716271e05f686
+pkgver=27.0.0.dev.2c1aa767d8d
+pkgrel=1
 pkgdesc="Vulkan driver for the Apple PowerVR GPUs, from the OrchardLinux Mesa fork, and the desktop's GPU probe"
 url="https://github.com/OrchardLinux/mesa"
 license=('MIT')
@@ -22,7 +22,7 @@ makedepends=('bison' 'clang' 'flex' 'glslang' 'libclc' 'libdisplay-info' 'libelf
 provides=('vulkan-driver')
 conflicts=('vulkan-powervr')
 source=("mesa-${_commit}.tar.gz::${url}/archive/${_commit}.tar.gz" gpu-probe.c)
-sha256sums=('7aa55f09aae7be33399136311a5b507c0846fb777dc6a1d36ded66d7546480f2'
+sha256sums=('e6a6481bcbe736342146b8000725e739ebf389384d3a9fe3ae36def2e4c6cd2a'
             '85a82faaf046de658e139df0f185793a9aca857129a7c90c76aaf98d74152633')
 
 build() {
