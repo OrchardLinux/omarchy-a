@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the keyboard and the Omafox, wlroots, GPU driver and video bridge packages from pinned sources."""
+"""Build the keyboard and the Omafox, wlroots, Mesa and video bridge packages from pinned sources."""
 import argparse
 import hashlib
 import json
@@ -69,12 +69,12 @@ def main():
     wlroots = HERE / 'packages/wlroots0.20/PKGBUILD'
     if pins['wlroots']['sha256'] not in wlroots.read_text():
         parser.error('wlroots PKGBUILD and source pin differ')
-    gpu = HERE / 'packages/vulkan-powervr-orchard'
+    gpu = HERE / 'packages/mesa-orchard'
     bridge = HERE / 'packages/libva-v4l2-request'
     bridge_source = HERE / 'arm64/inputs' / BRIDGE_SOURCE
     if args.architecture == 'aarch64':
         if pins['mesa']['sha256'] not in (gpu / 'PKGBUILD').read_text():
-            parser.error('GPU driver PKGBUILD and source pin differ')
+            parser.error('Mesa PKGBUILD and source pin differ')
         bridge_pin = json.loads((HERE / 'arm64/inputs.json').read_text())['libva_v4l2_request_source']
         if sha(bridge_source) != bridge_pin or bridge_pin not in (bridge / 'PKGBUILD').read_text():
             parser.error('Video bridge source, PKGBUILD and pin differ')
@@ -155,13 +155,14 @@ PKGDEST="$build/result" PKGEXT='.pkg.tar.zst' makepkg --noconfirm --nodeps
 package=$(ls "$build"/result/libva-v4l2-request-*-$OMARCHY_ARCH.pkg.tar.zst)
 bsdtar -tf "$package" usr/lib/dri/v4l2_request_drv_video.so >/dev/null
 cp "$package" "$ORCHARD_WORK/result/libva-v4l2-request.pkg.tar.zst"
-echo 'Building the GPU Vulkan driver (several minutes)...'
-cp "$ORCHARD_RECIPE"/packages/vulkan-powervr-orchard/{PKGBUILD,gpu-probe.c} "$ORCHARD_WORK"/sources/mesa-*.tar.gz "$build/gpu/"
+echo 'Building Mesa: OpenGL and the GPU Vulkan driver (several minutes)...'
+cp "$ORCHARD_RECIPE"/packages/mesa-orchard/{PKGBUILD,gpu-probe.c} "$ORCHARD_WORK"/sources/mesa-*.tar.gz "$build/gpu/"
 cd "$build/gpu"
 PKGDEST="$build/result" PKGEXT='.pkg.tar.zst' makepkg --noconfirm --nodeps > "$build/gpu.log" 2>&1 || { tail -60 "$build/gpu.log"; exit 1; }
-package=$(ls "$build"/result/vulkan-powervr-orchard-*-$OMARCHY_ARCH.pkg.tar.zst)
-bsdtar -tf "$package" usr/lib/libvulkan_powervr_mesa.so usr/share/vulkan/icd.d/powervr_mesa_icd.json usr/lib/omarchy-a/gpu-probe >/dev/null
-cp "$package" "$ORCHARD_WORK/result/vulkan-powervr-orchard.pkg.tar.zst"
+package=$(ls "$build"/result/mesa-orchard-*-$OMARCHY_ARCH.pkg.tar.zst)
+bsdtar -tf "$package" usr/lib/libvulkan_powervr_mesa.so usr/share/vulkan/icd.d/powervr_mesa_icd.json usr/lib/omarchy-a/gpu-probe \
+  usr/lib/libEGL_mesa.so.0 usr/lib/libgbm.so.1 usr/lib/dri/zink_dri.so usr/lib/dri/swrast_dri.so >/dev/null
+cp "$package" "$ORCHARD_WORK/result/mesa-orchard.pkg.tar.zst"
 '''
             buildenv.run(image, ['bash', '-euc', script],
                          [(work, '/work', False), (HERE, '/recipe', True)],
@@ -173,7 +174,7 @@ cp "$package" "$ORCHARD_WORK/result/vulkan-powervr-orchard.pkg.tar.zst"
             if args.architecture == 'armv7h':
                 names.append('omacalc.pkg.tar.zst')
             else:
-                names += ['vulkan-powervr-orchard.pkg.tar.zst', 'libva-v4l2-request.pkg.tar.zst']
+                names += ['mesa-orchard.pkg.tar.zst', 'libva-v4l2-request.pkg.tar.zst']
             for name in names[1:]:
                 check_package(built / name, args.architecture)
             files = {name: sha(built / name) for name in names}

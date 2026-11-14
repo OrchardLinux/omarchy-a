@@ -20,10 +20,12 @@ packages=(base-devel wayland libxkbcommon pango scdoc pkgconf patch python pytho
   meson ninja glslang vulkan-headers xorg-xwayland wayland-protocols
   libdisplay-info libdrm libglvnd libinput lcms2 libliftoff pixman seatd vulkan-icd-loader mesa hwdata
   xcb-util-errors xcb-util-renderutil xcb-util-wm
-  # vulkan-powervr-orchard (packages/vulkan-powervr-orchard): the Mesa fork's Vulkan
-  # driver; LLVM, Clang and libclc compile its internal shaders at build time.
+  # mesa-orchard (packages/mesa-orchard): the Mesa fork's OpenGL and Vulkan driver.
+  # LLVM is llvmpipe's compiler; Clang and libclc compile the Vulkan driver's
+  # internal shaders at build time. The X11 libraries are for GLX.
   bison flex expat zlib zstd libelf spirv-tools python-mako python-yaml python-packaging python-ply
-  llvm clang libclc spirv-llvm-translator
+  llvm llvm-libs clang libclc spirv-llvm-translator
+  libx11 libxcb libxext libxfixes libxrandr libxshmfence libxxf86vm xorgproto
   # libva-v4l2-request (packages/libva-v4l2-request)
   libva)
 pacman-download -Sy --noconfirm --needed "${packages[@]}"
