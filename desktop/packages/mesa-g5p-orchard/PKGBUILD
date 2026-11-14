@@ -1,0 +1,56 @@
+# Private GL + ICD from ONE source revision. Keep Arch mesa/libglvnd and A10's ICD.
+pkgname=mesa-g5p-orchard
+# Move to the merged OrchardLinux/mesa commit once the G5P driver is merged there.
+_commit=1f24e522a3eb8134c12b0ca4eb8c830375fd5c31
+pkgver=27.0.0.dev.1f24e522a3e
+pkgrel=1
+pkgdesc='Matched G5P Zink, EGL, GBM, GLES and Vulkan driver for Omarchy A'
+arch=('aarch64')
+url=https://github.com/OrchardLinux/mesa
+license=('MIT')
+options=('!debug' '!lto')
+depends=('llvm-libs' 'mesa' 'libglvnd' 'vulkan-icd-loader' 'libdrm' 'wayland' 'expat' 'zlib' 'zstd' 'libdisplay-info' 'spirv-tools' 'systemd-libs' 'libx11' 'libxcb' 'libxshmfence' 'libxrandr')
+makedepends=('git' 'meson' 'ninja' 'bison' 'flex' 'python-mako' 'python-packaging' 'python-ply' 'python-yaml' 'clang' 'llvm' 'libclc' 'spirv-llvm-translator' 'glslang' 'vulkan-headers' 'wayland-protocols' 'libelf' 'xorgproto')
+# All files are private: no provides/conflicts for the system GL dispatchers.
+# gpu-probe.c: the login session's check before it leaves the software desktop.
+source=("mesa::git+${url}.git#commit=${_commit}" gpu-probe.c)
+sha256sums=('SKIP' # Immutable git commit checked again before configuration.
+            'c31626333a0c246e3e3fe2554326f9e5b526ef07caa5105b70fc07d9276be94e')
+
+build() {
+  test "$(git -C mesa rev-parse HEAD)" = "$_commit"
+  export MESA_GIT_SHA1_OVERRIDE="$_commit"
+  meson setup mesa build --prefix=/opt/orchard/g5p --libdir=lib \
+    --buildtype=release --wrap-mode=nodownload --auto-features=disabled \
+    -Db_lto=false -Dplatforms=wayland,x11 -Dgallium-drivers=zink \
+    -Dvulkan-manifest-per-architecture=true -Dvulkan-drivers=imagination -Dimagination-g5p-experimental=true \
+    -Degl=enabled -Dgbm=enabled -Dgles1=disabled -Dgles2=enabled \
+    -Dopengl=true -Dglx=dri -Dglvnd=enabled -Dllvm=enabled -Dshared-llvm=enabled \
+    -Dzlib=enabled -Dspirv-tools=enabled -Dexpat=enabled -Dshader-cache=enabled -Dxmlconfig=enabled -Dzstd=enabled \
+    -Dvideo-codecs= -Dtools= -Dvulkan-layers= -Dbuild-tests=false
+  # Build the installed stack, not Mesa's uninstalled developer executables.
+  mapfile -t targets < <(meson introspect --targets build | python -c '
+import json, os, sys
+for target in json.load(sys.stdin):
+    if target.get("installed"):
+        for name in target["filename"]:
+            print(os.path.relpath(name, "build"))')
+  (( ${#targets[@]} > 0 ))
+  ninja -C build -j4 "${targets[@]}"
+  # GLES2 on G5P drawing into a GBM-on-ADBE buffer, linked to this libgbm.
+  cc -O2 -Wall -Wextra gpu-probe.c -o omarchy-g5p-probe -Imesa/src/gbm/main \
+    $(pkg-config --cflags egl glesv2) build/src/gbm/libgbm.so.1.0.0 $(pkg-config --libs egl glesv2) \
+    -Wl,-rpath,/opt/orchard/g5p/lib
+}
+
+package() {
+  DESTDIR="$pkgdir" meson install -C build --no-rebuild
+  install -Dm755 omarchy-g5p-probe "$pkgdir/opt/orchard/g5p/libexec/omarchy-g5p-probe"
+  # GLVND must name our EGL vendor even when a child sanitizes its library path.
+  sed -i 's#"library_path" : "libEGL_mesa.so.0"#"library_path" : "/opt/orchard/g5p/lib/libEGL_mesa.so.0"#' \
+    "$pkgdir/opt/orchard/g5p/share/glvnd/egl_vendor.d/50_mesa.json"
+  # The Vulkan JSON is also generated with the private absolute prefix.
+  test -s "$pkgdir/opt/orchard/g5p/share/drirc.d/00-mesa-defaults.conf"
+  grep -q 'device="g5p"' "$pkgdir/opt/orchard/g5p/share/drirc.d/00-mesa-defaults.conf"
+  install -Dm644 mesa/docs/license.rst "$pkgdir/usr/share/licenses/$pkgname/license.rst"
+}

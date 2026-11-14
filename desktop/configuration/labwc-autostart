@@ -11,8 +11,12 @@ rm -f "$XDG_RUNTIME_DIR/omarchy-overview-open"
 /usr/local/libexec/arch-ipad-rotate-output > "$XDG_RUNTIME_DIR/arch-ipad-rotation.log" 2>&1 &
 # Let user services launched after the compositor see its actual Wayland socket.
 systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE > "$XDG_RUNTIME_DIR/arch-ipad-user-env.log" 2>&1
+# Sensor policy follows the compositor lifetime; it stays off until enabled.
+/usr/local/libexec/arch-ipad-auto-brightness > "$XDG_RUNTIME_DIR/arch-ipad-auto-brightness.log" 2>&1 &
 # Keep the theme-coloured keyboard resident but hidden until the user taps Show.
 export OMARCHY_PATH="$HOME/.local/share/omarchy-ipad"
 printf '0\n' > "$XDG_RUNTIME_DIR/omarchy-keyboard-visible"
 "$OMARCHY_PATH/bin/omarchy-keyboard" run > "$XDG_RUNTIME_DIR/omarchy-keyboard.log" 2>&1 &
 qs -p "$OMARCHY_PATH/shell/shell.qml" > "$XDG_RUNTIME_DIR/omarchy-shell.log" 2>&1 &
+
+# Observe touch without grabbing; actions are native labwc and honor lock/power.

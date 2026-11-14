@@ -163,6 +163,16 @@ package=$(ls "$build"/result/vulkan-powervr-orchard-*-$OMARCHY_ARCH.pkg.tar.zst)
 bsdtar -tf "$package" usr/lib/libvulkan_powervr_mesa.so usr/share/vulkan/icd.d/powervr_mesa_icd.json >/dev/null
 cp "$package" "$ORCHARD_WORK/result/vulkan-powervr-orchard.pkg.tar.zst"
 '''
+            if args.architecture == 'aarch64':
+                script += r'''
+mkdir -p "$build/g5p"
+cp "$ORCHARD_RECIPE"/packages/mesa-g5p-orchard/{PKGBUILD,gpu-probe.c} "$build/g5p/"
+cd "$build/g5p"
+PKGDEST="$build/result" PKGEXT='.pkg.tar.zst' makepkg --noconfirm --nodeps
+package=$(ls "$build"/result/mesa-g5p-orchard-*-$OMARCHY_ARCH.pkg.tar.zst)
+bsdtar -tf "$package" opt/orchard/g5p/share/drirc.d/00-mesa-defaults.conf opt/orchard/g5p/libexec/omarchy-g5p-probe >/dev/null
+cp "$package" "$ORCHARD_WORK/result/mesa-g5p-orchard.pkg.tar.zst"
+'''
             buildenv.run(image, ['bash', '-euc', script],
                          [(work, '/work', False), (HERE, '/recipe', True)],
                          env={'OMARCHY_MACHINE': machine(args.architecture), 'OMARCHY_ARCH': args.architecture},
@@ -173,7 +183,7 @@ cp "$package" "$ORCHARD_WORK/result/vulkan-powervr-orchard.pkg.tar.zst"
             if args.architecture == 'armv7h':
                 names.append('omacalc.pkg.tar.zst')
             else:
-                names += ['vulkan-powervr-orchard.pkg.tar.zst', 'libva-v4l2-request.pkg.tar.zst']
+                names += ['mesa-g5p-orchard.pkg.tar.zst', 'vulkan-powervr-orchard.pkg.tar.zst', 'libva-v4l2-request.pkg.tar.zst']
             for name in names[1:]:
                 check_package(built / name, args.architecture)
             files = {name: sha(built / name) for name in names}
@@ -187,6 +197,7 @@ cp "$package" "$ORCHARD_WORK/result/vulkan-powervr-orchard.pkg.tar.zst"
             if args.architecture == 'armv7h':
                 meta['omacalc_recipe_sha256'] = recipe_sha(HERE / 'packages/omacalc')
             else:
+                meta['g5p_recipe_sha256'] = recipe_sha(HERE / 'packages/mesa-g5p-orchard')
                 meta['gpu_recipe_sha256'] = recipe_sha(gpu)
                 meta['video_bridge_recipe_sha256'] = recipe_sha(bridge)
             (built / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')

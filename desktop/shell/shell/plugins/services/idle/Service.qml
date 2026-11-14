@@ -285,6 +285,19 @@ Item {
     onTriggered: if (root.screensaverEnabled) root.launchScreensaver()
   }
 
+  // Dim before the 5-minute lock. The power daemon serializes dim/ALS/off;
+  // input restores only if a manual brightness change has not superseded dim.
+  IdleMonitor {
+    id: dimMonitor
+    timeout: 180
+    enabled: Quickshell.env("OMARCHY_TOUCH_MODE") === "1" && root.idleEnabled && root.lockEnabled
+    onIsIdleChanged: {
+      dimProcess.command = ["/usr/libexec/omarchy-powerctl", isIdle ? "dim" : "undim"]
+      dimProcess.running = true
+    }
+  }
+  Process { id: dimProcess }
+
   Timer {
     id: lockTimer
     repeat: false

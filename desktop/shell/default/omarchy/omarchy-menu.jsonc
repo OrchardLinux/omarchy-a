@@ -35,7 +35,7 @@
   // System
   "system.screensaver": {"icon":"󱄄","label":"Screensaver","action":"omarchy-launch-screensaver force"},
   "system.lock": {"icon":"","label":"Lock","action":"omarchy-system-lock"},
-  "system.suspend": {"icon":"󰒲","label":"Suspend","when":"! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled","action":"systemctl suspend"},
+  "system.suspend": {"icon":"󰒲","label":"Suspend","when":"! omarchy-toggle-enabled suspend-off && /usr/local/bin/ipadlinux-suspend-ready","action":"/usr/local/bin/ipadlinux-suspend-ready && systemctl suspend"},
   "system.hibernate": {"icon":"󰤁","label":"Hibernate","when":"omarchy-hibernation-available && ! omarchy-sleep-disabled","action":"systemctl hibernate"},
   "system.logout": {"icon":"󰍃","label":"Logout","action":"omarchy-system logout"},
   // Orchard: a reboot does not come back into Linux. The device's own boot chain starts its own system; Linux returns through DFU.
@@ -184,6 +184,9 @@
   "trigger.tests.disk-speedtest": {"icon":"󰋊","label":"Disk Speed Test","action":"omarchy-shell shell summon omarchy.disk-speedtest"},
 
   // Setup
+  "setup.tablet": {"icon":"󰦧","label":"Tablet"},
+  "setup.tablet.rotate": {"icon":"󰑢","label":"Rotate Once and Lock","action":"omarchy-rotate next"},
+  "setup.tablet.auto-brightness": {"icon":"󰃠","label":"Auto Brightness","when":"omarchy-auto-brightness available","checked":"omarchy-auto-brightness enabled","action":"omarchy-auto-brightness toggle"},
   "setup.monitors": {"icon":"󰍹","label":"Monitors","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/monitors.lua\""},
   "setup.keybindings": {"icon":"","label":"Keybindings","when":"[[ -f ~/.config/hypr/bindings.lua ]]","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/bindings.lua\""},
   "setup.input": {"icon":"","label":"Input","when":"[[ -f ~/.config/hypr/input.lua ]]","action":"omarchy-launch-config-editor \"$HOME/.config/hypr/input.lua\""},
