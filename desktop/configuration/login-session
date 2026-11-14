@@ -20,25 +20,62 @@ export WLR_RENDERER=pixman QT_QUICK_BACKEND=software QT_QPA_PLATFORM=wayland
 export QT_QPA_PLATFORMTHEME=gtk3
 export OMARCHY_TOUCH_MODE=1
 export LIBGL_ALWAYS_SOFTWARE=1 LIBSEAT_BACKEND=seatd MOZ_ENABLE_WAYLAND=1
-# A board with a GPU this image has a Vulkan driver for (the A10's, kernel
-# driver powervr): Labwc draws on wlroots' GLES2 renderer and applications on
-# OpenGL, both through Zink on that driver. Every other board, and a boot with
-# modprobe.blacklist=powervr, keeps the software desktop above. The shell stays
-# on Qt's software renderer either way; the apps it starts don't (uwsm-app).
+# A board with a GPU this image has a Vulkan driver for (kernel driver powervr,
+# the A10's and the A9's): Labwc draws on wlroots' GLES2 renderer and
+# applications on OpenGL, both through Zink on that driver, once gpu-probe has
+# drawn a frame that way in this boot and the display took its buffer. Every
+# other board, a boot with modprobe.blacklist=powervr and a boot whose probe
+# fails or does not finish keep the software desktop above; the journal says
+# which (journalctl -t omarchy-gpu-probe). The shell stays on Qt's software
+# renderer either way; the apps it starts don't (uwsm-app).
 gpu=
 for node in /sys/class/drm/renderD*; do
   if [[ $(basename "$(readlink -f "$node/device/driver")") == powervr ]]; then gpu=$node; fi
 done
-if [[ -n $gpu && -e /usr/share/vulkan/icd.d/powervr_mesa_icd.json ]]; then
-  export WLR_RENDERER=gles2 WLR_RENDER_DRM_DEVICE=/dev/dri/${gpu##*/}
-  export MESA_LOADER_DRIVER_OVERRIDE=zink PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1
-  unset LIBGL_ALWAYS_SOFTWARE
+if [[ -n $gpu ]]; then
+  gpu_probe=/usr/lib/omarchy-a/gpu-probe
+  gpu_log=$XDG_RUNTIME_DIR/omarchy-gpu-probe.log
   # The GPU has no display outputs: Labwc must open the display's card only.
+  display=
   for card in /sys/class/drm/card*; do
     if [[ ${card##*/} =~ ^card[0-9]+$ && $(readlink -f "$card/device") != "$(readlink -f "$gpu/device")" ]]; then
-      export WLR_DRM_DEVICES=/dev/dri/${card##*/}
+      display=/dev/dri/${card##*/}
     fi
   done
+  gpu_desktop=(WLR_RENDERER=gles2 "WLR_RENDER_DRM_DEVICE=/dev/dri/${gpu##*/}"
+    MESA_LOADER_DRIVER_OVERRIDE=zink PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1)
+  if [[ -n $display ]]; then gpu_desktop+=("WLR_DRM_DEVICES=$display"); fi
+  if [[ ! -e /usr/share/vulkan/icd.d/powervr_mesa_icd.json ]]; then
+    gpu_verdict='software desktop: this image has no Vulkan driver for the GPU'
+  elif [[ -z $display || ! -x $gpu_probe ]]; then
+    gpu_verdict='software desktop: no display card or no gpu-probe to test the GPU with'
+  else
+    # The probe runs with the environment the desktop would get. The login
+    # waits for it 10 s at most and does not depend on it ending: a probe
+    # stuck in the kernel is left behind.
+    env -u LIBGL_ALWAYS_SOFTWARE "${gpu_desktop[@]}" "$gpu_probe" "/dev/dri/${gpu##*/}" "$display" \
+      >"$gpu_log" 2>&1 </dev/null &
+    gpu_pid=$!
+    gpu_ended=
+    gpu_verdict='software desktop: the GPU probe did not finish within 10 s'
+    for ((tick = 0; tick < 100; tick++)); do
+      if ! kill -0 "$gpu_pid" 2>/dev/null; then
+        gpu_detail=$(grep -m 1 GPU-PROBE "$gpu_log" 2>/dev/null || tail -n 1 "$gpu_log" 2>/dev/null || true)
+        gpu_ended=1
+        if wait "$gpu_pid"; then
+          gpu_verdict="GPU desktop after $((tick / 10)).$((tick % 10)) s: $gpu_detail"
+          export "${gpu_desktop[@]}"
+          unset LIBGL_ALWAYS_SOFTWARE
+        else
+          gpu_verdict="software desktop: ${gpu_detail:-the GPU probe failed}"
+        fi
+        break
+      fi
+      sleep 0.1
+    done
+    if [[ -z $gpu_ended ]]; then kill -KILL "$gpu_pid" 2>/dev/null || true; fi
+  fi
+  logger -t omarchy-gpu-probe -- "$gpu_verdict" 2>/dev/null || true
 fi
 # A hardware video decoder (kernel driver apple-vxd, H.264): VA-API
 # applications reach it through libva-v4l2-request. Firefox uses it only when

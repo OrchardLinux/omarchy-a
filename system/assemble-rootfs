@@ -31,7 +31,7 @@ printf '%s\n' "${requested[@]}" | grep -Eq '^linux(-aarch64|-armv7|-rpi)?$' && {
 local_packages=("$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/wlroots0.20.pkg.tar.xz")
 # Omacalc: upstream Omarchy publishes it for aarch64 only; ARMv7 builds it from source.
 [[ $architecture == aarch64 ]] || local_packages+=("$desktop/packages/omacalc.pkg.tar.zst")
-# 64-bit boards: the A10 GPU's Vulkan driver and the VA-API bridge to the
+# 64-bit boards: the GPU's Vulkan driver with the login's GPU probe, and the VA-API bridge to the
 # hardware video decoders. Both sit unused on a board without that hardware.
 [[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/vulkan-powervr-orchard.pkg.tar.zst" "$desktop/packages/libva-v4l2-request.pkg.tar.zst")
 # 64-bit boards: Omactivity, the touch task manager, as its repository publishes it.
