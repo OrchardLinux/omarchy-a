@@ -21,7 +21,7 @@ FILES = {
     'omafox_xpi': INPUTS / '@omafox.xpi',
     'libva_v4l2_request_source': INPUTS / 'libva-v4l2_request-1.2-2-gcac6ece.tar.gz',
 }
-# Source-built on 64-bit boards only: the A10 GPU's Vulkan driver and the VA-API video bridge.
+# Source-built on 64-bit boards only: the GPU's Vulkan driver (with the GPU probe) and the VA-API video bridge.
 HARDWARE_PACKAGES = {'vulkan-powervr-orchard.pkg.tar.zst': ('gpu_recipe_sha256', 'packages/vulkan-powervr-orchard'),
                      'libva-v4l2-request.pkg.tar.zst': ('video_bridge_recipe_sha256', 'packages/libva-v4l2-request')}
 # Prebuilt on 64-bit boards: packages published by their own repositories,

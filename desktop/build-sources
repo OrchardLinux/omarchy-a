@@ -156,11 +156,11 @@ package=$(ls "$build"/result/libva-v4l2-request-*-$OMARCHY_ARCH.pkg.tar.zst)
 bsdtar -tf "$package" usr/lib/dri/v4l2_request_drv_video.so >/dev/null
 cp "$package" "$ORCHARD_WORK/result/libva-v4l2-request.pkg.tar.zst"
 echo 'Building the GPU Vulkan driver (several minutes)...'
-cp "$ORCHARD_RECIPE/packages/vulkan-powervr-orchard/PKGBUILD" "$ORCHARD_WORK"/sources/mesa-*.tar.gz "$build/gpu/"
+cp "$ORCHARD_RECIPE"/packages/vulkan-powervr-orchard/{PKGBUILD,gpu-probe.c} "$ORCHARD_WORK"/sources/mesa-*.tar.gz "$build/gpu/"
 cd "$build/gpu"
 PKGDEST="$build/result" PKGEXT='.pkg.tar.zst' makepkg --noconfirm --nodeps > "$build/gpu.log" 2>&1 || { tail -60 "$build/gpu.log"; exit 1; }
 package=$(ls "$build"/result/vulkan-powervr-orchard-*-$OMARCHY_ARCH.pkg.tar.zst)
-bsdtar -tf "$package" usr/lib/libvulkan_powervr_mesa.so usr/share/vulkan/icd.d/powervr_mesa_icd.json >/dev/null
+bsdtar -tf "$package" usr/lib/libvulkan_powervr_mesa.so usr/share/vulkan/icd.d/powervr_mesa_icd.json usr/lib/omarchy-a/gpu-probe >/dev/null
 cp "$package" "$ORCHARD_WORK/result/vulkan-powervr-orchard.pkg.tar.zst"
 '''
             buildenv.run(image, ['bash', '-euc', script],
