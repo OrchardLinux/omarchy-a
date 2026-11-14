@@ -1,6 +1,9 @@
 #!/bin/bash
 # Scale the single native panel, accepting both current/preferred flag lists.
 # Never change its timing or force the VM's Virtual-1 mode.
+# The scale is the one omarchy-hyprland-monitor-persist saved for this output
+# (upstream Omarchy's monitors/settings file, scale in the third field, the
+# output last), else 2.
 set -euo pipefail
 state=$(wlr-randr)
 mapfile -t outputs < <(awk '/^[^[:space:]]/ {print $1}' <<< "$state")
@@ -9,4 +12,12 @@ if (( ${#outputs[@]} != 1 )) || ! grep -q '  Enabled: yes' <<< "$state" ||
   echo 'Native single-panel mode not established; left scale unchanged' >&2
   exit 0
 fi
-wlr-randr --output "${outputs[0]}" --scale 2
+scale=2
+settings="${XDG_STATE_HOME:-${HOME:-}/.local/state}/omarchy/monitors/settings"
+if [[ -r $settings ]]; then
+  saved=$(awk -F'\t' -v output="${outputs[0]}" '$NF == output { scale = $3 } END { print scale }' "$settings")
+  if [[ $saved =~ ^[0-9]+([.][0-9]+)?$ ]] && awk -v s="$saved" 'BEGIN { exit !(s >= 1 && s <= 4) }'; then
+    scale=$saved
+  fi
+fi
+wlr-randr --output "${outputs[0]}" --scale "$scale"
