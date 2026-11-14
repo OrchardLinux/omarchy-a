@@ -1,0 +1,16 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Type = Path
+Target = boot/loader/entries/*
+Target = boot/loader/loader.conf
+Target = boot/*
+Target = usr/lib/modules/*/vmlinuz
+Target = usr/lib/modules/*/initrd
+Target = usr/lib/modules/*/dtb/*
+
+[Action]
+Description = Prepare warm restart with the updated default BLS entry
+When = PostTransaction
+Exec = /usr/bin/orchard-kexec update

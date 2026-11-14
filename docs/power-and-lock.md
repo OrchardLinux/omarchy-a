@@ -4,8 +4,8 @@
 of the screen, the lock request and sleep. Its state machine, the `Machine`
 class, has no I/O and no clocks; `tests/test_powerd.py` walks every reachable
 state with every input and checks the invariants below. Whether a board may
-suspend at all is not decided here or by device data: every board may (see
-orchard `docs/bring-up/suspend.md`); this model decides when.
+suspend at all is decided by the kernel's suspend admission; this model decides
+when. Where the kernel refuses, boards retain dim, blank and wake.
 
 ## Requirements
 
@@ -222,3 +222,47 @@ when `user.slice` thaws.
 `omarchy-tablet-power` (one process per press, state in brightness and files, a
 fixed window after resume), `omarchy-screen-toggle` and `omarchy-greeter-wake`
 (a second and third writer of the backlight).
+
+## Suspend readiness
+
+The root overlay installs `/usr/local/bin/ipadlinux-suspend-ready` for both
+fresh roots and public-root refreshes. It reads the kernel's admission query,
+`/sys/power/suspend_ready` (Orchard's suspend topic), on every board: `ready`
+exits 0; `not-ready <who> <errno>` exits 1 naming the refusing provider device
+or precheck. The kernel runs every admission provider's non-reserving check
+(GPU, video decoder) and every early precheck (PCI/NVMe, AOP, USB) for the
+current `mem_sleep` state, takes no reservation, and answers
+`not-ready transition` while a transition runs. A missing, unreadable or
+malformed answer refuses: a kernel without the query cannot show that a suspend
+would be admitted. There is no board list and no feature-state lookup. Refusal
+returns 1 with a reason on stderr. Arguments are rejected with status 2. It
+never writes sysfs, unbinds drivers, runs a PM test or requests suspend. The
+power daemon logs refusal reasons. The answer is advisory; the real suspend
+reserves and checks again.
+
+The source menu used by both desktop staging and `release/public_root.py` uses
+this helper for visibility and again before its suspend action. Powerd uses it
+for every sleep request (Power, idle and closing the Smart Cover); a refusal
+leaves the screen dark until touch, Home, Power or opening the cover wakes it,
+without retrying sleep. Logind ignores lid, idle, suspend and power keys;
+keyboard or direct logind/systemctl requests still pass the same helper in
+`systemd-suspend.service`'s `ExecStartPre`. Hibernation, hybrid sleep and
+suspend-then-hibernate remain disabled and their targets masked. No static
+suspend mask or board-specific override is installed: the kernel's admission is
+the only gate.
+
+Device verification on a rebuilt image:
+
+```sh
+cat /sys/power/suspend_ready
+timeout -k 5 10 /usr/local/bin/ipadlinux-suspend-ready
+```
+
+The helper's status must match the kernel's answer: 0 for `ready`, 1 with the
+same refusal named for `not-ready`. While it refuses, `systemctl suspend` must
+refuse too, the journal must name the kernel's refusal rather than a suspend
+attempt, suspend success counters must not advance, and the final session menu
+must omit Suspend. Use `timeout -k 5 5 omarchy-powerctl idle`, closing the
+Smart Cover, and a short Power press separately; while suspend is refused each
+must blank without sleep, and touch, Power or opening the cover must wake.
+Dim/undim must still restore the previous brightness. These are pending device checks, not host-test results.

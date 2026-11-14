@@ -1,0 +1,7 @@
+[Unit]
+Description=Restore Bluetooth keyboard page scan after discoverability changes
+[Timer]
+OnBootSec=15
+OnUnitActiveSec=30
+[Install]
+WantedBy=timers.target
