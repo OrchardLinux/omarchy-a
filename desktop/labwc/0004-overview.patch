@@ -37,10 +37,10 @@ index d0c55cf..dcf2a43 100644
  	struct wlr_layer_shell_v1 *layer_shell;
 diff --git a/include/overview-math.h b/include/overview-math.h
 new file mode 100644
-index 0000000..80e4dad
+index 0000000..1a9080e
 --- /dev/null
 +++ b/include/overview-math.h
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,175 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +#ifndef LABWC_OVERVIEW_MATH_H
 +#define LABWC_OVERVIEW_MATH_H
@@ -154,6 +154,65 @@ index 0000000..80e4dad
 +		return 0;
 +	}
 +	return progress >= 0.5;
++}
++
++/*
++ * Choosing a window brings it back only when it is off the screen or so
++ * nearly off that it cannot be grabbed; a window left half off the screen
++ * stays where it is. "Nearly off": the part of the window (title bar and
++ * border included) inside the usable area of every output is narrower or
++ * shorter than this strip, in logical pixels. A window smaller than the
++ * strip only needs to be wholly visible.
++ */
++#define OVERVIEW_GRAB_STRIP 48
++
++struct overview_rect {
++	int x, y, width, height;
++};
++
++/* The length of [a, a + alen) that lies within [b, b + blen). */
++static inline int
++overview_overlap(int a, int alen, int b, int blen)
++{
++	int low = a > b ? a : b;
++	int high = a + alen < b + blen ? a + alen : b + blen;
++	return high > low ? high - low : 0;
++}
++
++/* Whether enough of @window lies within @area to grab it. */
++static inline bool
++overview_rect_reachable(struct overview_rect window, struct overview_rect area)
++{
++	int w = overview_overlap(window.x, window.width, area.x, area.width);
++	int h = overview_overlap(window.y, window.height, area.y, area.height);
++	int need_w = window.width < OVERVIEW_GRAB_STRIP ? window.width : OVERVIEW_GRAB_STRIP;
++	int need_h = window.height < OVERVIEW_GRAB_STRIP ? window.height : OVERVIEW_GRAB_STRIP;
++	return w > 0 && h > 0 && w >= need_w && h >= need_h;
++}
++
++/*
++ * @window moved the least distance that puts it wholly inside @area; its
++ * size is kept where it fits and cut down to the area where it does not.
++ */
++static inline struct overview_rect
++overview_rect_bring_inside(struct overview_rect window, struct overview_rect area)
++{
++	struct overview_rect r = window;
++	r.width = window.width < area.width ? window.width : area.width;
++	r.height = window.height < area.height ? window.height : area.height;
++	if (r.x > area.x + area.width - r.width) {
++		r.x = area.x + area.width - r.width;
++	}
++	if (r.x < area.x) {
++		r.x = area.x;
++	}
++	if (r.y > area.y + area.height - r.height) {
++		r.y = area.y + area.height - r.height;
++	}
++	if (r.y < area.y) {
++		r.y = area.y;
++	}
++	return r;
 +}
 +
 +#endif /* LABWC_OVERVIEW_MATH_H */
@@ -773,10 +832,10 @@ index 151030a..8c8b997 100644
  	regions_destroy(seat, &output->regions);
 diff --git a/src/overview.c b/src/overview.c
 new file mode 100644
-index 0000000..27ba6fb
+index 0000000..58adb0b
 --- /dev/null
 +++ b/src/overview.c
-@@ -0,0 +1,2097 @@
+@@ -0,0 +1,2159 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +#include "overview.h"
 +#include <assert.h>
@@ -812,6 +871,7 @@ index 0000000..27ba6fb
 +#include "theme.h"
 +#include "translate.h"
 +#include "view.h"
++#include "window-rules.h"
 +
 +/* Logical pixels */
 +#define GAP 24
@@ -2242,6 +2302,66 @@ index 0000000..27ba6fb
 +	}
 +}
 +
++/*
++ * A chosen window that is off every screen, or shows less than a grab-able
++ * strip on each, comes back inside the usable area of its output. Any other
++ * window keeps its place and size: one left half off the screen stays so.
++ */
++static void
++bring_on_screen(struct view *view)
++{
++	if (!view_is_floating(view)
++			|| window_rules_get_property(view, "fixedPosition") == LAB_PROP_TRUE
++			|| view_has_strut_partial(view)) {
++		return;
++	}
++	struct border margin = ssd_get_margin(view->ssd);
++	struct overview_rect frame = {
++		.x = view->pending.x - margin.left,
++		.y = view->pending.y - margin.top,
++		.width = view->pending.width + margin.left + margin.right,
++		.height = view_effective_height(view, /*use_pending*/ true)
++			+ margin.top + margin.bottom,
++	};
++	if (frame.width <= 0 || frame.height <= 0) {
++		return;
++	}
++	struct output *output;
++	wl_list_for_each(output, &server.outputs, link) {
++		if (!output_is_usable(output)) {
++			continue;
++		}
++		struct wlr_box usable = output_usable_area_in_layout_coords(output);
++		struct overview_rect area = {usable.x, usable.y, usable.width, usable.height};
++		if (overview_rect_reachable(frame, area)) {
++			return;
++		}
++	}
++	output = output_is_usable(view->output) ? view->output : ov.output;
++	if (!output_is_usable(output)) {
++		return;
++	}
++	struct wlr_box usable = output_usable_area_in_layout_coords(output);
++	struct overview_rect area = {usable.x, usable.y, usable.width, usable.height};
++	struct overview_rect inside = overview_rect_bring_inside(frame, area);
++	struct wlr_box geo = {
++		.x = inside.x + margin.left,
++		.y = inside.y + margin.top,
++		.width = inside.width - margin.left - margin.right,
++		/* A shaded window is only its title bar: keep its height. */
++		.height = view->shaded ? view->pending.height
++			: inside.height - margin.top - margin.bottom,
++	};
++	if (geo.width <= 0 || geo.height <= 0) {
++		return;
++	}
++	if (geo.width == view->pending.width && geo.height == view->pending.height) {
++		view_move(view, geo.x, geo.y);
++	} else {
++		view_move_resize(view, geo);
++	}
++}
++
 +/* Leave for the desktop; @chosen comes to the front, if any. */
 +static void
 +finish(struct view *chosen)
@@ -2257,6 +2377,7 @@ index 0000000..27ba6fb
 +
 +	seat_focus_override_end(&server.seat, /*restore_focus*/ !chosen);
 +	if (chosen) {
++		bring_on_screen(chosen);
 +		/* A pair comes back as a pair. */
 +		if (card && card->nr_parts == 2) {
 +			desktop_focus_view(card->parts[!index].view, /*raise*/ true);
