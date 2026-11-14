@@ -103,6 +103,8 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 |---|---|
 | `power`, `home` | gpio-keys, with the kernel timestamp: Home and a Power on a dark screen on key **down**; Power on a lit screen on key **up** after a short lone press. Home + Power is not a machine event: it runs the screenshot in the session |
 | `idle` | shell: idle timeout, or the lock screen's blank timeout |
+| `dim`, `undim` | shell: 3 minutes idle on a touch session dims the panel to 10 % while lit; input restores it unless the brightness was changed meanwhile. Not machine events: the state stays `ON` |
+| `brightness PANEL LEVEL EXPECTED`, `als-state` | automatic brightness (`docs/tablet-sensors.md`): a write is accepted only while lit, not dimmed or fading, and only if the panel still holds `EXPECTED`, so a manual change or a dark screen stops it |
 | `lock` | the menu's Lock (`omarchy-system-lock`): lock at once, no grace; closing the Smart Cover |
 | `wake` | lock screen: input while lit; opening the Smart Cover |
 | `settle` | settle timer |

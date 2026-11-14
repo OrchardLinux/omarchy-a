@@ -660,6 +660,39 @@ class EventLoop(unittest.TestCase):
             connection.sendall(request.encode() + b'\n')
             return connection.recv(64).decode().strip()
 
+    def test_home_socket_reports_combo_after_screenshot_chord(self):
+        when = time.monotonic()
+        event = powerd.INPUT_EVENT.pack
+        os.write(self.key_write, b''.join(event(int(when+i/10), int((when+i/10)%1*1e6), 1, code, down)
+                     for i, (code, down) in enumerate(((116, 1), (172, 1), (172, 0), (116, 0)))))
+        self.wait(lambda: self.daemon.buttons.home_in_combo)
+        self.assertEqual(self.ask('home'), 'combo')
+        self.assertEqual(self.ask('status'), 'ON')
+
+    def test_idle_dim_restore_and_manual_brightness_supersedes_dim(self):
+        self.assertEqual(self.ask('dim'), 'ok')
+        self.assertEqual(self.brightness(), '300')
+        self.assertEqual(self.ask('als-state'), 'dark')
+        self.assertEqual(self.ask('brightness panel 600 300'), 'held')
+        self.ask('undim'); self.assertEqual(self.brightness(), '1563')
+        self.ask('dim')
+        (self.panel / 'brightness').write_text('700\n')
+        self.ask('undim'); self.assertEqual(self.brightness(), '700')
+
+    def test_automatic_brightness_obeys_power_state_and_manual_changes(self):
+        self.assertEqual(self.ask('brightness panel 1800 1563'), 'ok')
+        self.assertEqual(self.brightness(), '1800')
+        self.assertEqual(self.ask('brightness panel 1900 1563'), 'held')
+        self.assertEqual(self.brightness(), '1800')
+        for request in ('brightness panel 0 1800', 'brightness panel 3001 1800',
+                        'brightness other 1900 1800', 'brightness panel ² 1800'):
+            self.assertEqual(self.ask(request), 'held')
+            self.assertEqual(self.brightness(), '1800')
+        self.press(); self.wait(lambda: self.brightness() == '0')
+        self.assertEqual(self.ask('brightness panel 1800 0'), 'held')
+        self.assertEqual(self.brightness(), '0')
+
+
     def test_press_sleep_wake(self):
         machine = self.daemon.machine
         self.assertEqual(self.ask('input'), 'lit')
