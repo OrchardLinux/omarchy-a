@@ -47,3 +47,6 @@ jq
 pango
 cairo
 wayland
+# Removable storage mounted through the session identity.
+udiskie
+udisks2

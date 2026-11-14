@@ -254,6 +254,7 @@ Item {
     idleBlankTimer.stop()
     sessionLock.locked = false
     logEvent("unlocked")
+    if (!unlockedProcess.running) unlockedProcess.running = true
     runWake()
   }
 
@@ -804,6 +805,12 @@ Item {
     id: inputWakeCheck
     command: ["/usr/libexec/omarchy-powerctl", "input"]
     onExited: function(exitCode) { if (exitCode === 0) root.runWake() }
+  }
+
+  Process {
+    id: unlockedProcess
+    // omarchy-powerd: USB devices plugged in from now on are enabled again.
+    command: ["/usr/libexec/omarchy-powerctl", "unlocked"]
   }
 
   Process {

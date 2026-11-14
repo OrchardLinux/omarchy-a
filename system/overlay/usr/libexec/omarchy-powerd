@@ -262,6 +262,21 @@ STATS = Path('/sys/power/suspend_stats')
 WAKEUP_COUNT = Path('/sys/power/wakeup_count')
 BACKLIGHTS = Path('/sys/class/backlight')
 BRIGHTNESS = Path('/var/lib/omarchy-powerd/brightness')
+USB_DEVICES = Path('/sys/bus/usb/devices')
+
+
+def usb_new_devices(allowed):
+    """Whether newly plugged USB devices are enabled, on every USB host.
+
+    Off while the screen is locked: a stick or a USB keyboard plugged into a
+    locked tablet stays off, also after the unlock, until it is plugged in
+    again unlocked. Devices already enabled stay as they are.
+    """
+    for switch in sorted(USB_DEVICES.glob('usb*/authorized_default')):
+        try:
+            switch.write_text('1' if allowed else '0')
+        except OSError as error:
+            log(f'{switch}: {error}')
 
 
 # A longer hold of Power is not a press: it is the start of a forced restart or DFU.
@@ -722,7 +737,10 @@ class Daemon:
             try:
                 user = session_user()
                 if job == 'lock':
-                    self.post('lock-ok' if user is None or self.lock_session(user) else 'lock-failed')
+                    locked = user is None or self.lock_session(user)
+                    if locked:
+                        usb_new_devices(False)
+                    self.post('lock-ok' if locked else 'lock-failed')
                 elif user is not None and job == 'woke':
                     as_user(user, 'omarchy-shell', '-q', 'lock', 'woke')
                 elif user is not None and job == 'screenshot':
@@ -779,6 +797,10 @@ class Daemon:
                     # woke the screen (dark in the grace before the lock) opens nothing.
                     answer = 'combo' if self.buttons.home_in_combo else 'wake' if self.buttons.home_woke else 'alone'
                     connection.sendall(answer.encode() + b'\n')
+                elif request == 'unlocked':
+                    # The lock screen let the user in: new USB devices work again.
+                    usb_new_devices(True)
+                    connection.sendall(b'ok\n')
                 elif request == 'status':
                     connection.sendall(self.machine.state.encode() + b'\n')
                 elif request in ('idle', 'wake', 'lock'):
