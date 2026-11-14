@@ -49,7 +49,7 @@ are experimental. See orchard's
 
 The desktop finds the hardware at login. On the iPad 6 and iPad 7 (A10) it
 draws on the GPU, and Firefox plays H.264 video, YouTube included, through the
-hardware video decoder. On every other device it draws in software, as before.
+hardware video decoder. On G5P devices it uses a matched private Zink/EGL/GBM/GLES and Vulkan stack from the same Orchard Mesa commit. Firefox selects hardware WebRender and WebGL only in that G5P session. Other devices keep the software default.
 To start an A10 device on the software desktop once, boot with
 `modprobe.blacklist=powervr`.
 

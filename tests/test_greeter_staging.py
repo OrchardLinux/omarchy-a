@@ -66,6 +66,10 @@ class GreeterStagingTests(unittest.TestCase):
             self.assertEqual((greeter / 'plugins/lock/LockView.qml').read_bytes(),
                              (stage.PORT / 'shell/plugins/lock/LockView.qml').read_bytes())
             self.assertTrue((greeter / 'Commons/Color.qml').is_file())
+            menu = 'default/omarchy/omarchy-menu.jsonc'
+            staged_menu = target / 'home/tablet/.local/share/omarchy-ipad' / menu
+            self.assertEqual(staged_menu.read_bytes(), (stage.PORT / menu).read_bytes())
+            self.assertIn('/usr/local/bin/ipadlinux-suspend-ready', staged_menu.read_text())
             jade = stage.HERE / 'themes/jade-horse'
             self.assertEqual((greeter / 'default-theme/background').read_bytes(),
                              (jade / 'backgrounds/01-mountain-horses.webp').read_bytes())

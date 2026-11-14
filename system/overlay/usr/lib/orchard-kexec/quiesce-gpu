@@ -1,0 +1,28 @@
+#!/bin/sh
+# Warm restart GPU handover: by the final shutdown
+# step every GPU client (compositor, greeter, sessions) is stopped, so ask the G5P
+# firmware to quiesce (td-kexec) before the next kernel takes it over. Without this,
+# a warm restart from a running desktop hangs in the incoming kernel's GPU warm start
+# (device journal 2026-11-08: "origin=warm-uncycled ... cmd8-consumed", then silence).
+# Matched by driver, not by board: without the G5P driver's handover command
+# there is nothing to quiesce, and nothing is armed.
+set -- /sys/bus/platform/drivers/apple-g5p-drm/*/command
+[ -e "$1" ] || exit 0
+# Arm failure before touching sysfs so interruption/timeout is also a failure.
+# dispatch consumes this receipt; success alone removes it.
+mkdir -p /run/orchard-kexec || exit 1
+printf '%s\n' 'GPU handover pending or failed' > /run/orchard-kexec/gpu-quiesce-failed || exit 1
+failed=0
+for command in /sys/bus/platform/drivers/apple-g5p-drm/*/command; do
+    [ -e "$command" ] || continue
+    if echo td-kexec > "$command"; then
+        echo "<6>orchard-kexec: GPU handover td-kexec ${command%/command}" > /dev/kmsg
+    else
+        failed=1
+        echo "<3>orchard-kexec: GPU handover td-kexec failed ${command%/command}" > /dev/kmsg
+    fi
+done
+if [ "$failed" -eq 0 ]; then
+    rm -f /run/orchard-kexec/gpu-quiesce-failed
+fi
+exit "$failed"

@@ -42,8 +42,12 @@ xdg-desktop-portal-wlr
 pipewire
 pipewire-pulse
 wireplumber
+rtkit
 socat
 jq
 pango
 cairo
 wayland
+
+kexec-tools
+libnotify

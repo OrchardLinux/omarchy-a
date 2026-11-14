@@ -62,6 +62,15 @@ class MenuShutdownTests(unittest.TestCase):
                              ('lock', 'omarchy-system-lock')):
             self.assertEqual(menu_action(name), action)
 
+    def test_final_and_staged_menu_share_the_suspend_gate(self):
+        from release.public_root import desktop_replacements
+        name = 'home/tablet/.local/share/omarchy-ipad/default/omarchy/omarchy-menu.jsonc'
+        self.assertEqual(desktop_replacements()[name], MENU.read_bytes())
+        entry = json.loads(re.search(r'"system\.suspend":\s*(\{[^\n]+\})', MENU.read_text()).group(1))
+        self.assertIn('/usr/local/bin/ipadlinux-suspend-ready', entry['when'])
+        self.assertNotIn('omarchy-sleep-disabled', entry['when'])
+        self.assertEqual(entry['action'], '/usr/local/bin/ipadlinux-suspend-ready && systemctl suspend')
+
     def test_reboot_says_it_leaves_linux(self):
         # A reboot does not come back into Linux; one entry, no other system's name.
         entries = re.findall(r'"system\.reboot[^"]*":\s*(\{[^\n]+\})', MENU.read_text())
