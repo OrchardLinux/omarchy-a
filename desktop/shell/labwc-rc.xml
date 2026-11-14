@@ -141,6 +141,13 @@
     <keybind key="XF86MonBrightnessDown">
       <action name="Execute" command="omarchy-brightness-display --no-osd -5%" />
     </keybind>
+    <!-- Super+/ and Super+Alt+/ step the display scale up and down, as in upstream Omarchy. -->
+    <keybind key="W-slash">
+      <action name="Execute" command="omarchy-hyprland-monitor-scaling up" />
+    </keybind>
+    <keybind key="W-A-slash">
+      <action name="Execute" command="omarchy-hyprland-monitor-scaling down" />
+    </keybind>
     <!-- Super+Shift+Space hides or shows the top bar, as in upstream Omarchy. -->
     <keybind key="W-S-space">
       <action name="Execute" command="omarchy-toggle-bar" />

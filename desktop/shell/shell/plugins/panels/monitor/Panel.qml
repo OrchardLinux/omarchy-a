@@ -4,9 +4,14 @@ import Quickshell.Io
 import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
+import "Model.js" as Model
 
-// Labwc brightness, rotation and stay-awake adapter for Omarchy's stock Display bar slot.
-// Hyprland output switching/scaling is deliberately not exposed here.
+// Labwc brightness, scale, rotation and stay-awake adapter for Omarchy's stock Display bar slot.
+// The Scale row is upstream's (presets, availableScales, cleanScale labels,
+// setScale through omarchy-hyprland-monitor-scaling); the output comes from
+// `wlr-randr --json` (the first enabled one) instead of Hyprland, and the
+// shown scale updates as soon as a pill is clicked. Hyprland output switching,
+// resolution, mirror and layout are not exposed here.
 Panel {
   id: root
   moduleName: "omarchy.monitor"
@@ -23,6 +28,23 @@ Panel {
   readonly property bool stayAwake: idleService ? idleService.stayAwake === true : false
   property bool rotationLocked: false
   property bool rotationLoaded: false
+  // The shown output, from wlr-randr: name, mode size (before rotation), scale.
+  property string outputName: ""
+  property int outputWidth: 0
+  property int outputHeight: 0
+  property real outputScale: 0
+  property var queuedScale: null
+  readonly property var scalePresets: ["1", "1.25", "1.6", "2", "3", "4"]
+  // The presets this mode can reach, one per clean scale, as upstream offers
+  // them, and the one in use. Matched in one binding, on the plain array: once
+  // it is handed through a QML property it is no longer one Array.isArray accepts.
+  readonly property var scaleChoice: {
+    if (!(outputWidth > 0)) return { scales: [], index: -1 }
+    var list = Model.availableScales(scalePresets, outputWidth, outputHeight)
+    return { scales: list, index: Model.matchingScaleIndex(list, outputScale, outputWidth, outputHeight) }
+  }
+  readonly property var scales: scaleChoice.scales
+  readonly property int scaleIndex: scaleChoice.index
   readonly property string rotationHelper: (Quickshell.env("OMARCHY_PATH") ||
     Quickshell.env("HOME") + "/.local/share/omarchy-ipad") + "/bin/omarchy-rotation-lock"
 
@@ -37,6 +59,15 @@ Panel {
     if (!readProc.running && !writeProc.running) readProc.running = true
     if (!autoReadProc.running && !autoWriteProc.running) autoReadProc.running = true
     if (!rotationRead.running && !rotationWrite.running) rotationRead.running = true
+    if (!outputRead.running && !scaleWrite.running) outputRead.running = true
+  }
+  function setScale(name, scale) {
+    // Show the clean scale it lands on right away; the next read confirms it.
+    var effective = Number(Model.cleanScale(scale, root.outputWidth, root.outputHeight))
+    if (isFinite(effective) && effective > 0) root.outputScale = effective
+    if (scaleWrite.running) { root.queuedScale = { name: name, scale: scale }; return }
+    scaleWrite.command = ["omarchy-hyprland-monitor-scaling", "--monitor", name, String(scale)]
+    scaleWrite.running = true
   }
   function setBrightness(value) {
     if (!brightnessAvailable) return
@@ -117,6 +148,44 @@ Panel {
     id: autoWriteProc
     stdout: StdioCollector { waitForEnd: true }
     onRunningChanged: if (!running) root.refresh()
+  }
+  Process {
+    id: outputRead
+    command: ["wlr-randr", "--json"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var parsed = Model.parseDisplays(text)
+        var output = null
+        for (var i = 0; i < parsed.displays.length && !output; i++)
+          if (parsed.displays[i] && parsed.displays[i].enabled) output = parsed.displays[i]
+        var mode = null
+        var modes = output && output.modes ? output.modes : []
+        for (var j = 0; j < modes.length && !mode; j++)
+          if (modes[j] && modes[j].current) mode = modes[j]
+        if (!output || !mode) {
+          root.outputName = ""
+          root.outputWidth = 0
+          root.outputHeight = 0
+          return
+        }
+        root.outputName = String(output.name || "")
+        root.outputWidth = Number(mode.width) || 0
+        root.outputHeight = Number(mode.height) || 0
+        root.outputScale = Number(output.scale) || 0
+      }
+    }
+  }
+  Process {
+    id: scaleWrite
+    onRunningChanged: {
+      if (running) return
+      if (root.queuedScale) {
+        var next = root.queuedScale
+        root.queuedScale = null
+        root.setScale(next.name, next.scale)
+      } else root.refresh()
+    }
   }
 
   BarIconButton {
@@ -221,7 +290,65 @@ Panel {
           fontFamily: root.bar.fontFamily
           onClicked: root.setAuto(!root.autoOn)
         }
+
+        // ---------- Scale ----------
+        PanelSeparator {
+          width: parent.width
+          visible: root.scales.length > 0
+          foreground: root.bar.foreground
+        }
+        Column {
+          visible: root.scales.length > 0
+          width: parent.width
+          spacing: Style.space(6)
+
+          PanelSectionHeader {
+            text: Commons.I18n.t("monitor.scale")
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+          }
+
+          Grid {
+            id: scaleGrid
+            width: parent.width
+            columns: Math.max(1, root.scales.length)
+            spacing: Style.spacing.xs
+
+            readonly property real cellWidth: (width - spacing * (columns - 1)) / columns
+
+            Repeater {
+              model: root.scales
+
+              ScalePill {
+                required property string modelData
+                required property int index
+
+                scaleValue: modelData
+                scaleIndex: index
+                width: scaleGrid.cellWidth
+              }
+            }
+          }
+        }
       }
     }
+  }
+
+  component ScalePill: Button {
+    id: pill
+    required property string scaleValue
+    required property int scaleIndex
+
+    text: root.outputWidth > 0 ? Commons.I18n.formatNumber(Model.cleanScale(scaleValue, root.outputWidth, root.outputHeight)) + "x" : ""
+    fontSize: Style.font.caption
+    foreground: root.bar.foreground
+    fontFamily: root.bar.fontFamily
+    horizontalPadding: Style.spacing.sm
+    verticalPadding: Style.spacing.controlPaddingY
+    bordered: true
+
+    active: root.scaleIndex === scaleIndex
+
+    onClicked: if (root.outputName) root.setScale(root.outputName, scaleValue)
   }
 }

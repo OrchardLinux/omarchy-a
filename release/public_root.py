@@ -44,6 +44,7 @@ def desktop_replacements():
     replacements['usr/local/libexec/arch-ipad-rotate-output'] = (PROJECT / 'desktop/configuration/rotate-output').read_bytes()
     replacements[prefix + 'shell/plugins/panels/monitor/Panel.qml'] = (PROJECT / 'desktop/shell/shell/plugins/panels/monitor/Panel.qml').read_bytes()
     replacements[prefix + 'default/i18n/en/shell.json'] = (PROJECT / 'desktop/shell/default/i18n/en/shell.json').read_bytes()
+    replacements['usr/local/libexec/arch-ipad-scale-output'] = (PROJECT / 'desktop/configuration/scale-output').read_bytes()
     return replacements
 
 
@@ -131,15 +132,29 @@ def labwc_files(directory, architecture='aarch64'):
     return files
 
 
+# Commands newer than the base root, run by name: desktop/stage.py links every
+# shell command into /usr/local/bin, so the root gets the same link for these.
+DESKTOP_COMMANDS = ('omarchy-hyprland-monitor-scaling', 'omarchy-hyprland-monitor-persist')
+
+
 def desktop_additions():
     name = 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml'
-    return {name: ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644),
-            'home/tablet/.local/share/omarchy-ipad/bin/omarchy-rotation-lock':
-                ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755),
-            'usr/local/libexec/arch-ipad-auto-brightness':
-                ((PROJECT / 'desktop/configuration/auto-brightness').read_bytes(), 0o755),
-            'usr/local/bin/omarchy-auto-brightness':
-                ((PROJECT / 'desktop/shell/bin/omarchy-auto-brightness').read_bytes(), 0o755)}
+    additions = {name: ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644),
+                 'home/tablet/.local/share/omarchy-ipad/bin/omarchy-rotation-lock':
+                     ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755),
+                 'usr/local/libexec/arch-ipad-auto-brightness':
+                     ((PROJECT / 'desktop/configuration/auto-brightness').read_bytes(), 0o755),
+                 'usr/local/bin/omarchy-auto-brightness':
+                     ((PROJECT / 'desktop/shell/bin/omarchy-auto-brightness').read_bytes(), 0o755)}
+    for command in DESKTOP_COMMANDS:
+        additions['home/tablet/.local/share/omarchy-ipad/bin/' + command] = (
+            (PROJECT / 'desktop/shell/bin' / command).read_bytes(), 0o755)
+    return additions
+
+
+def desktop_links():
+    return {'usr/local/bin/' + command: '/home/tablet/.local/share/omarchy-ipad/bin/' + command
+            for command in DESKTOP_COMMANDS}
 
 
 def system_files():
@@ -284,6 +299,12 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                     member = tarfile.TarInfo(name)
                     member.mode, member.size = mode, len(data)
                     add(member, data)
+                for link, target_path in sorted(desktop_links().items()):
+                    if link not in seen:
+                        member = tarfile.TarInfo(link)
+                        member.type, member.linkname, member.mode = tarfile.SYMTYPE, target_path, 0o777
+                        add_parents(link)
+                        add(member)
                 # A login on orchard's USB serial console as well, like minimal-linux.
                 wants = [('multi-user.target.wants/' + unit, unit) for unit in
                          ('omarchy-pacman-init.service', 'orchard-usb-network.service', 'orchard-ssh.service',
