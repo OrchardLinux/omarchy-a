@@ -160,3 +160,10 @@ class PairingPackagingTests(unittest.TestCase):
                     public_root.bluetooth_files(output)
             with self.assertRaises(ValueError):
                 script['prepare'](b'wrong', pin, root / 'wrong')
+
+
+class Reconnect(unittest.TestCase):
+    def test_bonded_devices_can_reconnect_quickly(self):
+        conf = (PROJECT / 'system/overlay/etc/bluetooth/main.conf').read_text()
+        self.assertIn('FastConnectable = true', conf)
+        self.assertIn('AutoEnable = true', conf)
