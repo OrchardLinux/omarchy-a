@@ -19,7 +19,7 @@ def source_pins(architecture):
     if architecture == 'armv7h':
         pins.update(json.loads((here / 'armv7/sources.json').read_text()))
     else:
-        # The GPU's Vulkan driver: 64-bit boards only.
+        # Mesa from OrchardLinux's fork: 64-bit boards only.
         pins.update(json.loads((here / 'arm64/sources.json').read_text()))
     return pins
 

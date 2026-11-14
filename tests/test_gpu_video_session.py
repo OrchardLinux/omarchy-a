@@ -107,7 +107,7 @@ class Session(unittest.TestCase):
 
     def test_probe_recipe_is_the_file_next_to_it(self):
         # makepkg checks gpu-probe.c against the recipe: both must change together.
-        recipe = PROJECT / 'desktop/packages/vulkan-powervr-orchard'
+        recipe = PROJECT / 'desktop/packages/mesa-orchard'
         self.assertIn(hashlib.sha256((recipe / 'gpu-probe.c').read_bytes()).hexdigest(),
                       (recipe / 'PKGBUILD').read_text())
         self.assertIn(f'"${{pkgdir}}{PROBE}"', (recipe / 'PKGBUILD').read_text())
