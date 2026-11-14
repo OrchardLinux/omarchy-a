@@ -742,3 +742,22 @@ class EventLoop(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LockedUsb(unittest.TestCase):
+    def test_new_usb_devices_are_off_while_locked_and_on_after_unlock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for host in ('usb1', 'usb2'):
+                (root / host).mkdir()
+                (root / host / 'authorized_default').write_text('1')
+            with patch.object(powerd, 'USB_DEVICES', root):
+                powerd.usb_new_devices(False)
+                self.assertEqual({(root / h / 'authorized_default').read_text() for h in ('usb1', 'usb2')}, {'0'})
+                powerd.usb_new_devices(True)
+                self.assertEqual({(root / h / 'authorized_default').read_text() for h in ('usb1', 'usb2')}, {'1'})
+
+    def test_the_lock_screen_reports_the_unlock(self):
+        service = (PROJECT / 'desktop/shell/shell/plugins/lock/Service.qml').read_text()
+        self.assertIn('"/usr/libexec/omarchy-powerctl", "unlocked"', service)
+        self.assertIn("request == 'unlocked'", PATH.read_text())

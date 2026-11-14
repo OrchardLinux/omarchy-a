@@ -16,3 +16,13 @@ export OMARCHY_PATH="$HOME/.local/share/omarchy-ipad"
 printf '0\n' > "$XDG_RUNTIME_DIR/omarchy-keyboard-visible"
 "$OMARCHY_PATH/bin/omarchy-keyboard" run > "$XDG_RUNTIME_DIR/omarchy-keyboard.log" 2>&1 &
 qs -p "$OMARCHY_PATH/shell/shell.qml" > "$XDG_RUNTIME_DIR/omarchy-shell.log" 2>&1 &
+
+# Removable storage mounts for the user through udisks (no programs run from
+# it; omarchy-powerd keeps new USB devices off while the screen is locked).
+# Unplugging is still an explicit safe removal.
+(
+  udiskie --no-notify --no-tray &
+  media=$!
+  trap 'kill "$media" 2>/dev/null || true; wait "$media" 2>/dev/null || true' EXIT
+  while kill -0 "$LABWC_PID" 2>/dev/null && kill -0 "$media" 2>/dev/null; do sleep 2; done
+) > "$XDG_RUNTIME_DIR/omarchy-media.log" 2>&1 &
