@@ -1,4 +1,4 @@
-"""The volume keys control the volume, and a new output starts quiet."""
+"""The volume keys control the volume, and a new output starts at a usable volume."""
 from pathlib import Path
 import os
 import subprocess
@@ -51,11 +51,11 @@ esac
             block = rc[rc.index(f'<keybind key="{key}" allowWhenLocked="yes">'):]
             self.assertIn(f'omarchy-volume {action}', block[:block.index('</keybind>')])
 
-    def test_a_new_output_starts_at_ten_percent(self):
+    def test_a_new_output_starts_at_fifty_percent(self):
         conf = (PROJECT / 'system/overlay/etc/wireplumber/wireplumber.conf.d/60-omarchy-a-volume.conf').read_text()
-        self.assertIn('device.routes.default-sink-volume = 0.001', conf)  # 0.1 on the cubic scale
+        self.assertIn('device.routes.default-sink-volume = 0.125', conf)  # 0.5 on the cubic scale
 
-    def test_the_bar_has_the_audio_mixer_and_the_osd_is_on(self):
+    def test_the_bar_has_volume_and_the_osd_is_on(self):
         config = (PROJECT / 'desktop/shell/config/omarchy/shell.json').read_text()
         self.assertIn('"omarchy.audio"', config)
         self.assertNotIn('"omarchy.osd"', config)  # not in disabledPlugins
