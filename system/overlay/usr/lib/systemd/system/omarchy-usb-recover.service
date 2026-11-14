@@ -1,0 +1,12 @@
+[Unit]
+Description=Recover USB ECM/NCM carrier loss and an unreachable USB peer
+After=orchard-usb-network.service
+ConditionPathExists=/sys/class/net/usb0
+[Service]
+ExecStart=/usr/libexec/omarchy-usb-recover
+RuntimeDirectory=omarchy-usb-recover
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+[Install]
+WantedBy=multi-user.target

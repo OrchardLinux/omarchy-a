@@ -42,8 +42,19 @@ xdg-desktop-portal-wlr
 pipewire
 pipewire-pulse
 wireplumber
+rtkit
 socat
 jq
 pango
 cairo
 wayland
+
+kexec-tools
+libnotify
+
+# USB link probes and network recovery.
+iputils
+iproute2
+# Removable storage mounted through the session identity.
+udiskie
+udisks2

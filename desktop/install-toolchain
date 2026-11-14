@@ -23,7 +23,7 @@ packages=(base-devel wayland libxkbcommon pango scdoc pkgconf patch python pytho
   # vulkan-powervr-orchard (packages/vulkan-powervr-orchard): the Mesa fork's Vulkan
   # driver; LLVM, Clang and libclc compile its internal shaders at build time.
   bison flex expat zlib zstd libelf spirv-tools python-mako python-yaml python-packaging python-ply
-  llvm clang libclc spirv-llvm-translator
+  llvm clang libclc spirv-llvm-translator libx11 libxcb libxshmfence libxrandr xorgproto
   # libva-v4l2-request (packages/libva-v4l2-request)
   libva)
 pacman-download -Sy --noconfirm --needed "${packages[@]}"

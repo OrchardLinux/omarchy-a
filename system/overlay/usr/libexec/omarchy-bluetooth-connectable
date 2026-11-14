@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+# A trusted keyboard initiates reconnect. No discoverable/pairable changes.
+while read -r controller; do
+  [[ $controller =~ ^hci[0-9]+$ ]] || continue
+  info=$(timeout 2s btmgmt --index "$controller" info 2>/dev/null) || continue
+  settings=$(sed -n 's/.*current settings: //p' <<< "$info")
+  [[ " $settings " == *' powered '* ]] || continue
+  [[ " $settings " == *' connectable '* ]] || timeout 2s btmgmt --index "$controller" connectable on
+ done < <(find /sys/class/bluetooth -maxdepth 1 -name 'hci[0-9]*' -printf '%f\n' 2>/dev/null)

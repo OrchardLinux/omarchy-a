@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep powered Bluetooth controllers reachable by bonded keyboards
+After=bluetooth.service
+PartOf=bluetooth.service
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/omarchy-bluetooth-connectable
+TimeoutStartSec=10
+[Install]
+WantedBy=bluetooth.service

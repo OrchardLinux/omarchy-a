@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the warm image when the selected boot entry changes
+# Stop before unmount; the refresh service never participates in shutdown.
+After=local-fs.target
+
+[Path]
+PathChanged=/boot/loader/loader.conf
+PathChanged=/boot/loader/entries
+Unit=orchard-kexec-refresh.service
+
+[Install]
+WantedBy=multi-user.target

@@ -5,12 +5,11 @@
     "position": "top",
     "background": "opaque",
     "layout": {
-      "left": [{ "id": "omarchy.menu" }],
+      "left": [{ "id": "omarchy.menu" }, { "id": "ipadlinux.keyboard" }],
       "centerBegin": [{ "id": "omarchy.indicators", "items": ["StayAwake"] }],
       "center": [{ "id": "omarchy.clock", "format": "HH:mm" }],
       "centerEnd": [],
       "right": [
-        { "id": "ipadlinux.keyboard", "narrow": "left" },
         { "id": "omarchy.audio", "narrow": false },
         { "id": "omarchy.bluetooth", "narrow": false },
         { "id": "omarchy.network", "narrow": "left" },

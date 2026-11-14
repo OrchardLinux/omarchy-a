@@ -1,0 +1,403 @@
+#!/usr/bin/env python3
+"""Carry m1n1's runtime devicetree fixups over to a new kernel's dtb.
+
+A warm (kexec) boot has no m1n1 to prepare the devicetree. The running FDT
+(/sys/firmware/fdt) is m1n1's output: the pristine dtb the running kernel was
+built with, plus everything m1n1 filled in at boot (memory, reserved-memory,
+framebuffer, MAC addresses, calibration, CPU enable-method, /psci, chosen...).
+For a kernel whose dtb changed, this computes
+
+    merged = new + (running - old)
+
+node by node and property by property, where old is the running kernel's
+pristine dtb and new the next kernel's. A property both sides changed
+differently is a conflict. Phandles are normalized by node path before comparison, with binding-aware
+specifier parsing. Numeric arguments are never treated as references. Unknown
+reference layouts, dangling references and genuine conflicting edits fail closed.
+
+usage: fdt-merge --old OLD.dtb --running /sys/firmware/fdt --new NEW.dtb -o OUT.dtb
+       fdt-merge --diff A.dtb B.dtb
+"""
+
+import argparse
+import copy
+import struct
+import sys
+
+FDT_MAGIC = 0xD00DFEED
+BEGIN_NODE, END_NODE, PROP, NOP, END = 1, 2, 3, 4, 9
+
+# A binding describes reference positions, not arbitrary cells equal to IDs.
+PHANDLE_ARRAYS = {
+    "clocks": "#clock-cells", "assigned-clocks": "#clock-cells",
+    "assigned-clock-parents": "#clock-cells", "resets": "#reset-cells",
+    "power-domains": "#power-domain-cells", "performance-domains": "#performance-domain-cells",
+    "dmas": "#dma-cells", "mboxes": "#mbox-cells", "phys": "#phy-cells",
+    "iommus": "#iommu-cells", "interrupts-extended": "#interrupt-cells",
+    "pwms": "#pwm-cells", "io-channels": "#io-channel-cells",
+    "interconnects": "#interconnect-cells", "thermal-sensors": "#thermal-sensor-cells",
+    "sound-dai": "#sound-dai-cells", "cooling-device": "#cooling-cells",
+    "msi-parent": "#msi-cells",
+}
+PHANDLE_LISTS = {
+    "memory-region", "interrupt-parent", "interrupt-affinity", "cpus",
+    "next-level-cache", "operating-points-v2", "nvmem-cells", "remote-endpoint",
+    "apple,sart", "apple,sio", "apple,nvme-hmb",
+    "apple,observe-domains", "apple,spi0-domain",
+}
+
+
+def is_phandle_prop(name):
+    return (name in PHANDLE_ARRAYS or name in PHANDLE_LISTS or
+            name in {"phandle", "linux,phandle", "iommu-addresses", "msi-map", "iommu-map", "gpio-ranges", "interrupt-map"} or
+            name.startswith("pinctrl-") and name[8:].isdigit() or
+            name.endswith(("-supply", "-parent", "-gpios")) or name == "gpios")
+
+
+def normalize_phandles(roots):
+    """Use a single path-based namespace for all three inputs, on private copies.
+
+    Provider cell counts come from each original input. In particular, an
+    argument whose numeric value happens to equal a phandle stays unchanged.
+    Unknown layouts on an m1n1 delta are refused below when renumbering occurs.
+    """
+    trees = [index(r) for r in roots]
+    by_id = []
+    for tree in trees:
+        ids = {}
+        for path, node in tree.items():
+            vals = [node.props[n] for n in ("phandle", "linux,phandle") if n in node.props]
+            if not vals:
+                continue
+            if any(len(v) != 4 for v in vals) or len(set(vals)) != 1:
+                raise ValueError(f"{path}: invalid or inconsistent phandle")
+            ph = int.from_bytes(vals[0], "big")
+            if ph in (0, 0xffffffff) or ph in ids:
+                raise ValueError(f"{path}: duplicate or invalid phandle {ph:#x}")
+            ids[ph] = path
+        by_id.append(ids)
+    paths = sorted(set().union(*(set(ids.values()) for ids in by_id)))
+    # Preserve the new DT's numbering; only runtime-only paths need fresh IDs.
+    canonical = {p: ph for ph, p in by_id[-1].items()}
+    next_id = max(canonical.values(), default=0) + 1
+    for p in paths:
+        if p not in canonical:
+            canonical[p] = next_id
+            next_id += 1
+    for tree, ids in zip(trees, by_id):
+        for path, node in tree.items():
+            for name, val in list(node.props.items()):
+                if not is_phandle_prop(name):
+                    continue
+                if len(val) % 4:
+                    raise ValueError(f"{path}:{name}: invalid cell length")
+                if name == "interrupt-map":
+                    raise ValueError(f"{path}:{name}: unsupported phandle layout")
+                cells = list(struct.unpack(f">{len(val)//4}I", val))
+                if name in ("phandle", "linux,phandle"):
+                    cells[0] = canonical[path]
+                else:
+                    def ref(pos):
+                        if pos >= len(cells) or cells[pos] not in ids:
+                            raise ValueError(f"{path}:{name}: dangling phandle at cell {pos}")
+                        target = ids[cells[pos]]
+                        cells[pos] = canonical[target]
+                        return tree[target]
+
+                    def count(provider, prop, default=None):
+                        v = provider.props.get(prop)
+                        if v is None and default is not None:
+                            return default
+                        if v is None or len(v) != 4:
+                            raise ValueError(f"{path}:{name}: provider missing {prop}")
+                        n = int.from_bytes(v, "big")
+                        if n > 64:
+                            raise ValueError(f"{path}:{name}: unreasonable {prop}")
+                        return n
+
+                    pos = 0
+                    while pos < len(cells):
+                        if name == "gpio-ranges":
+                            ref(pos)
+                            pos += 4
+                        elif name in ("msi-map", "iommu-map"):
+                            # rid-base, provider, provider specifier, length.
+                            # Orchard's A9 DART takes five cells per specifier.
+                            provider = ref(pos + 1)
+                            key = "#iommu-cells" if name == "iommu-map" else "#msi-cells"
+                            pos += 3 + count(provider, key, 1)
+                        elif name == "iommu-addresses":
+                            provider = ref(pos)
+                            pos += 1 + count(provider, "#address-cells", 2) + count(provider, "#size-cells", 1)
+                        elif name in PHANDLE_ARRAYS or name == "gpios" or name.endswith("-gpios"):
+                            # Empty array slots are legal (e.g. assigned-clock-parents).
+                            if cells[pos] == 0:
+                                pos += 1
+                                continue
+                            provider = ref(pos)
+                            key = PHANDLE_ARRAYS.get(name, "#gpio-cells")
+                            pos += 1 + count(provider, key, 0 if name == "msi-parent" else None)
+                        else:
+                            ref(pos)
+                            pos += 1
+                        if pos > len(cells):
+                            raise ValueError(f"{path}:{name}: truncated specifier")
+                node.props[name] = struct.pack(f">{len(cells)}I", *cells)
+    return trees
+
+
+class Node:
+    def __init__(self, name):
+        self.name = name
+        self.props = {}  # insertion-ordered
+        self.children = {}
+
+
+def parse(blob):
+    (magic, totalsize, off_struct, off_strings, off_rsv, version, _last, boot_cpuid,
+     size_strings, size_struct) = struct.unpack_from(">10I", blob, 0)
+    if magic != FDT_MAGIC:
+        raise ValueError("not a flattened devicetree")
+    rsv = []
+    off = off_rsv
+    while True:
+        addr, size = struct.unpack_from(">QQ", blob, off)
+        off += 16
+        if addr == 0 and size == 0:
+            break
+        rsv.append((addr, size))
+
+    def string(nameoff):
+        start = off_strings + nameoff
+        return blob[start:blob.index(b"\0", start)].decode()
+
+    off = off_struct
+    stack = []
+    root = None
+    while True:
+        (tok,) = struct.unpack_from(">I", blob, off)
+        off += 4
+        if tok == BEGIN_NODE:
+            end = blob.index(b"\0", off)
+            node = Node(blob[off:end].decode())
+            off = (end + 4) & ~3
+            if stack:
+                stack[-1].children[node.name] = node
+            else:
+                root = node
+            stack.append(node)
+        elif tok == END_NODE:
+            stack.pop()
+        elif tok == PROP:
+            length, nameoff = struct.unpack_from(">II", blob, off)
+            off += 8
+            stack[-1].props[string(nameoff)] = bytes(blob[off:off + length])
+            off = (off + length + 3) & ~3
+        elif tok == NOP:
+            pass
+        elif tok == END:
+            break
+        else:
+            raise ValueError(f"bad FDT token {tok:#x} at {off - 4:#x}")
+    return root, rsv, boot_cpuid
+
+
+def serialize(root, rsv, boot_cpuid):
+    strings = bytearray()
+    stroff = {}
+    st = bytearray()
+
+    def add_string(s):
+        if s not in stroff:
+            stroff[s] = len(strings)
+            strings.extend(s.encode() + b"\0")
+        return stroff[s]
+
+    def pad():
+        while len(st) % 4:
+            st.append(0)
+
+    def emit(node):
+        st.extend(struct.pack(">I", BEGIN_NODE))
+        st.extend(node.name.encode() + b"\0")
+        pad()
+        for name, val in node.props.items():
+            st.extend(struct.pack(">III", PROP, len(val), add_string(name)))
+            st.extend(val)
+            pad()
+        for child in node.children.values():
+            emit(child)
+        st.extend(struct.pack(">I", END_NODE))
+
+    emit(root)
+    st.extend(struct.pack(">I", END))
+    rsvmap = b"".join(struct.pack(">QQ", a, s) for a, s in rsv) + struct.pack(">QQ", 0, 0)
+    off_rsv = 40
+    off_struct = off_rsv + len(rsvmap)
+    off_strings = off_struct + len(st)
+    total = off_strings + len(strings)
+    hdr = struct.pack(">10I", FDT_MAGIC, total, off_struct, off_strings, off_rsv, 17, 16,
+                      boot_cpuid, len(strings), len(st))
+    return hdr + rsvmap + bytes(st) + bytes(strings)
+
+
+def walk(node, path=None):
+    p = "/" if path is None else path.rstrip("/") + "/" + node.name
+    yield p, node
+    for child in node.children.values():
+        yield from walk(child, p)
+
+
+def index(root):
+    return dict(walk(root))
+
+
+def phandle_of(node):
+    v = node.props.get("phandle") or node.props.get("linux,phandle")
+    return struct.unpack(">I", v)[0] if v and len(v) == 4 else None
+
+
+def parent_path(path):
+    return "/" if path.count("/") == 1 else path.rsplit("/", 1)[0]
+
+
+def merge(old, running, new):
+    """Apply running-old onto new (all Node trees, new is modified)."""
+    # Never mutate the provenance inputs; callers can reuse them for another load.
+    old, running = copy.deepcopy(old), copy.deepcopy(running)
+    try:
+        io, ir, inew = normalize_phandles((old, running, new))
+    except ValueError as e:
+        return [str(e)], [], []
+    conflicts, delta_props, notes = [], [], []
+
+    # Nodes m1n1 removed (e.g. pruned CPUs)
+    for path in io:
+        if path not in ir and path in inew and parent_path(path) in inew:
+            if serialize(inew[path], [], 0) != serialize(io[path], [], 0):
+                conflicts.append(f"{path}: removed by m1n1, changed by the new dtb")
+                continue
+            parent = inew[parent_path(path)]
+            parent.children.pop(inew[path].name, None)
+            notes.append(f"- {path}")
+    inew = index(new)
+
+    for path, rnode in ir.items():
+        onode = io.get(path)
+        nnode = inew.get(path)
+        if onode is None:
+            # Node m1n1 added: copy it in whole if new lacks it
+            if nnode is None:
+                parent = inew.get(parent_path(path))
+                if parent is None:
+                    continue  # its parent was added too and brought it along
+                parent.children[rnode.name] = rnode
+                inew = index(new)
+                notes.append(f"+ {path}")
+                for subpath, subnode in walk(rnode, parent_path(path)):
+                    delta_props.extend((subpath, n) for n in subnode.props)
+                continue
+            onode = Node(rnode.name)  # new has it already: merge props against empty
+        if nnode is None:
+            if onode.props != rnode.props:
+                conflicts.append(f"{path}: fixed up by m1n1 but removed from the new dtb")
+            continue
+        for name, rval in rnode.props.items():
+            oval = onode.props.get(name)
+            if oval == rval:
+                continue
+            nval = nnode.props.get(name)
+            if nval is not None and nval != oval and nval != rval:
+                conflicts.append(f"{path}:{name}: changed by m1n1 and by the new dtb")
+                continue
+            nnode.props[name] = rval
+            delta_props.append((path, name))
+        for name in onode.props:
+            if name not in rnode.props and name in nnode.props:
+                if nnode.props[name] != onode.props[name]:
+                    conflicts.append(f"{path}:{name}: removed by m1n1, changed by the new dtb")
+                    continue
+                del nnode.props[name]
+                delta_props.append((path, name))
+
+    # References carried from m1n1 must still resolve after pruning/new edits.
+    try:
+        normalize_phandles((copy.deepcopy(new),))
+    except ValueError as e:
+        conflicts.append(str(e))
+    seen = {}
+    for p, n in walk(new):
+        ph = phandle_of(n)
+        if ph is not None:
+            if ph in seen:
+                conflicts.append(f"phandle {ph:#x} used by {seen[ph]} and {p}")
+            seen[ph] = p
+    return conflicts, notes, delta_props
+
+
+def load(path):
+    with open(path, "rb") as f:
+        return parse(f.read())
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--old")
+    ap.add_argument("--running")
+    ap.add_argument("--new")
+    ap.add_argument("-o", "--output")
+    ap.add_argument("--diff", nargs=2, metavar=("A", "B"))
+    a = ap.parse_args()
+
+    if a.diff:
+        (ra, _, _), (rb, _, _) = load(a.diff[0]), load(a.diff[1])
+        ia, ib = index(ra), index(rb)
+        for p in sorted(set(ia) | set(ib)):
+            if p not in ia:
+                print(f"+ {p}")
+            elif p not in ib:
+                print(f"- {p}")
+            else:
+                for n in sorted(set(ia[p].props) | set(ib[p].props)):
+                    if ia[p].props.get(n) != ib[p].props.get(n):
+                        print(f"~ {p}:{n}")
+        return 0
+
+    if not (a.old and a.running and a.new and a.output):
+        ap.error("--old, --running, --new and -o are required")
+    old, old_rsv, _ = load(a.old)
+    running, rsv, cpuid = load(a.running)
+    new, new_rsv, _ = load(a.new)
+    conflicts, notes, delta = merge(old, running, new)
+    for n in notes:
+        print(n, file=sys.stderr)
+    if conflicts:
+        for c in conflicts:
+            print(f"conflict: {c}", file=sys.stderr)
+        return 1
+    # Reservations come from the running FDT: m1n1's image, stacks and its
+    # devicetree buffer. The old initrd's is stale: kexec places a new one.
+    chosen = running.children.get("chosen")
+    if chosen:
+        cells = [chosen.props.get(k) for k in ("linux,initrd-start", "linux,initrd-end")]
+        if all(cells):
+            start, end = (int.from_bytes(c, "big") for c in cells)
+            rsv = [r for r in rsv if r[0] != start or r[1] not in
+                   (end - start, (end - start + 0x3fff) & ~0x3fff)]
+    # Preserve firmware reservations and any genuinely new static reservation.
+    rsv = list(dict.fromkeys(rsv + [r for r in new_rsv if r not in old_rsv]))
+    chosen = new.children.get("chosen")
+    if chosen:
+        for name in ("linux,initrd-start", "linux,initrd-end", "linux,usable-memory-range",
+                     "linux,elfcorehdr", "kaslr-seed", "rng-seed", "linux,kho-fdt",
+                     "linux,kho-scratch", "linux,ima-kexec-buffer"):
+            chosen.props.pop(name, None)
+        chosen.props["linux,booted-from-kexec"] = b""
+    with open(a.output, "wb") as f:
+        f.write(serialize(new, rsv, cpuid))
+    print(f"merged {len(delta)} m1n1 properties into {a.output}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
