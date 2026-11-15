@@ -159,8 +159,9 @@ jobs:
       # The compiler cache of the last source build: Mesa, wlroots and the rest
       # compile only what changed since. A new set of pins and recipes starts
       # from the newest older cache.
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         if: inputs.reuse_run_id == ''
+        id: ccache
         with:
           path: .ccache
           key: desktop-ccache-v1-${{ hashFiles('desktop/sources.json', 'desktop/arm64/sources.json', 'desktop/packages/**', 'desktop/labwc/**', 'desktop/keyboard/**') }}
@@ -196,6 +197,12 @@ jobs:
           # Keep only what this build used, so the saved cache stays one build large.
           "${builder[@]}" ccache --evict-older-than "$(( $(date +%s) - started + 60 ))s" >/dev/null
           { echo 'Compiler cache, source builds:'; echo '```'; "${builder[@]}" ccache --show-stats; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # Saved here, not at the end of the job: a failure further down keeps the compiled work.
+      - uses: actions/cache/save@v4
+        if: inputs.reuse_run_id == '' && steps.ccache.outputs.cache-hit != 'true'
+        with:
+          path: .ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - name: Build the signed Arch root filesystem
         if: inputs.reuse_run_id == ''
         env:
