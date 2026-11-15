@@ -90,13 +90,13 @@ pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --noconfirm "${re
 if [[ $architecture == aarch64 ]]; then
   pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -Rdd mesa
 fi
-for package in "${local_packages[@]}"; do
-  pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -U "$package"
-done
+# One transaction: installed one by one, the first package needing mesa would pull
+# another provider (upstream Omarchy's mesa-aurora) before mesa-orchard arrives.
+pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -U "${local_packages[@]}"
 if [[ $architecture == aarch64 ]]; then
   # Every dependency of every installed package is met again, and OpenGL is the fork's.
   pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -Dk
-  [[ $(pacman --root "$root" -Qoq /usr/lib/libEGL_mesa.so.0 /usr/lib/libgbm.so.1 | sort -u) == mesa-orchard ]]
+  [[ $(pacman --root "$root" -Qoq "$root/usr/lib/libEGL_mesa.so.0" "$root/usr/lib/libgbm.so.1" | sort -u) == mesa-orchard ]]
 fi
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
 # Native login needs seatd's socket and DRM/input device access (render: the
