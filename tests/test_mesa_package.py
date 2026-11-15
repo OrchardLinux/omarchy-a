@@ -110,9 +110,10 @@ class Image(unittest.TestCase):
     def test_archs_mesa_leaves_before_the_fork_arrives(self):
         code, calls = self.install('aarch64')
         self.assertEqual(code, 0)
-        self.assertEqual(calls[:4], ['--noconfirm -Rdd mesa', '--noconfirm -U wlroots.pkg',
-                                     '--noconfirm -U mesa-orchard.pkg', '-Dk'])
-        self.assertEqual(len(calls), 5)
+        # One transaction, so mesa-orchard satisfies the others' mesa dependency itself.
+        self.assertEqual(calls[:3], ['--noconfirm -Rdd mesa', '--noconfirm -U wlroots.pkg mesa-orchard.pkg',
+                                     '-Dk'])
+        self.assertEqual(len(calls), 4)
 
     def test_image_with_an_unmet_dependency_or_archs_opengl_is_refused(self):
         self.assertNotEqual(self.install('aarch64', consistent=False)[0], 0)
@@ -120,7 +121,7 @@ class Image(unittest.TestCase):
 
     def test_armv7_keeps_archs_mesa(self):
         code, calls = self.install('armv7h')
-        self.assertEqual((code, calls), (0, ['--noconfirm -U wlroots.pkg', '--noconfirm -U mesa-orchard.pkg']))
+        self.assertEqual((code, calls), (0, ['--noconfirm -U wlroots.pkg mesa-orchard.pkg']))
 
 
 if __name__ == '__main__':
