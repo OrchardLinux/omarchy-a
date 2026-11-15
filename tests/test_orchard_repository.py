@@ -26,8 +26,8 @@ Include = /etc/pacman.d/mirrorlist
 [alarm]
 Include = /etc/pacman.d/mirrorlist
 '''
-ORCHARD = {'aarch64': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'mesa', 'libva-v4l2-request', 'folio-touch'],
-           'armv7h': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'omacalc']}
+ORCHARD = {'aarch64': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'folio-touch', 'mesa', 'libva-v4l2-request'],
+           'armv7h': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'folio-touch', 'omacalc']}
 
 
 def section(start, end):
@@ -97,7 +97,7 @@ class Installation(unittest.TestCase):
                       '  *" --print "*) printf "core/base\\n"; for name in $PLANNED; do echo "orchard/$name"; done;;\n'
                       '  *" -Qoq "*) echo "$OWNER"; echo "$OWNER";;\n'
                       '  *" -Dk "*) [[ -n $CONSISTENT ]];; esac; }\n'
-                      'config=c root=/r gpgdir=g desktop=/d requested=(base labwc dolphin)\n' + packages + block)
+                      'config=c root=/r gpgdir=g desktop=/d requested=(base labwc)\n' + packages + block)
             result = bash(script, LOG=str(log), architecture=architecture, PLANNED=' '.join(planned), OWNER=owner,
                           CONSISTENT='1' if consistent else '')
             calls = [re.sub(r'^(download )?(--(config|root|gpgdir) \S+ )+', r'\1', line)
@@ -107,8 +107,8 @@ class Installation(unittest.TestCase):
     def test_one_transaction_installs_ours_with_everything_else(self):
         code, calls, error = self.install('aarch64')
         self.assertEqual(code, 0, error)
-        # Files takes Dolphin's place on 64-bit; labwc is asked for once.
-        wanted = 'base labwc wlroots0.20 omafox omactivity mesa libva-v4l2-request folio-touch'
+        # labwc is asked for once.
+        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch mesa libva-v4l2-request'
         self.assertEqual(calls[:3], [f'download -Sy --noconfirm {wanted}',
                                      f'-S --print --print-format %r/%n {wanted}', f'-S --noconfirm {wanted}'])
         self.assertEqual(calls[3], 'repositories')
@@ -119,10 +119,10 @@ class Installation(unittest.TestCase):
         self.assertFalse([call for call in calls if re.search(r'(^| )-(R|U)', call)])
         self.assertNotIn('-U', ASSEMBLE.read_text())
 
-    def test_armv7_takes_omacalc_from_ours_and_keeps_archs_mesa_and_dolphin(self):
+    def test_armv7_takes_files_and_omacalc_from_ours_and_keeps_archs_mesa(self):
         code, calls, error = self.install('armv7h')
         self.assertEqual(code, 0, error)
-        wanted = 'base labwc dolphin wlroots0.20 omafox omactivity omacalc'
+        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch omacalc'
         self.assertEqual(calls, [f'download -Sy --noconfirm {wanted}', f'-S --print --print-format %r/%n {wanted}',
                                  f'-S --noconfirm {wanted}', 'repositories', '-Dk'])
 
@@ -139,6 +139,13 @@ class Installation(unittest.TestCase):
         self.assertNotEqual(self.install('aarch64', consistent=False)[0], 0)
         self.assertNotEqual(self.install('armv7h', consistent=False)[0], 0)
         self.assertNotEqual(self.install('aarch64', owner='mesa-aurora')[0], 0)
+
+    def test_files_is_the_file_manager_of_every_board(self):
+        # Dolphin is on no image: not asked for, no launcher entry or wrapper staged.
+        self.assertNotIn('dolphin', (PROJECT / 'system/packages.txt').read_text().split())
+        self.assertNotIn('dolphin', ASSEMBLE.read_text().lower())
+        self.assertNotIn('dolphin', (PROJECT / 'desktop/stage.py').read_text().lower())
+        self.assertFalse((PROJECT / 'desktop/shell/bin/omarchy-dolphin').exists())
 
     def test_the_login_finds_the_probe_the_mesa_package_ships(self):
         # The package has it at /usr/lib/orchard/gpu-probe and links it from where the login looks.

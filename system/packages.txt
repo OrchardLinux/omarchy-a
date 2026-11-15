@@ -35,9 +35,6 @@ grim
 wlr-randr
 # Device orientation from the accelerometer (desktop/configuration/rotate-output).
 iio-sensor-proxy
-# The files app on ARMv7 (desktop/configuration/org.kde.dolphin.desktop).
-# 64-bit boards get Files instead and leave this one out (system/assemble-rootfs).
-dolphin
 xdg-desktop-portal
 xdg-desktop-portal-wlr
 pipewire

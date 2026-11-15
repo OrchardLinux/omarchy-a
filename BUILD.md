@@ -74,7 +74,7 @@ Retain each component's receipt. Do not change hardware activation or timing as 
 
 No package is built in this repository. The image's pacman takes a package from the first repository that lists it, in this order, during the build and on the installed tablet (`/etc/pacman.conf`):
 
-1. `[orchard]`, the [Orchard package repository](https://github.com/OrchardLinux/packages), built once for every Orchard distribution: `mesa` (the OrchardLinux fork with the GPU driver; 64-bit), `wlroots0.20`, `labwc` (with the tablet patches), `libva-v4l2-request` (64-bit), `omafox`, `omactivity`, `folio-touch` (Files; 64-bit images, ARMv7 keeps Dolphin), and `omacalc` on ARMv7. Their sources, patches and recipes are there.
+1. `[orchard]`, the [Orchard package repository](https://github.com/OrchardLinux/packages), built once for every Orchard distribution: `mesa` (the OrchardLinux fork with the GPU driver; 64-bit), `wlroots0.20`, `labwc` (with the tablet patches), `libva-v4l2-request` (64-bit), `omafox`, `omactivity`, `folio-touch` (Files, the file manager of every board), and `omacalc` on ARMv7. Their sources, patches and recipes are there.
 2. `[omarchy]`, upstream Omarchy's repository (64-bit only; upstream publishes nothing for ARMv7): Omacalc.
 3. Arch Linux ARM's repositories: everything else.
 

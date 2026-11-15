@@ -31,17 +31,14 @@ printf '%s\n' "${requested[@]}" | grep -Eq '^linux(-aarch64|-armv7|-rpi)?$' && {
 # From the Orchard package repository (OrchardLinux/packages), built there for
 # every Orchard distribution and installed here like any other package:
 # wlroots with fast rotated software compositing, Labwc with the tablet
-# patches, Omafox, and Omactivity, the touch task manager.
-orchard_packages=(wlroots0.20 labwc omafox omactivity)
+# patches, Omafox, Omactivity (the touch task manager) and Files, upstream
+# Omarchy's file manager (Folio) with the touch mode OrchardLinux/folio adds.
+orchard_packages=(wlroots0.20 labwc omafox omactivity folio-touch)
 if [[ $architecture == aarch64 ]]; then
   # 64-bit boards: Mesa from OrchardLinux's fork in the place of Arch's (OpenGL through Zink or in
   # software, the GPU's Vulkan driver, the login's GPU probe), and the VA-API bridge to the hardware
   # video decoders. The GPU parts and the bridge sit unused on a board without that hardware.
-  # Files, upstream Omarchy's file manager (Folio) with the touch mode OrchardLinux/folio adds,
-  # takes Dolphin's place there; ARMv7 keeps Dolphin (desktop/stage.py has its launcher entry).
-  orchard_packages+=(mesa libva-v4l2-request folio-touch)
-  for i in "${!requested[@]}"; do [[ ${requested[$i]} != dolphin ]] || unset 'requested[i]'; done
-  requested=("${requested[@]}")
+  orchard_packages+=(mesa libva-v4l2-request)
 else
   # Omacalc: upstream Omarchy publishes it for aarch64 only; the Orchard repository has ARMv7's.
   orchard_packages+=(omacalc)
