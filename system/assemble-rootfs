@@ -90,9 +90,9 @@ pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --noconfirm "${re
 if [[ $architecture == aarch64 ]]; then
   pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -Rdd mesa
 fi
-for package in "${local_packages[@]}"; do
-  pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -U "$package"
-done
+# One transaction: installed one by one, the first package needing mesa would pull
+# another provider (upstream Omarchy's mesa-aurora) before mesa-orchard arrives.
+pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -U "${local_packages[@]}"
 if [[ $architecture == aarch64 ]]; then
   # Every dependency of every installed package is met again, and OpenGL is the fork's.
   pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -Dk
