@@ -116,6 +116,9 @@ class Workflow(unittest.TestCase):
         self.assertIn('--input "orchard=$ORCHARD_TAG"', plan)
         # The third input: the Orchard package repository's index, planned and recorded alike.
         self.assertIn('releases/download/repo-aarch64/orchard.db', plan)
+        # A missing index fails the job: it is downloaded before it is hashed, never piped into the checksum.
+        self.assertIn('-o orchard.db https://github.com/OrchardLinux/packages/releases/download/repo-aarch64/orchard.db\n', plan)
+        self.assertNotRegex(plan, r'orchard\.db \|')
         self.assertIn('--input "packages=$PACKAGES"', plan)
         self.assertIn('--input "orchard=$ORCHARD_TAG" --input "packages=$PACKAGES" > assets/nightly.json',
                       self.job('nightly'))

@@ -66,8 +66,9 @@ jobs:
       # every package published there, so its checksum identifies them all.
       - id: packages
         run: |
-          index=$(curl -fsSL --retry 3 https://github.com/OrchardLinux/packages/releases/download/repo-aarch64/orchard.db |
-            sha256sum | cut -d' ' -f1)
+          # Into a file first: a failed download must fail the step, not be hashed as nothing.
+          curl -fsSL --retry 3 -o orchard.db https://github.com/OrchardLinux/packages/releases/download/repo-aarch64/orchard.db
+          index=$(sha256sum orchard.db | cut -d' ' -f1)
           echo "Orchard packages $index"
           echo "index=$index" >> "$GITHUB_OUTPUT"
       - id: plan
