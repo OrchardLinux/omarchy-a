@@ -14,20 +14,13 @@ pacman-key --populate archlinuxarm
 # The base image's kernel and firmware are not needed to build: never download them.
 mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-armv7|linux-firmware.*)$')
 (( ${#unneeded[@]} == 0 )) || pacman -Rdd --noconfirm "${unneeded[@]}"
-packages=(base-devel wayland libxkbcommon pango scdoc pkgconf patch python python-pip git curl tar gzip
-  # wlroots0.20 (packages/wlroots0.20): Arch's makedepends and the libraries it links
-  # (systemd is in the base).
-  meson ninja glslang vulkan-headers xorg-xwayland wayland-protocols
-  libdisplay-info libdrm libglvnd libinput lcms2 libliftoff pixman seatd vulkan-icd-loader mesa hwdata
-  xcb-util-errors xcb-util-renderutil xcb-util-wm
-  # mesa-orchard (packages/mesa-orchard): the Mesa fork's OpenGL and Vulkan driver.
-  # LLVM is llvmpipe's compiler; Clang and libclc compile the Vulkan driver's
-  # internal shaders at build time. The X11 libraries are for GLX.
-  bison flex expat zlib zstd libelf spirv-tools python-mako python-yaml python-packaging python-ply
-  llvm llvm-libs clang libclc spirv-llvm-translator
-  libx11 libxcb libxext libxfixes libxrandr libxshmfence libxxf86vm xorgproto
-  # libva-v4l2-request (packages/libva-v4l2-request)
-  libva)
-pacman-download -Sy --noconfirm --needed "${packages[@]}"
-pacman -S --noconfirm --needed "${packages[@]}"
+# What is compiled here is small: the keyboard (a patched wvkbd) and the
+# startup cursor helper (wtype). Mesa, wlroots, Labwc and the other packages
+# come built from the Orchard package repository (system/assemble-rootfs).
+packages=(gcc make pkgconf patch wayland libxkbcommon pango python python-pip git curl tar gzip)
+# With the whole system brought up to date: a package installed new beside the
+# image's older libraries can miss symbols in them (today's Python and the
+# image's expat), and pacman does not update a dependency that is installed.
+pacman-download -Syu --noconfirm --needed "${packages[@]}"
+pacman -Su --noconfirm --needed "${packages[@]}"
 pacman -Sc --noconfirm

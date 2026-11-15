@@ -77,9 +77,6 @@ class KeyboardShortcutTests(unittest.TestCase):
         self.assertLess(home.index('== wake'), home.index('omarchy-overview-open'))
         self.assertIn('omarchy-overview-open"', changed)
         self.assertIn('omarchy-overview-open', (PROJECT / 'desktop/configuration/labwc-autostart').read_text())
-        patch = (PROJECT / 'desktop/labwc/0004-overview.patch').read_text()
-        self.assertNotIn('XKB_KEY_XF86HomePage', patch)
-        self.assertNotIn('emptyCommand', patch)
         # The greeter has nothing to switch between.
         self.assertNotIn('overview', (PROJECT / 'desktop/greeter/labwc/rc.xml').read_text())
 
@@ -93,7 +90,4 @@ class TitleTap(unittest.TestCase):
         import xml.etree.ElementTree as ET
         tree=ET.parse(PROJECT/'desktop/shell/labwc-rc.xml')
         self.assertFalse(tree.findall('./windowRules/windowRule/action[@name="Maximize"]'))
-        patch=(PROJECT/'desktop/labwc/0005-title-double-tap.patch').read_text()
-        self.assertIn('node_type_contains(LAB_NODE_TITLE, ctx->type)',patch)
-        self.assertIn('last_type != type',patch)
 

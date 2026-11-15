@@ -28,26 +28,21 @@ output=$(realpath -m -- "$output")
 mapfile -t requested < <(grep -vE '^\s*(#|$)' "$project/system/packages.txt")
 [[ ${#requested[@]} -gt 0 ]] || exit 1
 printf '%s\n' "${requested[@]}" | grep -Eq '^linux(-aarch64|-armv7|-rpi)?$' && { echo 'Generic kernel is not an input' >&2; exit 1; }
-local_packages=("$desktop/packages/omafox.pkg.tar.xz" "$desktop/packages/wlroots0.20.pkg.tar.xz")
-# Omacalc: upstream Omarchy publishes it for aarch64 only; ARMv7 builds it from source.
-[[ $architecture == aarch64 ]] || local_packages+=("$desktop/packages/omacalc.pkg.tar.zst")
-# 64-bit boards: Mesa from OrchardLinux's fork in the place of Arch's (OpenGL through Zink or in
-# software, the GPU's Vulkan driver, the login's GPU probe), and the VA-API bridge to the hardware
-# video decoders. The GPU parts and the bridge sit unused on a board without that hardware.
-[[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/mesa-orchard.pkg.tar.zst" "$desktop/packages/libva-v4l2-request.pkg.tar.zst")
-# 64-bit boards: Omactivity, the touch task manager, as its repository publishes it.
-[[ $architecture != aarch64 ]] || local_packages+=("$desktop/packages/omactivity.pkg.tar.zst")
-# 64-bit boards: Files, upstream Omarchy's file manager (Folio) with the touch
-# mode OrchardLinux/folio adds, as that repository publishes it. It takes
-# Dolphin's place there; ARMv7, which it isn't built for, keeps Dolphin.
+# From the Orchard package repository (OrchardLinux/packages), built there for
+# every Orchard distribution and installed here like any other package:
+# wlroots with fast rotated software compositing, Labwc with the tablet
+# patches, Omafox, Omactivity (the touch task manager) and Files, upstream
+# Omarchy's file manager (Folio) with the touch mode OrchardLinux/folio adds.
+orchard_packages=(wlroots0.20 labwc omafox omactivity folio-touch)
 if [[ $architecture == aarch64 ]]; then
-  local_packages+=("$desktop/packages/folio.pkg.tar.zst")
-  for i in "${!requested[@]}"; do [[ ${requested[$i]} != dolphin ]] || unset 'requested[i]'; done
-  requested=("${requested[@]}")
+  # 64-bit boards: Mesa from OrchardLinux's fork in the place of Arch's (OpenGL through Zink or in
+  # software, the GPU's Vulkan driver, the login's GPU probe), and the VA-API bridge to the hardware
+  # video decoders. The GPU parts and the bridge sit unused on a board without that hardware.
+  orchard_packages+=(mesa libva-v4l2-request)
+else
+  # Omacalc: upstream Omarchy publishes it for aarch64 only; the Orchard repository has ARMv7's.
+  orchard_packages+=(omacalc)
 fi
-for package in "${local_packages[@]}"; do
-  bsdtar -xOf "$package" .PKGINFO | grep -x "arch = $architecture" >/dev/null || { echo "Package architecture differs from $architecture: $package" >&2; exit 1; }
-done
 
 # Install signed packages into a clean target; no mounts or VM root are needed.
 # The caller's umask 077 would make pacman's own state (/var/lib/pacman,
@@ -57,46 +52,71 @@ umask 022
 mkdir -p "$root/var/lib/pacman" "$root/var/cache/pacman/pkg" "$root/etc"
 # The image's mirror order was measured when it was built: measure again.
 "$project/system/rank-mirrors"
-# 64-bit images use upstream Omarchy's package repository the way upstream's
-# aarch64 platforms do: listed before Arch Linux ARM's, signed with Omarchy's
-# key, and kept in the installed system's pacman.conf, so its apps (Omacalc)
-# update with the system. The build uses its own copies of pacman.conf and the
-# keyring, so a native build host keeps its own.
-omarchy_repo() { # SOURCE TARGET: SOURCE with [omarchy] before [core]
-  grep -qx '\[omarchy\]' "$1" && { echo "Already lists [omarchy]: $1" >&2; return 1; }
+# The repositories, in the order pacman takes a package from them: a name
+# comes from the first repository that lists it.
+#   [orchard]  the Orchard platform's packages, for every Orchard distribution.
+#   [omarchy]  upstream Omarchy's, the way upstream's aarch64 platforms use it,
+#              signed with Omarchy's key: its apps (Omacalc). 64-bit only;
+#              upstream publishes nothing for ARMv7.
+#   Arch Linux ARM's, as the pacman package lists them.
+# The installed system's pacman.conf gets the same entries, so `pacman -Syu`
+# on a tablet keeps taking these packages from where the image took them. The
+# build uses its own copies of pacman.conf and the keyring, so a native build
+# host keeps its own.
+#
+# SIGNING: [orchard] is not signed yet, so pacman trusts what GitHub serves
+# over HTTPS (SigLevel = Optional TrustAll, as the packages repository's README
+# says). When its key exists (OrchardLinux/packages docs/signing.md), this
+# becomes `SigLevel = Required DatabaseOptional`, the build adds and locally
+# signs the key below like Omarchy's (system/omarchy-pkgs.asc), and the image
+# gets it from the repository's keyring package.
+orchard_siglevel='Optional TrustAll'
+repositories() { # SOURCE TARGET: SOURCE with [orchard], and [omarchy] on 64-bit, before [core]
+  local name
+  for name in orchard omarchy; do
+    ! grep -qx "\[$name\]" "$1" || { echo "Already lists [$name]: $1" >&2; return 1; }
+  done
   [[ $(grep -cx '\[core\]' "$1") == 1 ]] || { echo "Expected one [core]: $1" >&2; return 1; }
-  awk '$0 == "[core]" { print "[omarchy]"; print "Server = https://pkgs.omarchy.org/stable/$arch"; print "" } { print }' \
-    "$1" > "$2.new" && mv "$2.new" "$2"
+  awk -v siglevel="$orchard_siglevel" -v omarchy="$([[ $architecture == aarch64 ]] && echo 1)" '
+    $0 == "[core]" {
+      print "[orchard]"; print "SigLevel = " siglevel
+      print "Server = https://github.com/OrchardLinux/packages/releases/download/repo-$arch"; print ""
+      if (omarchy) { print "[omarchy]"; print "Server = https://pkgs.omarchy.org/stable/$arch"; print "" }
+    }
+    { print }' "$1" > "$2.new" && mv "$2.new" "$2"
 }
-config=/etc/pacman.conf gpgdir=/etc/pacman.d/gnupg
+build_pacman=$(mktemp -d)
+trap 'rm -rf -- "$build_pacman"' EXIT
+config=$build_pacman/pacman.conf gpgdir=$build_pacman/gnupg
+repositories /etc/pacman.conf "$config"
+# $arch in the Server lines is the image's, whatever kernel runs this build.
+sed -i "s/^#\?Architecture *=.*/Architecture = $architecture/" "$config"
+cp -a /etc/pacman.d/gnupg "$gpgdir"
 if [[ $architecture == aarch64 ]]; then
-  build_pacman=$(mktemp -d)
-  trap 'rm -rf -- "$build_pacman"' EXIT
-  omarchy_repo /etc/pacman.conf "$build_pacman/pacman.conf"
-  cp -a /etc/pacman.d/gnupg "$build_pacman/gnupg"
-  config=$build_pacman/pacman.conf gpgdir=$build_pacman/gnupg
   pacman-key --gpgdir "$gpgdir" --add "$project/system/omarchy-pkgs.asc"
   pacman-key --gpgdir "$gpgdir" --lsign-key 40DFB630FF42BCFFB047046CF0134EE680CAC571
   requested+=(omarchy-keyring omacalc)
 fi
+for name in "${orchard_packages[@]}"; do
+  [[ " ${requested[*]} " == *" $name "* ]] || requested+=("$name")
+done
 # Download into the target's package cache with bounded, retried attempts that
 # move on to the next mirror, then install from that cache.
 "$project/system/pacman-download" --config "$config" --root "$root" --gpgdir "$gpgdir" -Sy --noconfirm "${requested[@]}"
+# One transaction for everything: our Mesa is the `mesa` the other packages
+# depend on, so Arch's never arrives and nothing has to be replaced.
+# Before it runs: each of our packages comes from [orchard], and nothing else does.
+planned=$(pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --print --print-format '%r/%n' "${requested[@]}")
+[[ $(grep '^orchard/' <<< "$planned" | sort) == "$(printf 'orchard/%s\n' "${orchard_packages[@]}" | sort)" ]] ||
+  { echo "Expected from [orchard] exactly: ${orchard_packages[*]}; pacman plans:" >&2; grep '^orchard/' <<< "$planned" >&2; exit 1; }
 pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --noconfirm "${requested[@]}"
-[[ $architecture != aarch64 ]] || omarchy_repo "$root/etc/pacman.conf" "$root/etc/pacman.conf"
-# wlroots0.20 replaces Arch's build of the same version: fast rotated pixman compositing.
-# mesa-orchard provides what Arch's mesa does and conflicts with it. Arch's came in as a
-# dependency above and leaves first: pacman declines a conflict's removal when not asked.
+repositories "$root/etc/pacman.conf" "$root/etc/pacman.conf"
+# Every dependency of every installed package is met.
+pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -Dk
 if [[ $architecture == aarch64 ]]; then
-  pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -Rdd mesa
-fi
-# One transaction: installed one by one, the first package needing mesa would pull
-# another provider (upstream Omarchy's mesa-aurora) before mesa-orchard arrives.
-pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -U "${local_packages[@]}"
-if [[ $architecture == aarch64 ]]; then
-  # Every dependency of every installed package is met again, and OpenGL is the fork's.
-  pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -Dk
-  [[ $(pacman --root "$root" -Qoq "$root/usr/lib/libEGL_mesa.so.0" "$root/usr/lib/libgbm.so.1" | sort -u) == mesa-orchard ]]
+  # OpenGL, the GPU's Vulkan driver and the GPU probe are the fork's Mesa's.
+  [[ $(pacman --root "$root" -Qoq "$root/usr/lib/libEGL_mesa.so.0" "$root/usr/lib/libgbm.so.1" \
+      "$root/usr/lib/libvulkan_powervr_mesa.so" "$root/usr/lib/orchard/gpu-probe" | sort -u) == mesa ]]
 fi
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
 # Native login needs seatd's socket and DRM/input device access (render: the

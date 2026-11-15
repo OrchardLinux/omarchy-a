@@ -63,8 +63,7 @@ class ImageProduction(unittest.TestCase):
             with patch.object(public_root, 'privileged_entries', return_value=privileges), \
                  patch.object(public_root, 'SYSTEM', root / 'overlay'), \
                  patch.object(public_root, 'cursor_files', return_value={'usr/libexec/omarchy-wtype': (b'wtype', 0o755)}), \
-                 patch.object(public_root, 'bluetooth_files', return_value={}), \
-                 patch.object(public_root, 'labwc_files', return_value={}):
+                 patch.object(public_root, 'bluetooth_files', return_value={}):
                 receipt = public_root.build(base, receipt, root / 'release', 'test', root / 'cursor-tools')
             self.assertNotIn('kernel_release', receipt)
             raw = subprocess.check_output(['zstd', '-dq', '-c', str(root / 'release/rootfs.tar.zst')])
@@ -100,7 +99,6 @@ class ImageProduction(unittest.TestCase):
             with patch.object(public_root, 'privileged_entries', return_value={}), \
                  patch.object(public_root, 'cursor_files', return_value={}), \
                  patch.object(public_root, 'bluetooth_files', return_value={}), \
-                 patch.object(public_root, 'labwc_files', return_value={}), \
                  self.assertRaisesRegex(ValueError, 'platform layer provides them'):
                 public_root.build(base, receipt, root / 'release', 'test', root / 'cursor-tools')
 

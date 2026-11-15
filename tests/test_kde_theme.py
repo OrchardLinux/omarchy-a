@@ -38,14 +38,6 @@ class KDEThemeTests(unittest.TestCase):
                 kde.publish(source, dest)
             self.assertEqual(dest.read_text(), 'original\n')
 
-    def test_dolphin_launcher_uses_kde_plugin_only_for_dolphin(self):
-        desktop = (ROOT / 'desktop/configuration/org.kde.dolphin.desktop').read_text()
-        wrapper = (ROOT / 'desktop/shell/bin/omarchy-dolphin').read_text()
-        self.assertIn('Exec=omarchy-dolphin %U', desktop)
-        self.assertIn('DBusActivatable=false', desktop)
-        self.assertIn('QT_QPA_PLATFORMTHEME=kde', wrapper)
-        self.assertIn('exec /usr/bin/dolphin', wrapper)
-
 
 if __name__ == '__main__':
     unittest.main()

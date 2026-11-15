@@ -1,5 +1,4 @@
 """The login session picks the GPU and the video decoder from what the board has and a probe shows to work; software stays the default."""
-import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -104,14 +103,6 @@ class Session(unittest.TestCase):
         env = self.run_session(self.GPU, probe="trap '' TERM\nexec sleep 60", ticks=3)
         self.assertEqual(env, self.SOFTWARE)
         self.assertEqual(self.journal, 'software desktop: the GPU probe did not finish within 10 s\n')
-
-    def test_probe_recipe_is_the_file_next_to_it(self):
-        # makepkg checks gpu-probe.c against the recipe: both must change together.
-        recipe = PROJECT / 'desktop/packages/mesa-orchard'
-        self.assertIn(hashlib.sha256((recipe / 'gpu-probe.c').read_bytes()).hexdigest(),
-                      (recipe / 'PKGBUILD').read_text())
-        self.assertIn(f'"${{pkgdir}}{PROBE}"', (recipe / 'PKGBUILD').read_text())
-        self.assertIn(PROBE.lstrip('/'), (PROJECT / 'desktop/build-sources').read_text())
 
     def test_gpu_desktop_opens_only_the_display_card(self):
         env = self.run_session(self.GPU)
