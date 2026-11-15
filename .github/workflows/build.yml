@@ -9,13 +9,22 @@ on:
       hardware_tag:
         description: Published orchard release supplying the compiled components
         required: true
-        default: v0.2.0
+        default: nightly
       hardware_run_id:
         description: Optional exact orchard run supplying first-release components
         required: false
       reuse_run_id:
         description: Exact prior run supplying unchanged boot and userspace artifacts
         required: false
+      nightly:
+        description: Publish this run as the rolling nightly pre-release (from main only)
+        type: boolean
+        default: false
+  # Nightly: main with orchard's newest nightly, as the rolling `nightly`
+  # pre-release, when either changed since the last one. After orchard's own
+  # nightly (03:17 UTC), so a change there is usually in the same night's build.
+  schedule:
+    - cron: '30 4 * * *'
 permissions:
   contents: read
   actions: read
@@ -26,10 +35,20 @@ jobs:
   orchard:
     # The orchard version this run builds with, resolved once for every job:
     # nightly becomes the newest nightly-YYYYMMDD-COMMIT, a tag stays as it is.
+    # And whether this run is a nightly (ci/nightly): a scheduled run is one
+    # only when this commit or orchard's nightly differs from what the last
+    # nightly was built from (its latest.json), so an unchanged night ends here.
     runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
+      nightly: ${{ steps.plan.outputs.nightly }}
+      name: ${{ steps.plan.outputs.name }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: ci/nightly
+          sparse-checkout-cone-mode: false
       - id: resolve
         run: |
           tag="$HARDWARE_TAG"
@@ -39,7 +58,24 @@ jobs:
           fi
           echo "orchard $tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          WANTED: ${{ inputs.nightly }}
+          ORCHARD_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          # No earlier nightly, or none that can be read: the run builds one.
+          gh release download nightly --pattern latest.json --dir previous 2>/dev/null || true
+          # A further input of the nightly is one more --input NAME=VALUE here.
+          ci/nightly plan --event "$EVENT" --wanted "$WANTED" --commit "$GITHUB_SHA" \
+            --input "orchard=$ORCHARD_TAG" --previous previous/latest.json | tee -a "$GITHUB_OUTPUT"
   test:
+    # Not on a night without a nightly: nothing changed since these last ran.
+    # They do not depend on the orchard a build would use: a failure to resolve it leaves them running.
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.orchard.outputs.nightly == 'true') }}
+    needs: orchard
     runs-on: ubuntu-24.04
     strategy:
       matrix:
@@ -72,7 +108,8 @@ jobs:
   artwork-check:
     # The artwork is drawn on a Mac, and only when boot/ changed: otherwise the
     # kept result of its last drawing is used, on a Linux runner.
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || needs.orchard.outputs.nightly == 'true'
+    needs: orchard
     runs-on: ubuntu-24.04
     outputs:
       runner: ${{ steps.kept.outputs.cache-hit == 'true' && 'ubuntu-24.04' || 'macos-15' }}
@@ -88,8 +125,8 @@ jobs:
           lookup-only: true
   # Pongo is not built here: releases ship hardware's one Pongo (quiet/pongo.bin).
   artwork:
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
-    needs: artwork-check
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || needs.orchard.outputs.nightly == 'true'
+    needs: [orchard, artwork-check]
     runs-on: ${{ needs.artwork-check.outputs.runner }}
     timeout-minutes: 30
     steps:
@@ -131,7 +168,7 @@ jobs:
           if-no-files-found: error
           retention-days: 2
   userspace:
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || needs.orchard.outputs.nightly == 'true'
     needs: orchard
     runs-on: ubuntu-24.04-arm
     container: docker.io/arch4edu/archlinuxarm@sha256:1db43d1af9917db5fd34af3dab64e2b229a21240e81bb765e3d2d3c34739d587
@@ -210,9 +247,10 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
           RUN_ID: ${{ github.run_id }}
+          NIGHTLY: ${{ needs.orchard.outputs.name }}
         run: |
           VERSION="preview-$RUN_ID"
-          if [[ "$REF_TYPE" == tag ]]; then VERSION="${REF_NAME#v}"; fi
+          if [[ "$REF_TYPE" == tag ]]; then VERSION="${REF_NAME#v}"; elif [[ -n "$NIGHTLY" ]]; then VERSION="$NIGHTLY"; fi
           bash system/build-rootfs --desktop out/desktop --release "$VERSION" --output out/base
           # Not compressed again: the root archive in it already is.
           tar -C out -cf out/omarchy-userspace.tar base cursor bluetooth labwc
@@ -226,7 +264,7 @@ jobs:
   assets:
     needs: [test, orchard, artwork, userspace]
     env:
-      # orchard's producers run as commands from this snapshot (ci/dependencies clones it).
+      # orchard's producers run as commands from this snapshot (ci/dependencies unpacks the release's).
       ORCHARD_CHECKOUT: ${{ github.workspace }}/.orchard
       HARDWARE_TAG: ${{ needs.orchard.outputs.tag }}
       # The root image keeps its owners: as root, directly on this runner.
@@ -276,14 +314,20 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
           RUN_ID: ${{ github.run_id }}
+          NIGHTLY: ${{ needs.orchard.outputs.name }}
         run: |
           . .venv/bin/activate
+          # orchard's snapshot in .orchard is its published source archive and no
+          # repository: git must not take this checkout around it for orchard's.
+          export GIT_CEILING_DIRECTORIES="$GITHUB_WORKSPACE"
           # .tar, or .tar.gz from a run before the archive stopped being compressed twice.
           tar -xf out/downloads/omarchy-userspace.tar* -C out
           tar -xzf out/downloads/boot-inputs.tar.gz -C out
           VERSION="preview-$RUN_ID"
           TAG="v$VERSION"
           if [[ "$REF_TYPE" == tag ]]; then TAG="$REF_NAME"; VERSION="${TAG#v}"; fi
+          # A nightly is its own pre-release: its files are published under its name.
+          if [[ "$REF_TYPE" != tag && -n "$NIGHTLY" ]]; then TAG="$NIGHTLY"; VERSION="$NIGHTLY"; fi
           # Every platform's kernel from orchard's bundles; the shared tools are in each.
           kernels=()
           for bundle in out/platforms/*/components; do
@@ -364,3 +408,68 @@ jobs:
           } > notes.md
           gh release create "$TAG" assets/* --draft --verify-tag --title "$TAG" \
             --notes-file notes.md
+  nightly:
+    # Every nightly is its own pre-release, nightly-YYYYMMDD-<commit>, with
+    # everything a release has; the release `nightly` points at the newest
+    # (latest.json, with what it was built from) and carries its install.sh,
+    # so one address always installs the newest. A nightly takes orchard's
+    # kernels and loaders from orchard's nightly, which orchard keeps 14 days:
+    # nightlies older than 7 days go, the newest always stays. GitHub's
+    # "latest" release (the README's install command) never is a pre-release.
+    if: needs.orchard.outputs.nightly == 'true' && github.ref == 'refs/heads/main'
+    needs: [orchard, assets]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      attestations: read
+    concurrency:
+      group: omarchy-a-nightly
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: omarchy-release-assets
+          path: assets
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: source
+          sparse-checkout: ci/nightly
+          sparse-checkout-cone-mode: false
+      - name: Publish the nightly and point nightly at it
+        env:
+          NAME: ${{ needs.orchard.outputs.name }}
+          ORCHARD_TAG: ${{ needs.orchard.outputs.tag }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          (cd assets && sha256sum --check --strict SHA256SUMS)
+          # A public build is attested (the assets job); its bundle is among the assets.
+          if [[ -f assets/omarchy-a-build.sigstore.jsonl ]]; then gh attestation verify assets/SHA256SUMS --repo "$GH_REPO"; fi
+          source/ci/nightly record --name "$NAME" --commit "$GITHUB_SHA" --run-id "$RUN_ID" \
+            --input "orchard=$ORCHARD_TAG" > assets/nightly.json
+          base="https://github.com/$GH_REPO/releases/download"
+          printf '%s\n' "omarchy-a main $GITHUB_SHA with orchard $ORCHARD_TAG (run $RUN_ID). Untested on hardware, not a release; kept 7 days." \
+            '' "Install: \`curl -fsSL $base/$NAME/install.sh | sh\`" > notes.md
+          # A rerun of the same commit on the same day replaces that nightly.
+          gh release delete "$NAME" --cleanup-tag --yes 2>/dev/null || true
+          gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$NAME" -f sha="$GITHUB_SHA" >/dev/null
+          gh release create "$NAME" assets/* --prerelease --verify-tag --latest=false --title "$NAME" --notes-file notes.md
+          # The pointer: tag nightly at the same commit; its install.sh is the
+          # nightly's own, which fetches and checks that nightly's installer.
+          mkdir pointer
+          cp assets/nightly.json pointer/latest.json
+          cp assets/install.sh pointer/
+          printf '%s\n' "Points at the newest nightly, $NAME (latest.json): omarchy-a main with orchard's newest nightly, untested on hardware." \
+            '' "Install it: \`curl -fsSL $base/nightly/install.sh | sh\`" > pointer-notes.md
+          gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
+          gh api "repos/$GH_REPO/git/refs" -f ref=refs/tags/nightly -f sha="$GITHUB_SHA" >/dev/null
+          gh release create nightly pointer/* --prerelease --verify-tag --latest=false --title "nightly → $NAME" \
+            --notes-file pointer-notes.md
+          echo "$base/nightly/install.sh" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove nightlies older than 7 days
+        run: |
+          gh release list --limit 1000 --json tagName --jq '.[].tagName' | source/ci/nightly expired --keep-days 7 |
+            while read -r tag; do gh release delete "$tag" --cleanup-tag --yes; done
