@@ -52,7 +52,7 @@ Example `shell.json` (bar subtree only shown):
 
 ## Narrow bars
 
-A bar shorter than 480 logical pixels, such as a phone's in portrait, has no room for a tablet's widgets beside a centered clock. It shows the same layout with each entry's `narrow` setting applied: `"narrow": false` leaves the widget out, and `"narrow": "left"` (or any other section) moves it to the end of that section. An entry without the setting stays where it is. Widgets can read `bar.narrow` to draw a smaller form.
+A bar shorter than 480 logical pixels, such as a phone's in portrait, has no room for a tablet's widgets beside a centered clock. It shows the same layout with each entry's `narrow` setting applied: `"narrow": false` takes the widget off the bar's first page, and `"narrow": "left"` (or any other section) moves it to the end of that section. Widgets taken off are not gone: the bar then ends in an overflow widget (three dots), and a press of it turns the bar to them, the next press back. An entry without the setting stays where it is. Widgets can read `bar.narrow` to draw a smaller form.
 
 ```json
 "right": [

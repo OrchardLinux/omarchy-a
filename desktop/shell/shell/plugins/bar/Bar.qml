@@ -66,7 +66,17 @@ Item {
     }
     return shortest > 0 && shortest < root.narrowBelow
   }
-  onNarrowChanged: applyLayout()
+  // Which page of the narrow layout shows: 0 is the bar as it starts, and the
+  // overflow widget turns to the pages holding what did not fit on it.
+  property int overflowPage: 0
+  onNarrowChanged: {
+    overflowPage = 0
+    applyLayout()
+  }
+  function cycleOverflow() {
+    overflowPage = (overflowPage + 1) % BarModel.narrowPages(configuredLayout)
+    applyLayout()
+  }
   property bool requestedTransparent: false
   property bool useTransparentForeground: false
   property bool transparent: false
@@ -775,7 +785,8 @@ Item {
   }
 
   function applyLayout() {
-    layoutConfig = narrow ? BarModel.narrowLayout(configuredLayout) : configuredLayout
+    if (overflowPage >= BarModel.narrowPages(configuredLayout)) overflowPage = 0
+    layoutConfig = narrow ? BarModel.narrowLayout(configuredLayout, overflowPage) : configuredLayout
     barConfigSerial++
   }
 
@@ -920,9 +931,32 @@ Item {
 
   function summonBarWidget(pluginId) {
     var item = findPanelWidget(pluginId)
-    if (!item || typeof item.open !== "function") return false
+    if (!item || typeof item.open !== "function") {
+      // A narrow bar may have the widget on another page: turn to it, and
+      // open the panel once the widget is there.
+      var page = narrow ? BarModel.narrowPageOf(configuredLayout, String(pluginId || "")) : -1
+      if (page < 0 || page === overflowPage) return false
+      overflowPage = page
+      applyLayout()
+      pageSummon.pluginId = String(pluginId)
+      pageSummon.tries = 0
+      pageSummon.restart()
+      return true
+    }
     item.open()
     return true
+  }
+
+  Timer {
+    id: pageSummon
+    property string pluginId: ""
+    property int tries: 0
+    interval: 50
+    onTriggered: {
+      var item = root.findPanelWidget(pluginId)
+      if (item && typeof item.open === "function") item.open()
+      else if (++tries < 40) restart()
+    }
   }
 
   function hideBarWidget(pluginId) {
