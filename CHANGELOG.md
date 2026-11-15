@@ -11,6 +11,23 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
+## Unreleased
+
+## [0.3.1] - 2026-11-15
+
+Built on orchard 0.3.1.
+
+### Desktop
+
+- Mesa, Labwc, wlroots, Omactivity and Files come from the Orchard package
+  repository and update with `pacman -Syu`.
+- Files replaces Dolphin on ARMv7.
+- At large display scales the bar keeps every icon behind a "…" button, and
+  panels scroll.
+- Holding a key on the on-screen keyboard repeats it.
+- The lock screen rotates with the same crossfade as the desktop.
+- The built-in microphone is listed as "Internal Microphone".
+
 ## [0.3.0] - 2026-11-12
 
 ### Highlights
