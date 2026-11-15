@@ -1,15 +1,10 @@
-"""Architecture provenance is checked from package and executable bytes."""
-import hashlib
+"""Architecture provenance is checked from executable bytes."""
 import importlib.machinery
 import importlib.util
-import io
 import json
-import os
 from pathlib import Path
-import shutil
 import struct
 import sys
-import tarfile
 from types import SimpleNamespace
 import tempfile
 import unittest
@@ -17,7 +12,7 @@ from unittest.mock import patch
 
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT / 'desktop'))
-from target import builder, check_package, source_pins
+from target import builder, source_pins
 
 
 def elf(architecture):
@@ -38,18 +33,6 @@ def load_desktop():
     with patch.dict(sys.modules, {'snapshot_buildenv': SimpleNamespace(buildenv=FakeBuildenv())}):
         loader.exec_module(module)
     return module
-
-
-def package(path, architecture, executable=None):
-    with tarfile.open(path, 'w:xz') as archive:
-        data = ('pkgname = fixture\narch = ' + architecture + '\n').encode()
-        item = tarfile.TarInfo('.PKGINFO')
-        item.size = len(data)
-        archive.addfile(item, io.BytesIO(data))
-        if executable is not None:
-            item = tarfile.TarInfo('usr/bin/fixture')
-            item.size = len(executable)
-            archive.addfile(item, io.BytesIO(executable))
 
 
 class FakeBuildenv:
@@ -84,32 +67,15 @@ class DesktopArchitecture(unittest.TestCase):
         self.assertEqual(environment.calls[0][1], {'arch': 'arm64'})
         self.assertEqual(environment.calls[0][0][1], PROJECT / 'desktop/Containerfile')
 
-    @unittest.skipUnless(shutil.which('bsdtar'), 'package verification uses libarchive')
-    def test_package_header_cannot_be_relabelled_by_a_manifest(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'component.pkg.tar.xz'
-            package(path, 'aarch64')
-            with self.assertRaisesRegex(ValueError, 'architecture differs'):
-                check_package(path, 'armv7h')
-            self.assertEqual(check_package(path, 'aarch64'), 'aarch64')
-            package(path, 'armv7h')
-            self.assertEqual(check_package(path, 'armv7h'), 'armv7h')
-            package(path, 'armv7h', elf('aarch64'))
-            with self.assertRaisesRegex(ValueError, 'armv7h ELF'):
-                check_package(path, 'armv7h')
-            package(path, 'armv7h', elf('armv7h'))
-            self.assertEqual(check_package(path, 'armv7h'), 'armv7h')
-
     def test_only_the_keyboard_is_compiled_from_a_pinned_source(self):
         self.assertEqual(set(source_pins()), {'wvkbd'})
 
-    @unittest.skipUnless(shutil.which('bsdtar'), 'package verification uses libarchive')
-    def test_receipt_verification_checks_the_keyboard_and_the_pinned_packages(self):
+    def test_receipt_verification_checks_the_keyboard_and_admits_no_package(self):
         desktop = load_desktop()
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            payload, packages = root / 'payload', root / 'packages'
-            payload.mkdir(); packages.mkdir()
+            root = Path(tmp) / 'desktop'
+            payload = root / 'payload'
+            payload.mkdir(parents=True)
             xpi = payload / desktop.XPI_PATH
             xpi.parent.mkdir(parents=True)
             xpi.write_bytes(b'extension fixture')
@@ -127,18 +93,17 @@ class DesktopArchitecture(unittest.TestCase):
                     'payload_manifest_sha256': desktop.sha(manifest)}
             write = lambda: (root / 'manifest.json').write_text(json.dumps(meta))
             write()
-            input_pins = root / 'inputs.json'
-            pins = {'architecture': 'aarch64', 'omafox_xpi': desktop.sha(xpi)}
-            input_pins.write_text(json.dumps(pins))
+            input_pins = Path(tmp) / 'inputs.json'
+            input_pins.write_text(json.dumps({'architecture': 'aarch64', 'omafox_xpi': desktop.sha(xpi)}))
             with patch.object(desktop, 'PINS', input_pins):
-                # ARMv7 has no package of its own here: everything comes from the repositories.
                 self.assertEqual(desktop.verify(root)['architecture'], 'armv7h')
                 with self.assertRaisesRegex(ValueError, 'Desktop input manifest'):
                     desktop.verify(root, 'aarch64')
-                package(packages / 'mesa.pkg.tar.zst', 'armv7h')
-                with self.assertRaisesRegex(ValueError, 'Desktop packages differ'):
+                # Packages come from the repositories: a desktop output carrying one is refused.
+                (root / 'packages').mkdir()
+                with self.assertRaisesRegex(ValueError, 'payload and nothing else'):
                     desktop.verify(root)
-                (packages / 'mesa.pkg.tar.zst').unlink()
+                (root / 'packages').rmdir()
                 # A keyboard recipe other than this checkout's is refused.
                 meta['keyboard']['recipe_sha256']['wvkbd-0.20.patch'] = '0' * 64
                 write()
@@ -153,24 +118,6 @@ class DesktopArchitecture(unittest.TestCase):
                 write()
                 with self.assertRaisesRegex(ValueError, 'armv7h ELF'):
                     desktop.verify(root, 'armv7h')
-                # 64-bit: the pinned downloads, of the image's architecture.
-                meta['architecture'] = 'aarch64'
-                for name, (_, key) in desktop.DOWNLOADS.items():
-                    package(packages / name, 'aarch64')
-                    pins[key] = desktop.sha(packages / name)
-                input_pins.write_text(json.dumps(pins))
-                meta['inputs'] = desktop.input_record(pins, 'aarch64')
-                meta['keyboard'] = desktop.keyboard_record('aarch64', pin['urls'][0], desktop.sha(keyboard))
-                write()
-                self.assertEqual(desktop.verify(root)['architecture'], 'aarch64')
-                name, (_, key) = next(iter(desktop.DOWNLOADS.items()))
-                package(packages / name, 'armv7h')
-                pins[key] = desktop.sha(packages / name)
-                input_pins.write_text(json.dumps(pins))
-                meta['inputs'] = desktop.input_record(pins, 'aarch64')
-                write()
-                with self.assertRaisesRegex(ValueError, 'Package architecture'):
-                    desktop.verify(root)
 
 
 if __name__ == '__main__':

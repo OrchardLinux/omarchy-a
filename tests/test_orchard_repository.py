@@ -26,8 +26,8 @@ Include = /etc/pacman.d/mirrorlist
 [alarm]
 Include = /etc/pacman.d/mirrorlist
 '''
-ORCHARD = {'aarch64': ['wlroots0.20', 'labwc', 'omafox', 'mesa', 'libva-v4l2-request'],
-           'armv7h': ['wlroots0.20', 'labwc', 'omafox', 'omacalc']}
+ORCHARD = {'aarch64': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'mesa', 'libva-v4l2-request', 'folio-touch'],
+           'armv7h': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'omacalc']}
 
 
 def section(start, end):
@@ -90,7 +90,7 @@ class Installation(unittest.TestCase):
         block = section('for name in "${orchard_packages[@]}"; do\n  [[ " ${requested[*]} "', 'useradd --root')
         block = block.replace('"$project/system/pacman-download"', 'pacman download').replace(
             'repositories "$root/etc/pacman.conf" "$root/etc/pacman.conf"', 'echo repositories >> "$LOG"')
-        packages = section('orchard_packages=(wlroots0.20', 'for package in "${local_packages[@]}"')
+        packages = section('orchard_packages=(wlroots0.20', '# Install signed packages into a clean target')
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / 'calls'
             script = ('pacman() { echo "$*" >> "$LOG"; case " $* " in\n'
@@ -108,27 +108,26 @@ class Installation(unittest.TestCase):
         code, calls, error = self.install('aarch64')
         self.assertEqual(code, 0, error)
         # Files takes Dolphin's place on 64-bit; labwc is asked for once.
-        wanted = 'base labwc wlroots0.20 omafox mesa libva-v4l2-request'
+        wanted = 'base labwc wlroots0.20 omafox omactivity mesa libva-v4l2-request folio-touch'
         self.assertEqual(calls[:3], [f'download -Sy --noconfirm {wanted}',
                                      f'-S --print --print-format %r/%n {wanted}', f'-S --noconfirm {wanted}'])
         self.assertEqual(calls[3], 'repositories')
-        # Only the two packages the repository does not have yet are local files.
-        self.assertEqual(calls[4], '--noconfirm -U /d/packages/omactivity.pkg.tar.zst /d/packages/folio.pkg.tar.zst')
-        self.assertEqual(calls[5], '-Dk')
-        self.assertIn('/r/usr/lib/libvulkan_powervr_mesa.so /r/usr/lib/orchard/gpu-probe', calls[6])
-        self.assertEqual(len(calls), 7)
-        # Arch's mesa never arrives: nothing is removed.
-        self.assertFalse([call for call in calls if re.search(r'(^| )-R', call)])
+        self.assertEqual(calls[4], '-Dk')
+        self.assertIn('/r/usr/lib/libvulkan_powervr_mesa.so /r/usr/lib/orchard/gpu-probe', calls[5])
+        self.assertEqual(len(calls), 6)
+        # Arch's mesa never arrives, so nothing is removed; and no package is a local file.
+        self.assertFalse([call for call in calls if re.search(r'(^| )-(R|U)', call)])
+        self.assertNotIn('-U', ASSEMBLE.read_text())
 
     def test_armv7_takes_omacalc_from_ours_and_keeps_archs_mesa_and_dolphin(self):
         code, calls, error = self.install('armv7h')
         self.assertEqual(code, 0, error)
-        wanted = 'base labwc dolphin wlroots0.20 omafox omacalc'
+        wanted = 'base labwc dolphin wlroots0.20 omafox omactivity omacalc'
         self.assertEqual(calls, [f'download -Sy --noconfirm {wanted}', f'-S --print --print-format %r/%n {wanted}',
                                  f'-S --noconfirm {wanted}', 'repositories', '-Dk'])
 
     def test_a_package_of_ours_taken_elsewhere_stops_before_anything_installs(self):
-        for planned in (['wlroots0.20', 'labwc', 'omafox', 'libva-v4l2-request'],  # mesa would be Arch's
+        for planned in ([name for name in ORCHARD['aarch64'] if name != 'mesa'],  # mesa would be Arch's
                         ORCHARD['aarch64'] + ['firefox'], []):
             with self.subTest(planned=planned):
                 code, calls, error = self.install('aarch64', planned=planned)

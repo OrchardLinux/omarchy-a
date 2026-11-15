@@ -5,7 +5,7 @@ modules and orchard's hardware defaults under `/usr/lib`) goes next to it at
 install time. This directory is Omarchy A's policy only.
 
 - `packages.txt`: required signed Arch Linux ARM userspace packages; never a kernel package.
-- `build-rootfs`, `assemble-rootfs`: produce the clean userspace base and its package snapshot and receipt. The platform's own packages (Mesa, wlroots, Labwc, the video bridge, Omafox) come from the Orchard package repository, listed first in the image's `/etc/pacman.conf`; see [BUILD.md](../BUILD.md#packages).
+- `build-rootfs`, `assemble-rootfs`: produce the clean userspace base and its package snapshot and receipt. The platform's own packages (Mesa, wlroots, Labwc, the video bridge, Omafox, Omactivity, Files) come from the Orchard package repository, listed first in the image's `/etc/pacman.conf`; see [BUILD.md](../BUILD.md#packages).
 - `overlay/`: power and sleep policy, sudo and polkit rules, backlight permissions, Bluetooth and screen helpers.
 - `release/public_root.py`: combine the base, desktop and overlay; explicitly set helper executable modes.
 

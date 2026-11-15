@@ -2,7 +2,7 @@
 """Build the on-screen keyboard and stage the pinned Omarchy UI.
 
 Nothing here is a package: Mesa, wlroots, Labwc, the video bridge, Omafox and
-ARMv7's Omacalc are installed into the image from the Orchard package
+Omactivity, Files and ARMv7's Omacalc are installed into the image from the Orchard package
 repository (system/assemble-rootfs). The keyboard is a patched wvkbd binary
 of the desktop payload, compiled here from its pinned source.
 """
@@ -18,18 +18,13 @@ import tempfile
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 from snapshot_buildenv import buildenv
-from target import validate, check_elf, machine, podman_arch, builder, source_pins, check_package
+from target import validate, check_elf, machine, podman_arch, builder, source_pins
 native = buildenv.native
 
 HERE = Path(__file__).resolve().parent
 INPUTS = HERE / 'arm64/inputs'
 PINS = HERE / 'arm64/inputs.json'
 FILES = {'omafox_xpi': INPUTS / '@omafox.xpi'}
-# Prebuilt on 64-bit boards: packages their own repositories publish, not yet
-# in the Orchard package repository. Downloaded at build time and pinned by
-# SHA-256 in arm64/inputs.json; they move to the repository when it has them.
-DOWNLOADS = {'omactivity.pkg.tar.zst': ('omactivity_url', 'omactivity_package'),
-             'folio.pkg.tar.zst': ('folio_url', 'folio_package')}
 KEYBOARD_PATH = 'home/tablet/.local/share/omarchy-ipad/trials/wvkbd-mobintl-v0.20-font18-special15-state'
 KEYBOARD_RECIPE = ('wvkbd-0.20.patch', 'friendly-layout.py', 'apply-shift.py', 'orchard-shift.h')
 XPI_PATH = 'usr/lib/firefox/distribution/extensions/@omafox.xpi'
@@ -43,21 +38,9 @@ def sha(path):
     return h.hexdigest()
 
 
-def input_record(pins, architecture):
+def input_record(pins):
     """The pinned inputs a desktop output was built from, as its manifest records them."""
-    names = list(FILES)
-    if architecture == 'aarch64':
-        names += [key for _, key in DOWNLOADS.values()]
-    return {name: pins[name] for name in names}
-
-
-def download(url, digest, target):
-    print('Fetching:', url, flush=True)
-    with urlopen(url, timeout=120) as response, target.open('wb') as output:
-        shutil.copyfileobj(response, output)
-    if sha(target) != digest:
-        target.unlink()
-        raise ValueError(f'Downloaded package hash differs: {url}')
+    return {name: pins[name] for name in FILES}
 
 
 def fetch(entry, target):
@@ -123,19 +106,13 @@ def verify(directory, architecture=None):
     lock = dict(line.split('=', 1) for line in (HERE / 'upstream.lock').read_text().splitlines() if '=' in line)
     if (meta['architecture'] != architecture or
             meta['omarchy_commit'] != lock['omarchy_commit'] or
-            meta['inputs'] != input_record(pins, architecture)):
+            meta['inputs'] != input_record(pins)):
         raise ValueError('Desktop input manifest differs')
     built = meta['keyboard']
     if built != keyboard_record(architecture, built['source_url'], built['sha256']):
         raise ValueError('Keyboard source or recipe differs')
-    packages = directory / 'packages'
-    local = list(DOWNLOADS) if architecture == 'aarch64' else []
-    if {path.name for path in packages.iterdir()} != set(local):
-        raise ValueError('Desktop packages differ')
-    for name in local:
-        if sha(packages / name) != pins[DOWNLOADS[name][1]]:
-            raise ValueError('Downloaded package differs: ' + name)
-        check_package(packages / name, architecture)
+    if {path.name for path in directory.iterdir()} != {'manifest.json', 'payload'}:
+        raise ValueError('The desktop output is its payload and nothing else: packages come from the repositories')
     payload = directory / 'payload'
     manifest = payload / 'arch-ipad-ui-manifest.json'
     if sha(manifest) != meta['payload_manifest_sha256']:
@@ -196,12 +173,8 @@ def build(output, architecture='aarch64', builder_image=None):
                         '--upstream', str(upstream), '--keyboard', str(keyboard),
                         '--keyboard-sha256', built['sha256'],
                         '--omafox-xpi', str(FILES['omafox_xpi']), '--architecture', architecture], check=True)
-        packages = result_dir / 'packages'
-        packages.mkdir()
-        for name, (url, key) in DOWNLOADS.items() if architecture == 'aarch64' else ():
-            download(pins[url], pins[key], packages / name)
         meta = {'architecture': architecture, 'omarchy_commit': commit,
-                'inputs': input_record(pins, architecture), 'keyboard': built,
+                'inputs': input_record(pins), 'keyboard': built,
                 'payload_manifest_sha256': sha(result_dir / 'payload/arch-ipad-ui-manifest.json')}
         (result_dir / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')
         verify(result_dir, architecture)

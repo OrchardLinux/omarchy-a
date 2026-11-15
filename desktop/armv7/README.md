@@ -3,7 +3,7 @@
 `desktop/build --architecture armv7h` builds the same desktop payload for an
 ARMv7 Arch Linux ARM userspace: the pinned Omarchy UI and the keyboard, compiled
 for ARMv7. No package is built: the image installs `wlroots0.20`, `labwc`,
-`omafox` and `omacalc` from the ARMv7 channel of the
+`omafox`, `omactivity` and `omacalc` from the ARMv7 channel of the
 [Orchard package repository](https://github.com/OrchardLinux/packages)
 (`repo-armv7h`), listed before Arch Linux ARM's repositories. Upstream Omarchy
 publishes no ARMv7 packages, so an ARMv7 image has no `[omarchy]` repository

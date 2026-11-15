@@ -2,7 +2,7 @@
 
 ## GitHub Actions
 
-`.github/workflows/build.yml` runs unit tests on pull requests and `main`. Version tags (`v*`), manual dispatches and the nightly additionally generate the loader artwork on macOS, build m1n1 on Linux ARM64, and the signed Arch Linux ARM userspace on a native ARM64 worker using the same pinned Arch job image and `install-toolchain` recipes as local builds. No package is built: the image installs Mesa, wlroots, Labwc, the video bridge and Omafox from the Orchard package repository (below). The job compiles only the keyboard and the cursor helper; rootfs package assembly runs as root in the disposable job. No nested Podman is used. Shared recipe path variables select actual CI paths instead of container mounts. Native execution is not a security or network sandbox.
+`.github/workflows/build.yml` runs unit tests on pull requests and `main`. Version tags (`v*`), manual dispatches and the nightly additionally generate the loader artwork on macOS, build m1n1 on Linux ARM64, and the signed Arch Linux ARM userspace on a native ARM64 worker using the same pinned Arch job image and `install-toolchain` recipes as local builds. No package is built: the image installs Mesa, wlroots, Labwc, the video bridge, Omafox, Omactivity and Files from the Orchard package repository (below). The job compiles only the keyboard and the cursor helper; rootfs package assembly runs as root in the disposable job. No nested Podman is used. Shared recipe path variables select actual CI paths instead of container mounts. Native execution is not a security or network sandbox.
 
 The build jobs start beside the tests; assembly, and with it every draft release and preview, waits for the tests. One result is kept between runs in GitHub's cache: the boot artwork, per content of `boot/` (`boot-artwork-v1-…`), drawn on a Mac only when that changed; a newer ImageMagick or librsvg alone does not redraw it. Raise `v1` in the key to start from nothing.
 
@@ -74,11 +74,11 @@ Retain each component's receipt. Do not change hardware activation or timing as 
 
 No package is built in this repository. The image's pacman takes a package from the first repository that lists it, in this order, during the build and on the installed tablet (`/etc/pacman.conf`):
 
-1. `[orchard]`, the [Orchard package repository](https://github.com/OrchardLinux/packages), built once for every Orchard distribution: `mesa` (the OrchardLinux fork with the GPU driver; 64-bit), `wlroots0.20`, `labwc` (with the tablet patches), `libva-v4l2-request` (64-bit), `omafox`, and `omacalc` on ARMv7. Their sources, patches and recipes are there.
+1. `[orchard]`, the [Orchard package repository](https://github.com/OrchardLinux/packages), built once for every Orchard distribution: `mesa` (the OrchardLinux fork with the GPU driver; 64-bit), `wlroots0.20`, `labwc` (with the tablet patches), `libva-v4l2-request` (64-bit), `omafox`, `omactivity`, `folio-touch` (Files; 64-bit images, ARMv7 keeps Dolphin), and `omacalc` on ARMv7. Their sources, patches and recipes are there.
 2. `[omarchy]`, upstream Omarchy's repository (64-bit only; upstream publishes nothing for ARMv7): Omacalc.
 3. Arch Linux ARM's repositories: everything else.
 
-`system/assemble-rootfs` installs all of them in one transaction and refuses an image in which one of the Orchard packages would come from elsewhere. `[orchard]` is not signed yet (`SigLevel = Optional TrustAll`); the comment marked `SIGNING` in `system/assemble-rootfs` is where that changes once its key exists. Omactivity and Files are not in the repository yet: `desktop/build` still fetches the packages their own repositories publish, pinned in `desktop/arm64/inputs.json`.
+`system/assemble-rootfs` installs all of them in one transaction and refuses an image in which one of the Orchard packages would come from elsewhere. `[orchard]` is not signed yet (`SigLevel = Optional TrustAll`); the comment marked `SIGNING` in `system/assemble-rootfs` is where that changes once its key exists. No package file is pinned or downloaded here any more.
 
 A change to one of these packages is made in the packages repository and reaches tablets through `pacman -Syu` and the next image; the nightly notices the new index.
 

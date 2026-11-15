@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 from snapshot_buildenv import buildenv
-from target import validate, check_elf, machine, podman_arch, builder, source_pins, check_package
+from target import validate, check_elf, machine, podman_arch, builder
 from urllib.request import urlopen
 import xml.etree.ElementTree as ET
 
