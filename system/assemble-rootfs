@@ -96,7 +96,7 @@ pacman --config "$config" --root "$root" --gpgdir "$gpgdir" --noconfirm -U "${lo
 if [[ $architecture == aarch64 ]]; then
   # Every dependency of every installed package is met again, and OpenGL is the fork's.
   pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -Dk
-  [[ $(pacman --root "$root" -Qoq /usr/lib/libEGL_mesa.so.0 /usr/lib/libgbm.so.1 | sort -u) == mesa-orchard ]]
+  [[ $(pacman --root "$root" -Qoq "$root/usr/lib/libEGL_mesa.so.0" "$root/usr/lib/libgbm.so.1" | sort -u) == mesa-orchard ]]
 fi
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
 # Native login needs seatd's socket and DRM/input device access (render: the
