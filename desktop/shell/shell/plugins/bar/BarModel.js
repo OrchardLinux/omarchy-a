@@ -394,12 +394,60 @@ function layoutWidgets(layout, memo) {
 
 // The layout a narrow bar shows, such as a phone's in portrait, where the
 // widgets of a tablet's bar run into the clock. It is made from the one layout
-// in shell.json by each entry's `narrow` setting: false leaves the widget
-// out, a section's name moves it to the end of that section, and an entry
-// without the setting stays where it is. The entries themselves are passed
-// on untouched, so a widget keeps its settings in either layout.
-function narrowLayout(layout) {
+// in shell.json by each entry's `narrow` setting: false takes the widget
+// off the first page, a section's name moves it to the end of that section,
+// and an entry without the setting stays where it is. The entries themselves
+// are passed on untouched, so a widget keeps its settings in either layout.
+//
+// No widget is dropped for good: when some are off the first page, the right
+// section ends in the overflow widget, and each press of it turns to the next
+// page. Page 1 and up show the widgets taken off: the left section keeps the
+// widgets that are its own and fills up to narrowSlots with them, the right
+// section takes the next ones beside the overflow widget. After the last page
+// comes the first again.
+var overflowId = "omarchy.overflow"
+// Touch slots beside a centered clock on the narrowest bars (320 to 430 px).
+var narrowSlots = 3
+
+function narrowOverflow(layout) {
   var source = isPlainObject(layout) ? layout : {}
+  var held = []
+  var ownLeft = 0
+  for (var r = 0; r < sections.length; r++) {
+    var list = Array.isArray(source[sections[r]]) ? source[sections[r]] : []
+    for (var i = 0; i < list.length; i++) {
+      var hint = isPlainObject(list[i]) ? list[i].narrow : undefined
+      if (hint === false) held.push(list[i])
+      else if (sections[r] === "left" && (hint === undefined || hint === "left")) ownLeft++
+    }
+  }
+  var leftRoom = Math.max(0, narrowSlots - ownLeft)
+  return { held: held, leftRoom: leftRoom, pageSize: leftRoom + narrowSlots - 1 }
+}
+
+function narrowPages(layout) {
+  var overflow = narrowOverflow(layout)
+  return 1 + Math.ceil(overflow.held.length / overflow.pageSize)
+}
+
+// The page a narrow bar shows the widget on, or -1 when the layout lacks it.
+function narrowPageOf(layout, id) {
+  var overflow = narrowOverflow(layout)
+  for (var h = 0; h < overflow.held.length; h++)
+    if (entryId(overflow.held[h]) === id) return 1 + Math.floor(h / overflow.pageSize)
+  var source = isPlainObject(layout) ? layout : {}
+  for (var r = 0; r < sections.length; r++) {
+    var list = Array.isArray(source[sections[r]]) ? source[sections[r]] : []
+    for (var i = 0; i < list.length; i++) if (entryId(list[i]) === id) return 0
+  }
+  return -1
+}
+
+function narrowLayout(layout, page) {
+  var source = isPlainObject(layout) ? layout : {}
+  var overflow = narrowOverflow(source)
+  var shown = Math.floor(Number(page) || 0)
+  if (shown < 0 || shown >= narrowPages(source)) shown = 0
   var out = {}
   for (var s = 0; s < sections.length; s++) out[sections[s]] = []
   for (var r = 0; r < sections.length; r++) {
@@ -407,9 +455,17 @@ function narrowLayout(layout) {
     for (var i = 0; i < list.length; i++) {
       var hint = isPlainObject(list[i]) ? list[i].narrow : undefined
       if (hint === false) continue
-      out[sections.indexOf(hint) !== -1 ? hint : sections[r]].push(list[i])
+      var target = sections.indexOf(hint) !== -1 ? hint : sections[r]
+      if (shown > 0 && (target === "right" || (target === "left" && target !== sections[r]))) continue
+      out[target].push(list[i])
     }
   }
+  if (shown > 0) {
+    var turned = overflow.held.slice((shown - 1) * overflow.pageSize, shown * overflow.pageSize)
+    out.left = out.left.concat(turned.slice(0, overflow.leftRoom))
+    out.right = turned.slice(overflow.leftRoom)
+  }
+  if (overflow.held.length > 0) out.right.push({ id: overflowId })
   return out
 }
 
@@ -656,6 +712,8 @@ if (typeof module !== "undefined") {
     sectionRows: sectionRows,
     layoutWidgets: layoutWidgets,
     narrowLayout: narrowLayout,
+    narrowPages: narrowPages,
+    narrowPageOf: narrowPageOf,
     fadeShares: fadeShares,
     roomLengths: roomLengths,
     moveEntry: moveEntry,

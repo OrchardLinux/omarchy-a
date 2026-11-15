@@ -45,6 +45,7 @@ struct kbd {
     bool show_popup;
     int mods, compose, last_abc_index;
     void *prevlayout;
+    struct key *last_press;
 };
 static struct kbd keyboard;
 static struct key test_key;
@@ -70,9 +71,9 @@ static void kbd_draw_key(struct kbd *kb, struct key *key, int type) {
 static void kbd_draw_layout(struct kbd *kb) { (void)kb; redraws++; }
 static void kbd_unpress_key(struct kbd *kb, uint32_t time) { (void)kb; (void)time; }
 static void kbd_press_key(struct kbd *kb, struct key *key, uint32_t time) {
-    (void)kb; assert(key == &test_key); pressed++; emitted_time = time;
+    assert(key == &test_key); kb->last_press = key; pressed++; emitted_time = time;
 }
-static void kbd_release_key(struct kbd *kb, uint32_t time) { (void)kb; (void)time; released++; }
+static void kbd_release_key(struct kbd *kb, uint32_t time) { (void)time; kb->last_press = NULL; released++; }
 static void kbd_switch_layout(struct kbd *kb, void *layout, int index) {
     (void)kb; (void)layout; (void)index;
 }
@@ -84,9 +85,11 @@ static void drag_begin(enum drag_source source, int32_t id, int y, uint32_t time
 static void drag_motion(int y, uint32_t time) { (void)y; (void)time; }
 static void drag_finish(bool cancelled, uint32_t time) { (void)cancelled; (void)time; finished++; }
 static void kbd_motion_key(struct kbd *kb, uint32_t time, int x, int y) {
-    (void)kb; (void)time; (void)x; (void)y; moved++;
+    (void)time; (void)x; (void)y; kb->last_press = NULL; moved++; /* upstream lets go of the key */
 }
-static bool animating;
+static bool animating, cur_press;
+typedef int32_t wl_fixed_t;
+static int wl_fixed_to_int(wl_fixed_t value) { return value / 256; }
 '''
 
 TESTS = r'''
@@ -139,6 +142,41 @@ int main(void) {
     wl_touch_cancel(NULL, NULL);
     assert(redraws == 0);
 
+    /* A held key stays held while the finger rests on it, so it can repeat:
+     * a resting finger jitters. Leaving the key lets go of it. */
+    reset();
+    pending_begin(DRAG_TOUCH, 7, 20, 20, 7000);
+    pending_commit(); /* the long-hold deadline */
+    wl_touch_motion(NULL, NULL, 7400, 7, 22 * 256, 21 * 256);
+    wl_touch_motion(NULL, NULL, 7500, 7, 19 * 256, 20 * 256);
+    assert(pressed == 1 && moved == 0 && keyboard.last_press == &test_key);
+    wl_touch_motion(NULL, NULL, 7600, 7, 200 * 256, 20 * 256);
+    assert(moved == 1 && keyboard.last_press == NULL);
+    wl_touch_up(NULL, NULL, 0, 7700, 7);
+    assert(pressed == 1 && released == 1);
+
+    /* Sliding sideways within the key before the deadline presses it and
+     * keeps it held; sliding off it presses and lets go, as before. */
+    reset();
+    pending_begin(DRAG_TOUCH, 7, 20, 20, 8000);
+    pending_motion(40, 20, 8050);
+    assert(pressed == 1 && moved == 0 && keyboard.last_press == &test_key);
+    reset();
+    pending_begin(DRAG_TOUCH, 7, 20, 20, 8100);
+    pending_motion(200, 20, 8150);
+    assert(pressed == 1 && moved == 1);
+
+    /* The mouse pointer follows the same rule. */
+    reset();
+    cur_press = true;
+    pending_begin(DRAG_POINTER, 0, 20, 20, 9000);
+    pending_commit();
+    wl_pointer_motion(NULL, NULL, 9400, 21 * 256, 22 * 256);
+    assert(moved == 0 && keyboard.last_press == &test_key);
+    wl_pointer_motion(NULL, NULL, 9500, 200 * 256, 22 * 256);
+    assert(moved == 1);
+
+    puts("Held keys: stay held under a resting finger, let go when the finger leaves OK");
     puts("Press feedback: immediate draw, deferred input, tap/hold, swipe, cancel, pointer leave and latched modifiers OK");
 }
 '''
@@ -147,8 +185,9 @@ int main(void) {
 def main():
     source = Path(sys.argv[1]).read_text()
     functions = "\n\n".join(function(source, name) for name in
-                             ("pending_preview_clear", "pending_begin", "pending_commit", "pending_motion",
-                              "wl_touch_up", "wl_touch_cancel", "wl_pointer_leave"))
+                             ("pending_preview_clear", "pending_begin", "pending_commit", "held_motion",
+                              "pending_motion", "wl_touch_up", "wl_touch_motion", "wl_touch_cancel",
+                              "wl_pointer_leave", "wl_pointer_motion"))
     # Callback names also appear in forward declarations: select definitions.
     assert "void wl_touch_up(" in functions
     compiler = shutil.which("cc")

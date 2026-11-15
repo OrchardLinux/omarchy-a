@@ -24,7 +24,7 @@
 +    fclose(file);
 +}
 +
-@@ -137,0 +151,182 @@
+@@ -137,0 +151,193 @@
 +static void request_hide(void);
 +
 +/* Drag the actual layer surface, preserving its exclusive zone until hide.
@@ -167,6 +167,17 @@
 +    }
 +}
 +
++/* A key that is held stays held while the finger rests on it. A resting
++ * finger never keeps perfectly still, and upstream lets go of the key on any
++ * movement, so a held key (Backspace, a letter, an arrow) would never get to
++ * repeat. Only leaving the key lets go of it. */
++static void held_motion(int x, int y, uint32_t time)
++{
++    if (keyboard.last_press && kbd_get_key(&keyboard, x, y) == keyboard.last_press)
++        return;
++    kbd_motion_key(&keyboard, time, x, y);
++}
++
 +static void pending_motion(int x, int y, uint32_t time)
 +{
 +    int dx = x - pending_x, dy = y - pending_y;
@@ -182,7 +193,7 @@
 +        drag_motion(y, time);
 +    } else if (abs(dx) >= 12 || dy <= -12) {
 +        pending_commit();
-+        kbd_motion_key(&keyboard, time, x, y);
++        held_motion(x, y, time);
 +    }
 +}
 +
@@ -207,7 +218,7 @@
 +    animating = animation_from != animation_to;
 +    if (!animating) hide();
 +}
-@@ -255,2 +448,34 @@
+@@ -255,2 +459,34 @@
 -    struct key *next_key;
 -    uint32_t touch_x, touch_y;
 +    if (drag_source != DRAG_NONE || animating || pending_source != DRAG_NONE) return;
@@ -244,7 +255,7 @@
 +    }
 +
 +    int touch_x, touch_y;
-@@ -261,36 +486,10 @@
+@@ -261,36 +497,10 @@
 -    kbd_unpress_key(&keyboard, time);
 -
 -    next_key = kbd_get_key(&keyboard, touch_x, touch_y);
@@ -291,22 +302,25 @@
 +        return;
 +    }
 +    if (pending_source != DRAG_NONE) return;
-@@ -307,0 +507,6 @@
+@@ -297 +507 @@
+-    kbd_motion_key(&keyboard, time, touch_x, touch_y);
++    held_motion(touch_x, touch_y, time);
+@@ -307,0 +518,6 @@
 +    if (pending_source == DRAG_TOUCH) {
 +        pending_preview_clear();
 +        pending_source = DRAG_NONE;
 +    }
 +    if (drag_source == DRAG_TOUCH) drag_finish(true, drag_last_time);
 +    else if (layer_surface_configured) kbd_release_key(&keyboard, 0);
-@@ -326,0 +532,2 @@
+@@ -326,0 +543,2 @@
 +    cur_x = wl_fixed_to_int(surface_x);
 +    cur_y = wl_fixed_to_int(surface_y);
-@@ -333,0 +541,4 @@
+@@ -333,0 +552,4 @@
 +    if (pending_source == DRAG_POINTER) {
 +        pending_preview_clear();
 +        pending_source = DRAG_NONE;
 +    }
-@@ -347,2 +558,7 @@
+@@ -347,2 +569,7 @@
 -    if (cur_press) {
 -        kbd_motion_key(&keyboard, time, cur_x, cur_y);
 +    if (drag_source == DRAG_POINTER) {
@@ -315,22 +329,22 @@
 +    }
 +    if (cur_press && drag_source == DRAG_NONE && !animating) {
 +        if (pending_source == DRAG_POINTER) pending_motion(cur_x, cur_y, time);
-+        else if (pending_source == DRAG_NONE) kbd_motion_key(&keyboard, time, cur_x, cur_y);
-@@ -360 +576 @@
++        else if (pending_source == DRAG_NONE) held_motion(cur_x, cur_y, time);
+@@ -360 +587 @@
 -    struct key *next_key;
 +    if (button != BTN_LEFT) return;
-@@ -362 +578,5 @@
+@@ -362 +589,5 @@
 -
 +    if (drag_source == DRAG_POINTER) {
 +        if (!cur_press) drag_finish(false, time);
 +        return;
 +    }
 +    if (drag_source != DRAG_NONE || animating) return;
-@@ -364 +584,2 @@
+@@ -364 +595,2 @@
 -        kbd_unpress_key(&keyboard, time);
 +        if (pending_source == DRAG_NONE && cur_x >= 0 && cur_y >= 0)
 +            pending_begin(DRAG_POINTER, 0, cur_x, cur_y, time);
-@@ -366,11 +587,2 @@
+@@ -366,11 +598,2 @@
 -    }
 -
 -    if (cur_press && cur_x >= 0 && cur_y >= 0) {
@@ -344,18 +358,18 @@
 -        }
 +        if (pending_source == DRAG_POINTER) pending_commit();
 +        else if (pending_source != DRAG_NONE) return;
-@@ -525 +737 @@
+@@ -525 +748 @@
 -    hide();
 +    request_hide();
-@@ -589,0 +809,1 @@
+@@ -589,0 +820,1 @@
 +        resize_show = !hidden && !(animating && animation_hide);
-@@ -596,0 +817,3 @@
+@@ -596,0 +828,3 @@
 +        /* Still acknowledge: an unanswered configure makes the compositor
 +         * consider this surface unsettled for as long as it lives. */
 +        zwlr_layer_surface_v1_ack_configure(surface, serial);
-@@ -607,0 +820 @@
+@@ -607,0 +831 @@
 +    report_visibility(true);
-@@ -641,0 +860,13 @@
+@@ -641,0 +871,13 @@
 +    /* First buffer is mapped below the edge; animate every show path but
 +     * the rebuild after a resize, where the keyboard was already up. */
 +    if (resize_show) {
@@ -369,16 +383,16 @@
 +        animation_started = monotonic_ms();
 +        animating = true;
 +    }
-@@ -721,0 +941,6 @@
+@@ -721,0 +952,6 @@
 +    animating = false;
 +    drag_source = DRAG_NONE;
 +    pending_source = DRAG_NONE;
 +    pending_preview_visible = false;
 +    drag_offset = 0;
 +    cur_press = false;
-@@ -760,0 +986 @@
+@@ -760,0 +997 @@
 +    report_visibility(false);
-@@ -766,0 +993,7 @@
+@@ -766,0 +1004,7 @@
 +        if (animating && animation_hide) {
 +            animation_from = drag_offset;
 +            animation_to = 0;
@@ -386,26 +400,26 @@
 +            animation_started = monotonic_ms();
 +            animating = animation_from != animation_to;
 +        }
-@@ -791,0 +1025,4 @@
+@@ -791,0 +1036,4 @@
 +    /* Set the offscreen position before the first buffer, avoiding a flash.
 +     * Compensate the negative margin to reserve one stable keyboard height. */
 +    drag_offset = height;
 +    zwlr_layer_surface_v1_set_margin(layer_surface, 0, 0, -(int)height, 0);
-@@ -793 +1030 @@
+@@ -793 +1041 @@
 -        zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, height);
 +        zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, height * 2);
-@@ -804 +1041 @@
+@@ -804 +1052 @@
 -    if (hidden)
 +    if (hidden || (animating && animation_hide))
-@@ -807 +1044 @@
+@@ -807 +1055 @@
 -        hide();
 +        request_hide();
-@@ -1185 +1422,4 @@
+@@ -1185 +1433,4 @@
 -        poll(fds, 2, -1);
 +        poll(fds, 2, (animating || pending_source != DRAG_NONE) ? 16 : -1);
 +        animation_tick();
 +        if (pending_source != DRAG_NONE && monotonic_ms() - pending_started >= 300)
 +            pending_commit();
-@@ -1202 +1442 @@
+@@ -1202 +1453 @@
 -                hide();
 +                request_hide();

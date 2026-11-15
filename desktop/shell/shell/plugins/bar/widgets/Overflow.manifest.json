@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy.overflow",
+  "name": "Overflow",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "Turns a narrow bar to the widgets that do not fit on it",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Overflow.qml"
+  },
+  "barWidget": {
+    "displayName": "Overflow",
+    "description": "Turns a narrow bar to the widgets that do not fit on it",
+    "category": "Layout",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}

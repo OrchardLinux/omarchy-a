@@ -14,8 +14,16 @@
 #   multi-monitor layout step (omarchy-hyprland-monitor-layout) and no Lua
 #   eval, so the connector-name guard for that eval is gone; persist still
 #   validates the name before writing it.
+# - A scale never leaves the screen with less than MIN_LOGICAL logical pixels
+#   on its short side, the smallest the shell is laid out for: a bigger
+#   request lands on the largest scale that keeps that much, so the bar and
+#   the Display panel that change it back always fit.
+# - persist is called from beside this script, not through PATH, which a
+#   caller from outside the session (ssh) does not have set up.
 
 SCALES=(1 1.25 1.6 2 3 4)
+MIN_LOGICAL=320
+BIN_DIR=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
 SCALE_LOG="$STATE_DIR/monitors/scaling"
 
@@ -71,14 +79,18 @@ audit_scale_change() {
 # Hyprland only accepts scales where the mode divides into whole logical
 # pixels (in 1/120 steps), so clean scales are divisors of gcd(w*120, h*120).
 # Round the requested scale up to the nearest clean value.
+# Then, while that leaves the short side under MIN_LOGICAL logical pixels,
+# step down to the next clean value (never below 1).
 clean_scale() {
-  awk -v scale="$1" -v width="$2" -v height="$3" '
+  awk -v scale="$1" -v width="$2" -v height="$3" -v min="$MIN_LOGICAL" '
     function gcd(a, b, t) { while (b) { t = a % b; a = b; b = t } return a }
     BEGIN {
       g = gcd(width * 120, height * 120)
       k = int(scale * 120 + 0.5)
       if (k > g) k = g
       while (g % k != 0) k++
+      short = (width < height ? width : height) * 120
+      while (k > 120 && short / k < min) { k--; while (k > 120 && g % k != 0) k-- }
       printf "%g\n", k / 120
     }'
 }
@@ -98,7 +110,7 @@ set_scale() {
 
   local new_scale="$(clean_scale "$requested_scale" "$width" "$height")"
 
-  omarchy-hyprland-monitor-persist "$active_monitor" "$new_scale"
+  "$BIN_DIR/omarchy-hyprland-monitor-persist" "$active_monitor" "$new_scale"
 
   wlr-randr --output "$active_monitor" --scale "$new_scale"
   audit_scale_change "$requested" "$active_monitor" "$current_scale" "$new_scale"
@@ -109,13 +121,15 @@ scale_from_current() {
   local width="${2:-}"
   local height="${3:-}"
 
-  awk -v direction="$direction" -v list="${SCALES[*]}" -v width="$width" -v height="$height" '
+  awk -v direction="$direction" -v list="${SCALES[*]}" -v width="$width" -v height="$height" -v min="$MIN_LOGICAL" '
     function gcd(a, b, t) { while (b) { t = a % b; a = b; b = t } return a }
-    function clean(scale,    g, k) {
+    function clean(scale,    g, k, short) {
       g = gcd(width * 120, height * 120)
       k = int(scale * 120 + 0.5)
       if (k > g) k = g
       while (g % k != 0) k++
+      short = (width < height ? width : height) * 120
+      while (k > 120 && short / k < min) { k--; while (k > 120 && g % k != 0) k-- }
       return k / 120
     }
     NR == 1 { scale = $0; found = 1 }
