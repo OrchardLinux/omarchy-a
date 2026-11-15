@@ -18,6 +18,9 @@ mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-armv7|linux-
 # startup cursor helper (wtype). Mesa, wlroots, Labwc and the other packages
 # come built from the Orchard package repository (system/assemble-rootfs).
 packages=(gcc make pkgconf patch wayland libxkbcommon pango python python-pip git curl tar gzip)
-pacman-download -Sy --noconfirm --needed "${packages[@]}"
-pacman -S --noconfirm --needed "${packages[@]}"
+# With the whole system brought up to date: a package installed new beside the
+# image's older libraries can miss symbols in them (today's Python and the
+# image's expat), and pacman does not update a dependency that is installed.
+pacman-download -Syu --noconfirm --needed "${packages[@]}"
+pacman -Su --noconfirm --needed "${packages[@]}"
 pacman -Sc --noconfirm
