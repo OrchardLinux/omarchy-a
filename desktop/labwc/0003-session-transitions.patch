@@ -13,7 +13,7 @@ index 320fbdd..1e0f38f 100644
  	char *error_command;
  
 diff --git a/include/output.h b/include/output.h
-index c17defa..67bad78 100644
+index c17defa..91689d9 100644
 --- a/include/output.h
 +++ b/include/output.h
 @@ -16,6 +16,10 @@ struct output {
@@ -27,13 +27,15 @@ index c17defa..67bad78 100644
  	struct wlr_scene_buffer *workspace_osd;
  
  	/* In output-relative scene coordinates */
-@@ -26,6 +30,13 @@ struct output {
+@@ -26,6 +30,15 @@ struct output {
  	struct wl_listener destroy;
  	struct wl_listener frame;
  	struct wl_listener request_state;
 +	struct wl_listener rotation_commit;
 +	struct wlr_buffer *rotation_last_frame;
 +	struct wlr_scene_buffer *rotation_cover;
++	/* whether the last frame, and the cover, show the lock screen */
++	bool rotation_frame_locked, rotation_cover_locked;
 +	double rotation_started, rotation_fade_started;
 +	int rotation_ready_frames;
 +	struct rotation_waiter *rotation_waiters;
@@ -41,7 +43,7 @@ index c17defa..67bad78 100644
  
  	/*
  	 * Unique power-of-two ID used in bitsets such as view->outputs.
-@@ -44,6 +55,7 @@ struct output {
+@@ -44,6 +57,7 @@ struct output {
  
  void output_init(void);
  void output_finish(void);
@@ -49,6 +51,20 @@ index c17defa..67bad78 100644
  struct output *output_from_wlr_output(struct wlr_output *wlr_output);
  struct output *output_from_name(const char *name);
  struct output *output_nearest_to(int lx, int ly);
+diff --git a/include/session-lock.h b/include/session-lock.h
+index 52e4e4f..62baa3d 100644
+--- a/include/session-lock.h
++++ b/include/session-lock.h
+@@ -33,5 +33,9 @@ struct session_lock_manager {
+ void session_lock_init(void);
+ void session_lock_output_create(struct session_lock_manager *manager, struct output *output);
+ void session_lock_update_for_layout_change(void);
++/* Whether a locked output shows nothing of the session any more. */
++bool session_lock_output_covered(struct output *output);
++/* Whether a locked output's lock surface has drawn at the output's size. */
++bool session_lock_output_drawn(struct output *output);
+ 
+ #endif /* LABWC_SESSION_LOCK_H */
 diff --git a/src/config/rcxml.c b/src/config/rcxml.c
 index f2134d0..6e332e4 100644
 --- a/src/config/rcxml.c
@@ -95,7 +111,7 @@ index 081bd62..ae0e061 100644
  
  	menu_finish();
 diff --git a/src/output.c b/src/output.c
-index 1308f56..151030a 100644
+index 1308f56..a0bd882 100644
 --- a/src/output.c
 +++ b/src/output.c
 @@ -10,13 +10,24 @@
@@ -132,7 +148,7 @@ index 1308f56..151030a 100644
  #include "common/macros.h"
  #include "common/mem.h"
  #include "common/scene-helpers.h"
-@@ -248,6 +261,556 @@ output_get_tearing_allowance(struct output *output)
+@@ -248,6 +261,590 @@ output_get_tearing_allowance(struct output *output)
  	return view->force_tearing == LAB_STATE_ENABLED;
  }
  
@@ -203,18 +219,34 @@ index 1308f56..151030a 100644
 +	return false;
 +}
 +
++static bool
++rotation_locked(void)
++{
++	return server.session_lock_manager && server.session_lock_manager->locked;
++}
++
 +static void
 +handle_rotation_commit(struct wl_listener *listener, void *data)
 +{
 +	struct output *output = wl_container_of(listener, output, rotation_commit);
 +	struct wlr_output_event_commit *event = data;
-+	if (server.session_lock_manager && server.session_lock_manager->locked) {
-+		rotation_clear(output);
++	bool locked = rotation_locked();
++	/*
++	 * A frame of the session must never be shown over the lock screen, and
++	 * while the lock is taking over (its black background comes a moment
++	 * after the lock) a frame can still hold the session. Keep a frame only
++	 * from the same side of the lock as the one it will be shown on.
++	 */
++	if ((locked && !session_lock_output_covered(output))
++			|| (output->rotation_last_frame && output->rotation_frame_locked != locked)) {
 +		if (output->rotation_last_frame) {
 +			wlr_buffer_unlock(output->rotation_last_frame);
 +			output->rotation_last_frame = NULL;
 +		}
-+		return;
++		if (locked && !session_lock_output_covered(output)) {
++			rotation_clear(output);
++			return;
++		}
 +	}
 +	if ((event->state->committed & WLR_OUTPUT_STATE_BUFFER) && event->state->buffer) {
 +		struct wlr_buffer *frame = wlr_buffer_lock(event->state->buffer);
@@ -222,6 +254,7 @@ index 1308f56..151030a 100644
 +			wlr_buffer_unlock(output->rotation_last_frame);
 +		}
 +		output->rotation_last_frame = frame;
++		output->rotation_frame_locked = locked;
 +	}
 +}
 +
@@ -244,8 +277,10 @@ index 1308f56..151030a 100644
 +rotation_begin(struct output *output)
 +{
 +	rotation_clear(output);
++	bool locked = rotation_locked();
 +	if (!output->rotation_last_frame || !output->wlr_output->enabled
-+			|| (server.session_lock_manager && server.session_lock_manager->locked)) {
++			|| output->rotation_frame_locked != locked
++			|| (locked && !session_lock_output_covered(output))) {
 +		return;
 +	}
 +	struct wlr_scene_buffer *cover = wlr_scene_buffer_create(&server.scene->tree,
@@ -254,7 +289,20 @@ index 1308f56..151030a 100644
 +		return;
 +	}
 +	output->rotation_cover = cover;
++	output->rotation_cover_locked = locked;
 +	output->rotation_started = rotation_now();
++	cover->point_accepts_input = rotation_accepts_input;
++	if (locked) {
++		/*
++		 * The lock screen turns like the desktop does: its last frame
++		 * stays until the lock surface has drawn at the new size, then
++		 * fades. The frame is the lock screen's own picture, so it may
++		 * lie over the lock surface; it never takes input.
++		 */
++		wlr_scene_node_place_above(&cover->node, &output->session_lock_tree->node);
++		wlr_scene_buffer_set_opacity(cover, 0.999f);
++		return;
++	}
 +	/* Remember visible shell roles before the reconfigure. An empty layer
 +	 * list during a shell rebuild is NOT evidence that the new frame is ready. */
 +	for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); ++i) {
@@ -279,7 +327,6 @@ index 1308f56..151030a 100644
 +			output->rotation_waiters = waiter;
 +		}
 +	}
-+	cover->point_accepts_input = rotation_accepts_input;
 +	/* Never cover the security layer or intercept input. An almost-opaque
 +	 * cover keeps underlying clients visible to frame-done/readiness logic. */
 +	wlr_scene_node_place_below(&cover->node, &output->session_lock_tree->node);
@@ -293,7 +340,9 @@ index 1308f56..151030a 100644
 +	if (!cover) {
 +		return;
 +	}
-+	if (server.session_lock_manager && server.session_lock_manager->locked) {
++	bool locked = rotation_locked();
++	if (locked != output->rotation_cover_locked) {
++		/* locked or unlocked meanwhile: the cover shows the other side */
 +		rotation_clear(output);
 +		return;
 +	}
@@ -304,14 +353,15 @@ index 1308f56..151030a 100644
 +	/* Scene buffers invert this transform when rendering. Using the inverse
 +	 * here applies the output rotation twice and flips the frozen frame. */
 +	wlr_scene_buffer_set_transform(cover, output->wlr_output->transform);
-+	bool ready = true;
++	/* Locked, only the lock surface shows: the session below may take its time. */
++	bool ready = !locked || session_lock_output_drawn(output);
 +	struct view *view;
 +	wl_list_for_each(view, &server.views, link) {
-+		if (view->mapped && view->output == output && view->pending_configure_serial) {
++		if (!locked && view->mapped && view->output == output && view->pending_configure_serial) {
 +			ready = false;
 +		}
 +	}
-+	for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); ++i) {
++	for (size_t i = 0; !locked && i < ARRAY_SIZE(output->layer_tree); ++i) {
 +		struct wlr_scene_node *node;
 +		wl_list_for_each(node, &output->layer_tree[i]->children, link) {
 +			struct lab_layer_surface *layer = node_layer_surface_from_node(node);
@@ -689,7 +739,7 @@ index 1308f56..151030a 100644
  static void
  handle_output_frame(struct wl_listener *listener, void *data)
  {
-@@ -273,6 +836,18 @@ handle_output_frame(struct wl_listener *listener, void *data)
+@@ -273,6 +870,18 @@ handle_output_frame(struct wl_listener *listener, void *data)
  	struct wlr_output_state *pending = &output->pending;
  
  	pending->tearing_page_flip = output_get_tearing_allowance(output);
@@ -708,7 +758,7 @@ index 1308f56..151030a 100644
  
  	lab_wlr_scene_output_commit(scene_output, pending);
  
-@@ -310,6 +885,11 @@ handle_output_destroy(struct wl_listener *listener, void *data)
+@@ -310,6 +919,11 @@ handle_output_destroy(struct wl_listener *listener, void *data)
  	wl_list_remove(&output->frame.link);
  	wl_list_remove(&output->destroy.link);
  	wl_list_remove(&output->request_state.link);
@@ -720,7 +770,7 @@ index 1308f56..151030a 100644
  	seat_output_layout_changed(seat);
  
  	for (size_t i = 0; i < ARRAY_SIZE(output->layer_tree); i++) {
-@@ -318,6 +898,7 @@ handle_output_destroy(struct wl_listener *listener, void *data)
+@@ -318,6 +932,7 @@ handle_output_destroy(struct wl_listener *listener, void *data)
  	wlr_scene_node_destroy(&output->layer_popup_tree->node);
  	wlr_scene_node_destroy(&output->cycle_osd_tree->node);
  	wlr_scene_node_destroy(&output->session_lock_tree->node);
@@ -728,7 +778,7 @@ index 1308f56..151030a 100644
  	if (output->workspace_osd) {
  		wlr_scene_node_destroy(&output->workspace_osd->node);
  		output->workspace_osd = NULL;
-@@ -708,6 +1289,8 @@ handle_new_output(struct wl_listener *listener, void *data)
+@@ -708,6 +1323,8 @@ handle_new_output(struct wl_listener *listener, void *data)
  
  	output->request_state.notify = handle_output_request_state;
  	wl_signal_add(&wlr_output->events.request_state, &output->request_state);
@@ -737,7 +787,7 @@ index 1308f56..151030a 100644
  
  	wl_list_init(&output->regions);
  
-@@ -746,6 +1329,7 @@ handle_new_output(struct wl_listener *listener, void *data)
+@@ -746,6 +1363,7 @@ handle_new_output(struct wl_listener *listener, void *data)
  
  	wlr_scene_node_raise_to_top(&output->cycle_osd_tree->node);
  	wlr_scene_node_raise_to_top(&output->session_lock_tree->node);
@@ -745,7 +795,7 @@ index 1308f56..151030a 100644
  
  	/*
  	 * autoEnableOutputs=no only makes sense for outputs that can be
-@@ -801,6 +1385,22 @@ output_init(void)
+@@ -801,6 +1419,22 @@ output_init(void)
  
  static void output_manager_finish(void);
  
@@ -768,7 +818,7 @@ index 1308f56..151030a 100644
  void
  output_finish(void)
  {
-@@ -854,12 +1454,22 @@ output_config_apply(struct wlr_output_configuration_v1 *config)
+@@ -854,12 +1488,22 @@ output_config_apply(struct wlr_output_configuration_v1 *config)
  			(void)output_test_auto(o, os,
  				/* is_client_request */ true);
  			wlr_output_state_set_scale(os, head->state.scale);
@@ -791,3 +841,46 @@ index 1308f56..151030a 100644
  			/*
  			 * FIXME: This is only part of the story, we should revert
  			 *        all previously committed outputs as well here.
+diff --git a/src/session-lock.c b/src/session-lock.c
+index 4e5eb8a..6c04f0e 100644
+--- a/src/session-lock.c
++++ b/src/session-lock.c
+@@ -372,6 +372,38 @@ session_lock_init(void)
+ 	wl_signal_add(&manager->wlr_manager->events.destroy, &manager->destroy);
+ }
+ 
++bool
++session_lock_output_covered(struct output *output)
++{
++	struct session_lock_manager *manager = server.session_lock_manager;
++	if (!manager || !manager->locked) {
++		return false;
++	}
++	struct session_lock_output *lock_output = lock_output_for_output(manager, output);
++	return lock_output && lock_output->background->node.enabled;
++}
++
++bool
++session_lock_output_drawn(struct output *output)
++{
++	struct session_lock_manager *manager = server.session_lock_manager;
++	struct session_lock_output *lock_output = manager
++		? lock_output_for_output(manager, output) : NULL;
++	if (!lock_output || !lock_output->surface) {
++		/* nothing will draw: the black background is the picture */
++		return true;
++	}
++	struct wlr_session_lock_surface_v1 *lock_surface = lock_output->surface;
++	struct wlr_box box;
++	wlr_output_layout_get_box(server.output_layout, output->wlr_output, &box);
++	return lock_surface->surface->mapped && lock_surface->surface->buffer
++		&& wl_list_empty(&lock_surface->configure_list)
++		&& (int)lock_surface->current.width == box.width
++		&& (int)lock_surface->current.height == box.height
++		&& lock_surface->surface->current.width == box.width
++		&& lock_surface->surface->current.height == box.height;
++}
++
+ void
+ session_lock_update_for_layout_change(void)
+ {
