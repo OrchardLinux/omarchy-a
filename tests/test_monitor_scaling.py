@@ -108,6 +108,27 @@ class Scaling(unittest.TestCase):
         self.assertEqual((entry['requested'], entry['current'], entry['new'], entry['monitor']),
                          ('1.25', '2', '1.33333', 'Unknown-1'))
 
+    def test_a_scale_never_leaves_less_room_than_the_shell_needs(self):
+        # 320 logical pixels on the short side is the smallest bar the shell lays
+        # out; a tablet panel keeps every preset, a phone panel stops before it.
+        self.json.write_text(randr_json(750, 1334, 1))
+        self.assertEqual(self.scale('4'), ['--output Unknown-1 --scale 2'])
+        self.assertEqual(self.scale('3'), ['--output Unknown-1 --scale 2'])
+        self.json.write_text(randr_json(750, 1334, 2))
+        self.assertEqual(self.scale('up'), ['--output Unknown-1 --scale 2'])
+        self.assertEqual(self.scale('down'), ['--output Unknown-1 --scale 1'])
+        self.json.write_text(randr_json(1536, 2048, 2))
+        self.assertEqual(self.scale('4'), ['--output Unknown-1 --scale 4'])
+
+    def test_persist_is_found_without_the_session_path(self):
+        # Over ssh neither /usr/local/bin nor the shell's bin directory is on PATH.
+        self.json.write_text(randr_json(1536, 2048, 2))
+        stubs = self.env['PATH'].split(':')[0]
+        self.env['PATH'] = f'{stubs}:/usr/local/bin:/usr/bin:/bin:{Path(BASH).parent}:{Path(shutil.which("jq")).parent}'
+        self.assertIsNone(shutil.which('omarchy-hyprland-monitor-persist', path=self.env['PATH']))
+        self.assertEqual(self.scale('1.6'), ['--output Unknown-1 --scale 1.6'])
+        self.assertEqual(self.settings(), ['\t\t1.6\t\tUnknown-1'])
+
     def test_persist_keeps_other_monitors_and_the_saved_mode_position_and_transform(self):
         settings = self.state / 'omarchy/monitors/settings'
         settings.parent.mkdir(parents=True)
@@ -171,6 +192,12 @@ class PanelModel(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout), {'1536': ['1', '1.33', '1.6', '2', '3.2', '4'],
                                                      '1620': ['1', '1.25', '1.67', '2', '3', '4'], 'index': 4})
 
+    def test_pills_stop_where_the_shell_would_no_longer_fit(self):
+        script = ('const m = require(process.argv[1]); const p = ["1","1.25","1.6","2","3","4"];'
+                  'console.log(JSON.stringify(m.availableScales(p, 750, 1334).map(s => m.cleanScale(s, 750, 1334))))')
+        result = subprocess.run(['node', '-e', script, str(MODEL)], capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(result.stdout), ['1', '2'])
+
 
 class Packaging(unittest.TestCase):
     def test_keys_panel_and_root_use_the_command(self):
@@ -181,6 +208,9 @@ class Packaging(unittest.TestCase):
         panel = (PROJECT / 'desktop/shell/shell/plugins/panels/monitor/Panel.qml').read_text()
         self.assertIn('"omarchy-hyprland-monitor-scaling", "--monitor"', panel)
         self.assertIn('Commons.I18n.t("monitor.scale")', panel)
+        # Setup > Monitors opens that panel: there is no monitors.lua to edit here.
+        menu = (PROJECT / 'desktop/shell/default/omarchy/omarchy-menu.jsonc').read_text()
+        self.assertIn('"setup.monitors": {"icon":"󰍹","label":"Monitors","action":"omarchy-shell shell summon omarchy.monitor"}', menu)
         additions, links = public_root.desktop_additions(), public_root.desktop_links()
         for command in ('omarchy-hyprland-monitor-scaling', 'omarchy-hyprland-monitor-persist'):
             path = 'home/tablet/.local/share/omarchy-ipad/bin/' + command

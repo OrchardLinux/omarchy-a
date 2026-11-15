@@ -218,114 +218,125 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
-      Column {
-        id: column
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        spacing: Style.space(14)
+      // Scrolls when the screen is too short for the whole panel (a large
+      // display scale, landscape); otherwise it is not interactive.
+      Flickable {
+        id: scroll
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: column.implicitHeight
+        clip: interactive
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height + 1
 
-        Text {
-          width: parent.width
-          text: "󰍹  " + Commons.I18n.t("monitor.display")
-          color: root.bar.foreground
-          font.family: root.bar.fontFamily
-          font.pixelSize: Style.font.title
-          font.bold: true
-          textFormat: Text.PlainText
-        }
-        Text {
-          width: parent.width
-          text: root.brightnessAvailable ? Commons.I18n.t("monitor.brightness") + "  " + root.brightnessPercent + "%"
-                                         : "Brightness unavailable: no backlight device"
-          color: root.bar.foreground
-          font.family: root.bar.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
-          textFormat: Text.PlainText
-        }
-        Toggle {
-          width: parent.width
-          label: "Rotation lock"
-          description: root.rotationLocked ? "Keep the current orientation" : "Turn the display with the iPad"
-          checked: root.rotationLocked
-          enabled: root.rotationLoaded && !rotationWrite.running
-          foreground: root.bar.foreground
-          fontFamily: root.bar.fontFamily
-          onClicked: {
-            rotationWrite.command = [root.rotationHelper, root.rotationLocked ? "off" : "on"]
-            rotationWrite.running = true
-          }
-        }
-        Toggle {
-          width: parent.width
-          label: Commons.I18n.t("bar.stayAwake")
-          description: root.stayAwake ? "The screen stays on; no automatic lock or sleep"
-                                      : "Lock and sleep after the idle timeout"
-          checked: root.stayAwake
-          enabled: !!root.idleService
-          foreground: root.bar.foreground
-          fontFamily: root.bar.fontFamily
-          onClicked: root.idleService.setIdleEnabled(root.stayAwake)
-        }
-        PanelSlider {
-          width: parent.width
-          bar: root.bar
-          visible: root.brightnessAvailable
-          minimum: 1
-          maximum: 100
-          step: 1
-          integer: true
-          value: root.brightnessPercent
-          onMoved: function(v) { root.setBrightness(v) }
-          onReleased: function(v) { root.setBrightness(v) }
-        }
-        Toggle {
-          width: parent.width
-          visible: root.autoAvailable
-          label: Commons.I18n.t("monitor.autoBrightness")
-          description: Commons.I18n.t("monitor.autoBrightnessHint")
-          checked: root.autoOn
-          foreground: root.bar.foreground
-          fontFamily: root.bar.fontFamily
-          onClicked: root.setAuto(!root.autoOn)
-        }
-
-        // ---------- Scale ----------
-        PanelSeparator {
-          width: parent.width
-          visible: root.scales.length > 0
-          foreground: root.bar.foreground
-        }
         Column {
-          visible: root.scales.length > 0
-          width: parent.width
-          spacing: Style.space(6)
+          id: column
+          width: scroll.width
+          spacing: Style.space(14)
 
-          PanelSectionHeader {
-            text: Commons.I18n.t("monitor.scale")
+          Text {
+            width: parent.width
+            text: "󰍹  " + Commons.I18n.t("monitor.display")
+            color: root.bar.foreground
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+            font.bold: true
+            textFormat: Text.PlainText
+          }
+          Text {
+            width: parent.width
+            text: root.brightnessAvailable ? Commons.I18n.t("monitor.brightness") + "  " + root.brightnessPercent + "%"
+                                           : "Brightness unavailable: no backlight device"
+            color: root.bar.foreground
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+          }
+          Toggle {
+            width: parent.width
+            label: "Rotation lock"
+            description: root.rotationLocked ? "Keep the current orientation" : "Turn the display with the iPad"
+            checked: root.rotationLocked
+            enabled: root.rotationLoaded && !rotationWrite.running
             foreground: root.bar.foreground
             fontFamily: root.bar.fontFamily
+            onClicked: {
+              rotationWrite.command = [root.rotationHelper, root.rotationLocked ? "off" : "on"]
+              rotationWrite.running = true
+            }
+          }
+          Toggle {
+            width: parent.width
+            label: Commons.I18n.t("bar.stayAwake")
+            description: root.stayAwake ? "The screen stays on; no automatic lock or sleep"
+                                        : "Lock and sleep after the idle timeout"
+            checked: root.stayAwake
+            enabled: !!root.idleService
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+            onClicked: root.idleService.setIdleEnabled(root.stayAwake)
+          }
+          PanelSlider {
+            width: parent.width
+            bar: root.bar
+            visible: root.brightnessAvailable
+            minimum: 1
+            maximum: 100
+            step: 1
+            integer: true
+            value: root.brightnessPercent
+            onMoved: function(v) { root.setBrightness(v) }
+            onReleased: function(v) { root.setBrightness(v) }
+          }
+          Toggle {
+            width: parent.width
+            visible: root.autoAvailable
+            label: Commons.I18n.t("monitor.autoBrightness")
+            description: Commons.I18n.t("monitor.autoBrightnessHint")
+            checked: root.autoOn
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+            onClicked: root.setAuto(!root.autoOn)
           }
 
-          Grid {
-            id: scaleGrid
+          // ---------- Scale ----------
+          PanelSeparator {
             width: parent.width
-            columns: Math.max(1, root.scales.length)
-            spacing: Style.spacing.xs
+            visible: root.scales.length > 0
+            foreground: root.bar.foreground
+          }
+          Column {
+            visible: root.scales.length > 0
+            width: parent.width
+            spacing: Style.space(6)
 
-            readonly property real cellWidth: (width - spacing * (columns - 1)) / columns
+            PanelSectionHeader {
+              text: Commons.I18n.t("monitor.scale")
+              foreground: root.bar.foreground
+              fontFamily: root.bar.fontFamily
+            }
 
-            Repeater {
-              model: root.scales
+            Grid {
+              id: scaleGrid
+              width: parent.width
+              columns: Math.max(1, root.scales.length)
+              spacing: Style.spacing.xs
 
-              ScalePill {
-                required property string modelData
-                required property int index
+              readonly property real cellWidth: (width - spacing * (columns - 1)) / columns
 
-                scaleValue: modelData
-                scaleIndex: index
-                width: scaleGrid.cellWidth
+              Repeater {
+                model: root.scales
+
+                ScalePill {
+                  required property string modelData
+                  required property int index
+
+                  scaleValue: modelData
+                  scaleIndex: index
+                  width: scaleGrid.cellWidth
+                }
               }
             }
           }

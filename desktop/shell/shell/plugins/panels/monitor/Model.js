@@ -10,6 +10,9 @@ function normalizeScale(scale) {
   return String(Math.round(n * 100) / 100)
 }
 
+// The smallest short side, in logical pixels, the shell is laid out for.
+var minLogical = 320
+
 function gcd(a, b) {
   while (b) {
     var remainder = a % b
@@ -30,6 +33,13 @@ function cleanScale(scale, width, height) {
   var scaleUnits = Math.round(requested * 120)
   if (scaleUnits > divisor) scaleUnits = divisor
   while (divisor % scaleUnits !== 0) scaleUnits++
+  // As omarchy-hyprland-monitor-scaling: never fewer than minLogical logical
+  // pixels on the short side, so the bar and this panel always fit.
+  var shortSide = Math.min(modeWidth, modeHeight) * 120
+  while (scaleUnits > 120 && shortSide / scaleUnits < minLogical) {
+    scaleUnits--
+    while (scaleUnits > 120 && divisor % scaleUnits !== 0) scaleUnits--
+  }
   return normalizeScale(scaleUnits / 120)
 }
 
