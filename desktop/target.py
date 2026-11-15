@@ -12,19 +12,12 @@ if str(PROJECT) not in sys.path:
 from release.architecture import validate, check_elf, machine, podman_arch
 
 
-def source_pins(architecture):
-    validate(architecture)
-    here = Path(__file__).resolve().parent
-    pins = json.loads((here / 'sources.json').read_text())
-    if architecture == 'armv7h':
-        pins.update(json.loads((here / 'armv7/sources.json').read_text()))
-    else:
-        # Mesa from OrchardLinux's fork: 64-bit boards only.
-        pins.update(json.loads((here / 'arm64/sources.json').read_text()))
-    return pins
+def source_pins():
+    """The pinned sources compiled here: the keyboard's."""
+    return json.loads((Path(__file__).resolve().parent / 'sources.json').read_text())
 
 
-def builder(buildenv, architecture, image=None, *, labwc=False):
+def builder(buildenv, architecture, image=None):
     validate(architecture)
     if buildenv.native():
         if platform.machine() != machine(architecture):
@@ -35,9 +28,8 @@ def builder(buildenv, architecture, image=None, *, labwc=False):
     if architecture == 'armv7h':
         raise ValueError('ARMv7 desktop builds require --builder-image with an ARMv7 Arch Linux ARM compiler')
     here = Path(__file__).resolve().parent
-    image = 'localhost/omarchy-a-' + ('labwc' if labwc else 'desktop') + '-builder:arm64'
-    folder = here / 'labwc' if labwc else here
-    buildenv.build(image, folder / 'Containerfile', folder, arch=podman_arch(architecture))
+    image = 'localhost/omarchy-a-desktop-builder:arm64'
+    buildenv.build(image, here / 'Containerfile', here, arch=podman_arch(architecture))
     return image
 
 

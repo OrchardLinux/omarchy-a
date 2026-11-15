@@ -114,6 +114,12 @@ class Workflow(unittest.TestCase):
         plan = self.job('orchard')
         self.assertIn('ci/nightly plan', plan)
         self.assertIn('--input "orchard=$ORCHARD_TAG"', plan)
+        # The third input: the Orchard package repository's index, planned and recorded alike.
+        self.assertIn('releases/download/repo-aarch64/orchard.db', plan)
+        self.assertIn('--input "packages=$PACKAGES"', plan)
+        self.assertIn('--input "orchard=$ORCHARD_TAG" --input "packages=$PACKAGES" > assets/nightly.json',
+                      self.job('nightly'))
+        self.assertIn('PACKAGES: ${{ needs.orchard.outputs.packages }}', self.job('nightly'))
         self.assertNotIn('needs:', plan)
         for name in ('artwork-check', 'artwork', 'userspace'):
             self.assertIn("    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || "

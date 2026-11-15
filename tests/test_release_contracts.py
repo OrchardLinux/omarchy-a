@@ -39,7 +39,7 @@ class ReleaseContracts(unittest.TestCase):
         argv = ['build', '--release', 'contract-test', '--architecture', architecture,
                 '--orchard', str(SNAPSHOT), '--output', str(root / 'output'), *source]
         for name in ('base', 'base-receipt', 'splash', 'logo', 'busybox', 'dropbear', 'dropbearkey',
-                     'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
+                     'cursor-tools', 'bluetooth-tools'):
             path = root / name
             if name.endswith('-tools'):
                 path.mkdir()

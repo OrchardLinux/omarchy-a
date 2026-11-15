@@ -7,6 +7,7 @@ sudo
 # The installer hashes the lock-screen PIN with it; the PIN check uses it too.
 openssl
 python
+# The Orchard package repository's, with the tablet patches (system/assemble-rootfs).
 labwc
 quickshell
 qt6-imageformats

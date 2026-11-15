@@ -99,45 +99,6 @@ class PairingPackagingTests(unittest.TestCase):
         self.assertEqual(files['usr/libexec/omarchy-bluetooth-pair'][1], 0o755)
         self.assertEqual(files['usr/lib/omarchy-bluetooth/policy.py'][1], 0o644)
 
-    def test_labwc_component_has_corresponding_source_and_rejects_tampering(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            output = root / 'component'
-            output.mkdir()
-            names = ('labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
-                     '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
-                     '0004-overview.patch', '0005-title-double-tap.patch', 'packages.lock', 'compiler.txt', 'version.txt')
-            digests = {}
-            for name in names:
-                data = ('fixture ' + name).encode()
-                (output / name).write_bytes(data)
-                digests[name] = hashlib.sha256(data).hexdigest()
-            pin = {'version': 'test', 'sha256': digests['source.tar.gz'],
-                   'patch_sha256': digests['0001-cancel-super-tap-on-pointer.patch'],
-                   'edge_patch_sha256': digests['0002-bottom-edge-swipe.patch'],
-                   'transitions_patch_sha256': digests['0003-session-transitions.patch'],
-                   'title_tap_patch_sha256': digests['0005-title-double-tap.patch'],
-                   'overview_patch_sha256': digests['0004-overview.patch']}
-            source = root / 'desktop/labwc'
-            source.mkdir(parents=True)
-            (source / 'source.json').write_text(json.dumps(pin))
-            record = {'schema': 1, 'source': pin, 'files': digests}
-            (output / 'manifest.json').write_text(json.dumps(record))
-            with patch.object(public_root, 'PROJECT', root), patch.object(audit, 'PROJECT', root):
-                files = public_root.labwc_files(output)
-                self.assertEqual(files['usr/bin/labwc'][1], 0o755)
-                self.assertIn('usr/share/licenses/omarchy-labwc/source.tar.gz', files)
-                hashes = {name: hashlib.sha256(value[0]).hexdigest() for name, value in files.items()}
-                modes = {name: value[1] for name, value in files.items()}
-                owners = {name: 0 for name in files}
-                audit.verify_labwc(record, hashes, modes, owners, owners)
-                modes['usr/bin/labwc'] = 0o777
-                with self.assertRaises(ValueError):
-                    audit.verify_labwc(record, hashes, modes, owners, owners)
-                (output / 'labwc').write_bytes(b'tampered')
-                with self.assertRaises(ValueError):
-                    public_root.labwc_files(output)
-
     def test_dependency_preparation_and_tamper_detection(self):
         script = runpy.run_path(str(PROJECT / 'desktop/build-bluetooth-tools'))
         data = io.BytesIO()

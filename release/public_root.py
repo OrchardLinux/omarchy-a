@@ -97,41 +97,6 @@ def bluetooth_files(directory):
     return files
 
 
-def labwc_files(directory, architecture='aarch64'):
-    validate(architecture)
-    record = json.loads((directory / 'manifest.json').read_text())
-    pin = json.loads((PROJECT / 'desktop/labwc/source.json').read_text())
-    if record.get('schema') != 1 or record.get('source') != pin:
-        raise ValueError('Incompatible Labwc component receipt')
-    # Earlier AArch64 Labwc receipts predate the architecture field.
-    if record.get('architecture', 'aarch64') != architecture:
-        raise ValueError('Labwc component architecture differs from root')
-    expected = {'labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
-                '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
-                '0004-overview.patch', '0005-title-double-tap.patch', 'packages.lock', 'compiler.txt', 'version.txt'}
-    if record.get('files', {}).keys() != expected:
-        raise ValueError('Incomplete Labwc component')
-    files = {}
-    for name, digest in record['files'].items():
-        path = directory / name
-        if path.is_symlink() or not path.is_file() or sha(path) != digest:
-            raise ValueError('Labwc component differs from receipt')
-        destination = 'usr/bin/labwc' if name == 'labwc' else 'usr/share/licenses/omarchy-labwc/' + name
-        data = path.read_bytes()
-        if name == 'labwc' and (data.startswith(b'\x7fELF') or 'architecture' in record or architecture == 'armv7h'):
-            check_elf(data, architecture, 'Labwc')
-        files[destination] = (data, 0o755 if name == 'labwc' else 0o644)
-    if (record['files']['source.tar.gz'] != pin['sha256']
-            or record['files']['0001-cancel-super-tap-on-pointer.patch'] != pin['patch_sha256']
-            or record['files']['0002-bottom-edge-swipe.patch'] != pin['edge_patch_sha256']
-            or record['files']['0003-session-transitions.patch'] != pin['transitions_patch_sha256']
-            or record['files']['0004-overview.patch'] != pin['overview_patch_sha256']
-            or record['files']['0005-title-double-tap.patch'] != pin['title_tap_patch_sha256']):
-        raise ValueError('Labwc corresponding source differs from pin')
-    files['etc/omarchy/labwc-helper.json'] = (json.dumps(record, sort_keys=True).encode(), 0o644)
-    return files
-
-
 # Commands newer than the base root, run by name: desktop/stage.py links every
 # shell command into /usr/local/bin, so the root gets the same link for these.
 DESKTOP_COMMANDS = ('omarchy-hyprland-monitor-scaling', 'omarchy-hyprland-monitor-persist')
@@ -185,7 +150,7 @@ def access_files(tools, architecture='aarch64'):
     return result
 
 
-def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=None, labwc_tools=None, tools=None,
+def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=None, tools=None,
           splash=None, architecture='aarch64'):
     """The root image for every platform: no kernel, DTBs or modules (orchard's layer has them)."""
     validate(architecture)
@@ -200,7 +165,6 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
     privileged_digests = {}
     additions = cursor_files(cursor_tools, architecture)
     additions.update(bluetooth_files(bluetooth_tools or PROJECT / 'out/desktop/bluetooth-tools'))
-    additions.update(labwc_files(labwc_tools or PROJECT / 'out/desktop/labwc-tools', architecture))
     desktop_extra = desktop_additions()
     additions.update(desktop_extra)
     additions['etc/omarchy/package-privileges.json'] = (json.dumps(privileges, sort_keys=True).encode(), 0o644)
@@ -339,13 +303,13 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('base', 'base-receipt', 'outdir', 'cursor-tools', 'bluetooth-tools', 'labwc-tools'):
+    for name in ('base', 'base-receipt', 'outdir', 'cursor-tools', 'bluetooth-tools'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--release', required=True)
     parser.add_argument('--architecture', choices=('aarch64', 'armv7h'), default='aarch64')
     args = parser.parse_args()
     print(json.dumps(build(args.base, args.base_receipt, args.outdir, args.release, args.cursor_tools,
-                           args.bluetooth_tools, args.labwc_tools, architecture=args.architecture), indent=2))
+                           args.bluetooth_tools, architecture=args.architecture), indent=2))
 
 
 if __name__ == '__main__':

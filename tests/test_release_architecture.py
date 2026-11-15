@@ -56,22 +56,6 @@ class ReleaseArchitecture(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'dropbear'):
                 public_root.access_files(tools, 'armv7h')
 
-    def test_legacy_labwc_receipt_still_rejects_foreign_isa(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            names = ('labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
-                     '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
-                     '0004-overview.patch', '0005-title-double-tap.patch', 'packages.lock', 'compiler.txt', 'version.txt')
-            contents = {name: elf('armv7h') if name == 'labwc' else b'fixture' for name in names}
-            for name, data in contents.items():
-                (root / name).write_bytes(data)
-            pin = json.loads((public_root.PROJECT / 'desktop/labwc/source.json').read_text())
-            record = {'schema': 1, 'source': pin,
-                      'files': {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}}
-            (root / 'manifest.json').write_text(json.dumps(record))
-            with self.assertRaisesRegex(ValueError, 'Labwc.*ELF|architecture'):
-                public_root.labwc_files(root, 'aarch64')
-
     def test_base_receipt_refuses_foreign_root_before_assembly(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

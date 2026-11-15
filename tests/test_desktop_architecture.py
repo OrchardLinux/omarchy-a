@@ -100,14 +100,11 @@ class DesktopArchitecture(unittest.TestCase):
             package(path, 'armv7h', elf('armv7h'))
             self.assertEqual(check_package(path, 'armv7h'), 'armv7h')
 
-    def test_armv7_source_set_includes_pinned_omacalc(self):
-        pins = source_pins('armv7h')
-        self.assertEqual(pins['omacalc']['commit'], '573d7106f5c6c0225864eb8634ae37ddcb657f63')
-        self.assertEqual(pins['omacalc']['sha256'], '6a4ad731acb4f68226b975e1b817b2907fea1534d52d1e769564a76a48f3eafc')
-        self.assertNotIn('omacalc', source_pins('aarch64'))
+    def test_only_the_keyboard_is_compiled_from_a_pinned_source(self):
+        self.assertEqual(set(source_pins()), {'wvkbd'})
 
     @unittest.skipUnless(shutil.which('bsdtar'), 'package verification uses libarchive')
-    def test_receipt_verification_checks_target_packages_and_keyboard(self):
+    def test_receipt_verification_checks_the_keyboard_and_the_pinned_packages(self):
         desktop = load_desktop()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -119,49 +116,61 @@ class DesktopArchitecture(unittest.TestCase):
             keyboard = payload / desktop.KEYBOARD_PATH
             keyboard.parent.mkdir(parents=True)
             keyboard.write_bytes(elf('armv7h'))
-            for name in ('omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz', 'omacalc.pkg.tar.zst'):
-                package(packages / name, 'armv7h')
-            pins = source_pins('armv7h')
-            files = {name: desktop.sha(packages / name) for name in ('omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz', 'omacalc.pkg.tar.zst')}
-            files['wvkbd-mobintl'] = desktop.sha(keyboard)
-            built = {'architecture': 'armv7h', 'source_sha256': {name: value['sha256'] for name, value in pins.items()},
-                     'source_urls': {name: value['urls'][0] for name, value in pins.items()},
-                     'patch_sha256': desktop.sha(PROJECT / 'desktop/keyboard/wvkbd-0.20.patch'),
-                     'keyboard_layout_sha256': {name: desktop.sha(PROJECT / 'desktop/keyboard' / name) for name in
-                                                ('friendly-layout.py', 'apply-shift.py', 'orchard-shift.h')},
-                     'pkgbuild_sha256': desktop.sha(PROJECT / 'desktop/packages/omafox/PKGBUILD'),
-                     'wlroots_recipe_sha256': desktop.recipe_sha(PROJECT / 'desktop/packages/wlroots0.20'),
-                     'omacalc_recipe_sha256': desktop.recipe_sha(PROJECT / 'desktop/packages/omacalc'), 'files': files}
+            pin = source_pins()['wvkbd']
             contents = {name: desktop.sha(payload / name) for name in (desktop.XPI_PATH, desktop.KEYBOARD_PATH)}
             manifest = payload / 'arch-ipad-ui-manifest.json'
             manifest.write_text(json.dumps(contents))
             lock = dict(line.split('=', 1) for line in (PROJECT / 'desktop/upstream.lock').read_text().splitlines() if '=' in line)
             meta = {'architecture': 'armv7h', 'omarchy_commit': lock['omarchy_commit'],
-                    'inputs': {'omafox_xpi': desktop.sha(xpi)}, 'source_build': built,
+                    'inputs': {'omafox_xpi': desktop.sha(xpi)},
+                    'keyboard': desktop.keyboard_record('armv7h', pin['urls'][0], desktop.sha(keyboard)),
                     'payload_manifest_sha256': desktop.sha(manifest)}
-            (root / 'manifest.json').write_text(json.dumps(meta))
+            write = lambda: (root / 'manifest.json').write_text(json.dumps(meta))
+            write()
             input_pins = root / 'inputs.json'
-            input_pins.write_text(json.dumps({'architecture': 'aarch64', 'omafox_xpi': desktop.sha(xpi)}))
+            pins = {'architecture': 'aarch64', 'omafox_xpi': desktop.sha(xpi)}
+            input_pins.write_text(json.dumps(pins))
             with patch.object(desktop, 'PINS', input_pins):
+                # ARMv7 has no package of its own here: everything comes from the repositories.
                 self.assertEqual(desktop.verify(root)['architecture'], 'armv7h')
                 with self.assertRaisesRegex(ValueError, 'Desktop input manifest'):
                     desktop.verify(root, 'aarch64')
-                # A receipt with the selected architecture still cannot admit a foreign package.
-                package(packages / 'omafox.pkg.tar.xz', 'aarch64')
-                built['files']['omafox.pkg.tar.xz'] = desktop.sha(packages / 'omafox.pkg.tar.xz')
-                (root / 'manifest.json').write_text(json.dumps(meta))
-                with self.assertRaisesRegex(ValueError, 'Package architecture'):
-                    desktop.verify(root, 'armv7h')
-                package(packages / 'omafox.pkg.tar.xz', 'armv7h')
-                built['files']['omafox.pkg.tar.xz'] = desktop.sha(packages / 'omafox.pkg.tar.xz')
+                package(packages / 'mesa.pkg.tar.zst', 'armv7h')
+                with self.assertRaisesRegex(ValueError, 'Desktop packages differ'):
+                    desktop.verify(root)
+                (packages / 'mesa.pkg.tar.zst').unlink()
+                # A keyboard recipe other than this checkout's is refused.
+                meta['keyboard']['recipe_sha256']['wvkbd-0.20.patch'] = '0' * 64
+                write()
+                with self.assertRaisesRegex(ValueError, 'Keyboard source or recipe'):
+                    desktop.verify(root)
+                meta['keyboard'] = desktop.keyboard_record('armv7h', pin['urls'][0], desktop.sha(keyboard))
+                # A receipt with the selected architecture still cannot admit a foreign keyboard.
                 keyboard.write_bytes(elf('aarch64'))
-                built['files']['wvkbd-mobintl'] = desktop.sha(keyboard)
-                contents[desktop.KEYBOARD_PATH] = desktop.sha(keyboard)
+                meta['keyboard']['sha256'] = contents[desktop.KEYBOARD_PATH] = desktop.sha(keyboard)
                 manifest.write_text(json.dumps(contents))
                 meta['payload_manifest_sha256'] = desktop.sha(manifest)
-                (root / 'manifest.json').write_text(json.dumps(meta))
+                write()
                 with self.assertRaisesRegex(ValueError, 'armv7h ELF'):
                     desktop.verify(root, 'armv7h')
+                # 64-bit: the pinned downloads, of the image's architecture.
+                meta['architecture'] = 'aarch64'
+                for name, (_, key) in desktop.DOWNLOADS.items():
+                    package(packages / name, 'aarch64')
+                    pins[key] = desktop.sha(packages / name)
+                input_pins.write_text(json.dumps(pins))
+                meta['inputs'] = desktop.input_record(pins, 'aarch64')
+                meta['keyboard'] = desktop.keyboard_record('aarch64', pin['urls'][0], desktop.sha(keyboard))
+                write()
+                self.assertEqual(desktop.verify(root)['architecture'], 'aarch64')
+                name, (_, key) = next(iter(desktop.DOWNLOADS.items()))
+                package(packages / name, 'armv7h')
+                pins[key] = desktop.sha(packages / name)
+                input_pins.write_text(json.dumps(pins))
+                meta['inputs'] = desktop.input_record(pins, 'aarch64')
+                write()
+                with self.assertRaisesRegex(ValueError, 'Package architecture'):
+                    desktop.verify(root)
 
 
 if __name__ == '__main__':

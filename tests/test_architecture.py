@@ -147,10 +147,10 @@ class ArchitectureSelectionTests(unittest.TestCase):
                     patch.object(entry, 'run', side_effect=lambda *args: calls.append(tuple(map(str, args)))):
                 entry.main()
             self.assertEqual(inputs[0][-2:], ('--platform', 'apple-armv7'))
-            for name in ('desktop', 'cursor', 'labwc', 'base'):
+            for name in ('desktop', 'cursor', 'base'):
                 self.assertIn('armv7h', keys[name])
                 self.assertIn('id:' + entry.ARMV7_BUILDER, keys[name])
-            for script in ('desktop/build', 'desktop/build-cursor-helper', 'desktop/build-labwc', 'system/build-rootfs'):
+            for script in ('desktop/build', 'desktop/build-cursor-helper', 'system/build-rootfs'):
                 call = next(call for call in calls if script in call)
                 self.assertEqual(call[call.index('--architecture') + 1], 'armv7h')
                 self.assertEqual(call[call.index('--builder-image') + 1], entry.ARMV7_BUILDER)
@@ -182,7 +182,7 @@ class ArchitectureSelectionTests(unittest.TestCase):
         entry = build_entry()
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            for name in ('desktop', 'cursor', 'labwc'):
+            for name in ('desktop', 'cursor'):
                 for relative in entry.INPUTS[name]:
                     path = root / relative
                     path.parent.mkdir(parents=True, exist_ok=True)
@@ -190,7 +190,7 @@ class ArchitectureSelectionTests(unittest.TestCase):
             make = lambda path, work: path.write_text('binary fixture')
             first = {}
             producer = json.dumps(PRODUCER, sort_keys=True)
-            for name in ('desktop', 'cursor', 'labwc'):
+            for name in ('desktop', 'cursor'):
                 _, first[name] = entry.component(root, name, entry.INPUTS[name], make, artifact='binary', extra=[producer])
             (root / 'desktop/snapshot_buildenv.py').write_text('changed wrapper')
             second = {}

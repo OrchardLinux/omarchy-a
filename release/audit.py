@@ -89,7 +89,7 @@ def audit(manifest, orchard=None):
         layers[name] = layer['hashes']
     hashes, links, modes, owners, groups, sizes = {}, {}, {}, {}, {}, {}
     names, ancestors, directories = set(), set(), set()
-    desktop = privileges = cursor = bluetooth = labwc = None
+    desktop = privileges = cursor = bluetooth = None
     with subprocess.Popen(['zstd', '-d', '-q', '-c', str(root_path)], stdout=subprocess.PIPE) as decoder:
         with tarfile.open(fileobj=decoder.stdout, mode='r|') as archive:
             for member in archive:
@@ -113,8 +113,6 @@ def audit(manifest, orchard=None):
                         cursor = json.loads(data)
                     if name == 'etc/omarchy/bluetooth-helper.json':
                         bluetooth = json.loads(data)
-                    if name == 'etc/omarchy/labwc-helper.json':
-                        labwc = json.loads(data)
                     if name == 'etc/omarchy/package-privileges.json':
                         privileges = json.loads(data)
                 elif member.isdir():
@@ -168,9 +166,6 @@ def audit(manifest, orchard=None):
     if hashes.get('usr/share/licenses/omarchy-wtype/LICENSE') != cursor['files'].get('LICENSE'):
         raise ValueError('Missing startup cursor helper license')
     verify_bluetooth(bluetooth, hashes, modes, owners, groups)
-    verify_labwc(labwc, hashes, modes, owners, groups)
-    if labwc.get('architecture', 'aarch64') != architecture:
-        raise ValueError('Labwc architecture differs from root')
     if 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml' not in desktop:
         raise ValueError('Pairing UI is absent from desktop integrity manifest')
     for name in ('omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-powerd', 'omarchy-powerctl', 'omarchy-bluetooth-pair'):
@@ -186,27 +181,6 @@ def audit(manifest, orchard=None):
             'members': len(names), 'desktop_files_verified': len(desktop),
             'root_sha256': record['root']['sha256'], 'platforms': platforms,
             'privileged_entries_verified': len(privileges)}
-
-
-def verify_labwc(record, hashes, modes, owners, groups):
-    pin = json.loads((PROJECT / 'desktop/labwc/source.json').read_text())
-    expected = {'labwc', 'LICENSE', 'source.tar.gz', '0001-cancel-super-tap-on-pointer.patch',
-                '0002-bottom-edge-swipe.patch', '0003-session-transitions.patch',
-                '0004-overview.patch', '0005-title-double-tap.patch', 'packages.lock', 'compiler.txt', 'version.txt'}
-    if not record or record.get('schema') != 1 or record.get('source') != pin or record.get('files', {}).keys() != expected:
-        raise ValueError('Missing pinned Labwc component receipt')
-    if (record['files']['source.tar.gz'] != pin['sha256']
-            or record['files']['0001-cancel-super-tap-on-pointer.patch'] != pin['patch_sha256']
-            or record['files']['0002-bottom-edge-swipe.patch'] != pin['edge_patch_sha256']
-            or record['files']['0003-session-transitions.patch'] != pin['transitions_patch_sha256']
-            or record['files']['0004-overview.patch'] != pin['overview_patch_sha256']
-            or record['files']['0005-title-double-tap.patch'] != pin['title_tap_patch_sha256']):
-        raise ValueError('Labwc corresponding source differs from pin')
-    for name, digest in record['files'].items():
-        path = 'usr/bin/labwc' if name == 'labwc' else 'usr/share/licenses/omarchy-labwc/' + name
-        mode = 0o755 if name == 'labwc' else 0o644
-        if (hashes.get(path), modes.get(path), owners.get(path), groups.get(path)) != (digest, mode, 0, 0):
-            raise ValueError('Labwc component content/metadata differs: ' + path)
 
 
 def verify_bluetooth(record, hashes, modes, owners, groups):

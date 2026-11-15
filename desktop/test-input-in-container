@@ -25,10 +25,8 @@ cp "$cli" /candidate/tmp/pairing-cli.sh
 cp /source/wire-test.py /candidate/tmp/wire-test.py
 chroot /candidate /usr/bin/setpriv --reuid=1000 --regid=1000 --clear-groups /usr/bin/env PYTHONPATH=/usr/lib/omarchy-bluetooth /usr/bin/python3 /tmp/wire-test.py >/evidence/wire-tests.jsonl 2>/evidence/wire-errors.log
 printf 'WIRE_TESTS_OK\n'
-# No main desktop autostart; use the candidate compositor for input tests only.
+# No main desktop autostart; the fixture's own compositor (the Orchard repository's Labwc) for input tests only.
 if test "${OMA_INPUT_ARTIFACT_ONLY:-0}" != 1; then
-    cp /source/labwc /candidate/usr/bin/labwc
-    chmod 755 /candidate/usr/bin/labwc
     cp /source/rc.xml /candidate/home/tablet/.config/labwc/rc.xml
 fi
 : >/candidate/home/tablet/.config/labwc/autostart

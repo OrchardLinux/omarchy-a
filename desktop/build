@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Build target desktop components and stage the pinned Omarchy UI."""
+"""Build the on-screen keyboard and stage the pinned Omarchy UI.
+
+Nothing here is a package: Mesa, wlroots, Labwc, the video bridge, Omafox and
+ARMv7's Omacalc are installed into the image from the Orchard package
+repository (system/assemble-rootfs). The keyboard is a patched wvkbd binary
+of the desktop payload, compiled here from its pinned source.
+"""
 import argparse
 import hashlib
 import json
@@ -9,27 +15,23 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 from snapshot_buildenv import buildenv
-from target import validate, check_elf, source_pins, check_package
+from target import validate, check_elf, machine, podman_arch, builder, source_pins, check_package
 native = buildenv.native
 
 HERE = Path(__file__).resolve().parent
 INPUTS = HERE / 'arm64/inputs'
 PINS = HERE / 'arm64/inputs.json'
-FILES = {
-    'omafox_xpi': INPUTS / '@omafox.xpi',
-    'libva_v4l2_request_source': INPUTS / 'libva-v4l2_request-1.2-2-gcac6ece.tar.gz',
-}
-# Source-built on 64-bit boards only: Mesa from OrchardLinux's fork (OpenGL, the GPU's Vulkan driver and the GPU
-# probe) and the VA-API video bridge.
-HARDWARE_PACKAGES = {'mesa-orchard.pkg.tar.zst': ('gpu_recipe_sha256', 'packages/mesa-orchard'),
-                     'libva-v4l2-request.pkg.tar.zst': ('video_bridge_recipe_sha256', 'packages/libva-v4l2-request')}
-# Prebuilt on 64-bit boards: packages published by their own repositories,
-# downloaded at build time and pinned by SHA-256 in arm64/inputs.json.
+FILES = {'omafox_xpi': INPUTS / '@omafox.xpi'}
+# Prebuilt on 64-bit boards: packages their own repositories publish, not yet
+# in the Orchard package repository. Downloaded at build time and pinned by
+# SHA-256 in arm64/inputs.json; they move to the repository when it has them.
 DOWNLOADS = {'omactivity.pkg.tar.zst': ('omactivity_url', 'omactivity_package'),
              'folio.pkg.tar.zst': ('folio_url', 'folio_package')}
 KEYBOARD_PATH = 'home/tablet/.local/share/omarchy-ipad/trials/wvkbd-mobintl-v0.20-font18-special15-state'
+KEYBOARD_RECIPE = ('wvkbd-0.20.patch', 'friendly-layout.py', 'apply-shift.py', 'orchard-shift.h')
 XPI_PATH = 'usr/lib/firefox/distribution/extensions/@omafox.xpi'
 
 
@@ -41,17 +43,9 @@ def sha(path):
     return h.hexdigest()
 
 
-def recipe_sha(directory):
-    """One digest over a package recipe directory (PKGBUILD and patches), as build-sources records it."""
-    digest = hashlib.sha256()
-    for path in sorted(directory.iterdir()):
-        digest.update(path.name.encode() + b'\0' + sha(path).encode() + b'\n')
-    return digest.hexdigest()
-
-
 def input_record(pins, architecture):
     """The pinned inputs a desktop output was built from, as its manifest records them."""
-    names = list(FILES) if architecture == 'aarch64' else ['omafox_xpi']
+    names = list(FILES)
     if architecture == 'aarch64':
         names += [key for _, key in DOWNLOADS.values()]
     return {name: pins[name] for name in names}
@@ -66,33 +60,60 @@ def download(url, digest, target):
         raise ValueError(f'Downloaded package hash differs: {url}')
 
 
-def source_metadata(built, architecture='aarch64'):
-    pins = source_pins(architecture)
-    if built['architecture'] != architecture or built['source_sha256'] != {
-            name: entry['sha256'] for name, entry in pins.items()}:
-        raise ValueError('Source-build pins differ')
-    if any(built['source_urls'][name] not in entry['urls'] for name, entry in pins.items()):
-        raise ValueError('Source-build URL differs')
-    if built.get('keyboard_layout_sha256') != {name: sha(HERE / 'keyboard' / name) for name in
-                                               ('friendly-layout.py', 'apply-shift.py', 'orchard-shift.h')}:
-        raise ValueError('Keyboard layout recipe differs')
-    if (built['patch_sha256'] != sha(HERE / 'keyboard/wvkbd-0.20.patch') or
-            built['pkgbuild_sha256'] != sha(HERE / 'packages/omafox/PKGBUILD') or
-            built.get('wlroots_recipe_sha256') != recipe_sha(HERE / 'packages/wlroots0.20')):
-        raise ValueError('Source-build recipe differs')
-    expected = {'wvkbd-mobintl', 'omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz'}
-    if architecture == 'armv7h':
-        expected.add('omacalc.pkg.tar.zst')
-        if built.get('omacalc_recipe_sha256') != recipe_sha(HERE / 'packages/omacalc'):
-            raise ValueError('Omacalc source-build recipe differs')
-    else:
-        expected.update(HARDWARE_PACKAGES)
-        for key, recipe in HARDWARE_PACKAGES.values():
-            if built.get(key) != recipe_sha(HERE / recipe):
-                raise ValueError('Hardware package source-build recipe differs: ' + recipe)
-    if set(built['files']) != expected:
-        raise ValueError('Source-build files differ')
-    return built['files']
+def fetch(entry, target):
+    for url in entry['urls']:
+        print('Fetching:', url, flush=True)
+        try:
+            with urlopen(url, timeout=60) as response, target.open('wb') as output:
+                shutil.copyfileobj(response, output)
+        except (HTTPError, URLError, TimeoutError) as exc:
+            target.unlink(missing_ok=True)
+            print('Source unavailable:', exc, flush=True)
+            continue
+        if sha(target) != entry['sha256']:
+            target.unlink()
+            raise ValueError(f'Source archive hash differs: {url}')
+        return url
+    raise ValueError(f'No source archive available for {target.name}')
+
+
+def keyboard_record(architecture, url, binary):
+    """What the keyboard was built from and its bytes, as the desktop manifest records them."""
+    pin = source_pins()['wvkbd']
+    if url not in pin['urls']:
+        raise ValueError('Keyboard source URL differs')
+    return {'architecture': architecture, 'source_url': url, 'source_sha256': pin['sha256'],
+            'recipe_sha256': {name: sha(HERE / 'keyboard' / name) for name in KEYBOARD_RECIPE},
+            'sha256': binary}
+
+
+def build_keyboard(work, architecture, image):
+    """WORK/wvkbd-mobintl from the pinned wvkbd source with this repository's patch and layout; its record."""
+    sources = work / 'sources'
+    sources.mkdir()
+    url = fetch(source_pins()['wvkbd'], sources / 'wvkbd-v0.20.tar.gz')
+    print('Building the keyboard...', flush=True)
+    script = r'''
+set -euo pipefail
+test "$(uname -m)" = "$OMARCHY_MACHINE"
+build=$(mktemp -d "$ORCHARD_TMP/keyboard.XXXXXX")
+trap 'rm -rf "$build"' EXIT
+if ! grep -q preferred_buffer_scale /usr/include/wayland-client-protocol.h; then
+  echo 'Wayland headers lack the required surface scale events' >&2
+  exit 1
+fi
+tar -xzf "$ORCHARD_WORK/sources/wvkbd-v0.20.tar.gz" --strip-components=1 -C "$build"
+patch --batch --fuzz=0 -d "$build" -p1 < "$ORCHARD_RECIPE/keyboard/wvkbd-0.20.patch"
+python3 "$ORCHARD_RECIPE/keyboard/friendly-layout.py" "$build"
+make -C "$build" -j2 wvkbd-mobintl
+readelf -h "$build/wvkbd-mobintl" >/dev/null
+cp "$build/wvkbd-mobintl" "$ORCHARD_WORK/wvkbd-mobintl"
+'''
+    buildenv.run(image, ['bash', '-euc', script], [(work, '/work', False), (HERE, '/recipe', True)],
+                 env={'OMARCHY_MACHINE': machine(architecture)}, arch=podman_arch(architecture))
+    keyboard = work / 'wvkbd-mobintl'
+    check_elf(keyboard, architecture, 'keyboard')
+    return keyboard, keyboard_record(architecture, url, sha(keyboard))
 
 
 def verify(directory, architecture=None):
@@ -104,31 +125,17 @@ def verify(directory, architecture=None):
             meta['omarchy_commit'] != lock['omarchy_commit'] or
             meta['inputs'] != input_record(pins, architecture)):
         raise ValueError('Desktop input manifest differs')
-    built_files = source_metadata(meta['source_build'], architecture)
+    built = meta['keyboard']
+    if built != keyboard_record(architecture, built['source_url'], built['sha256']):
+        raise ValueError('Keyboard source or recipe differs')
     packages = directory / 'packages'
-    if sha(packages / 'omafox.pkg.tar.xz') != built_files['omafox.pkg.tar.xz']:
-        raise ValueError('Source-built Omafox package differs')
-    if sha(packages / 'wlroots0.20.pkg.tar.xz') != built_files['wlroots0.20.pkg.tar.xz']:
-        raise ValueError('Source-built wlroots package differs')
-    # Omacalc: 64-bit images install upstream's signed package from its repository (system/assemble-rootfs).
-    local = ['omafox.pkg.tar.xz', 'wlroots0.20.pkg.tar.xz']
-    if architecture == 'armv7h':
-        local.append('omacalc.pkg.tar.zst')
-        if sha(packages / 'omacalc.pkg.tar.zst') != built_files['omacalc.pkg.tar.zst']:
-            raise ValueError('Source-built Omacalc package differs')
-    if architecture == 'aarch64':
-        for name, (_, key) in DOWNLOADS.items():
-            if sha(packages / name) != pins[key]:
-                raise ValueError('Downloaded package differs: ' + name)
-            local.append(name)
-    if {path.name for path in packages.iterdir()} != set(local) | (set(HARDWARE_PACKAGES) if architecture == 'aarch64' else set()):
+    local = list(DOWNLOADS) if architecture == 'aarch64' else []
+    if {path.name for path in packages.iterdir()} != set(local):
         raise ValueError('Desktop packages differ')
     for name in local:
+        if sha(packages / name) != pins[DOWNLOADS[name][1]]:
+            raise ValueError('Downloaded package differs: ' + name)
         check_package(packages / name, architecture)
-    for name in HARDWARE_PACKAGES if architecture == 'aarch64' else ():
-        check_package(packages / name, architecture)
-        if sha(packages / name) != built_files[name]:
-            raise ValueError('Source-built hardware package differs: ' + name)
     payload = directory / 'payload'
     manifest = payload / 'arch-ipad-ui-manifest.json'
     if sha(manifest) != meta['payload_manifest_sha256']:
@@ -143,7 +150,7 @@ def verify(directory, architecture=None):
     if actual != set(contents) | {'arch-ipad-ui-manifest.json'}:
         raise ValueError('Desktop UI files differ from manifest')
     check_elf(payload / KEYBOARD_PATH, architecture, 'keyboard')
-    if sha(payload / KEYBOARD_PATH) != built_files['wvkbd-mobintl']:
+    if sha(payload / KEYBOARD_PATH) != built['sha256']:
         raise ValueError('Source-built keyboard differs')
     if sha(payload / XPI_PATH) != pins['omafox_xpi']:
         raise ValueError('Signed extension differs')
@@ -155,8 +162,7 @@ def build(output, architecture='aarch64', builder_image=None):
     if output.exists():
         raise ValueError('Output already exists')
     pins = json.loads(PINS.read_text())
-    files = FILES if architecture == 'aarch64' else {'omafox_xpi': FILES['omafox_xpi']}
-    for name, path in files.items():
+    for name, path in FILES.items():
         if sha(path) != pins[name]:
             raise ValueError(f'Pinned desktop input differs: {name}')
     lock = dict(line.split('=', 1) for line in (HERE / 'upstream.lock').read_text().splitlines() if '=' in line)
@@ -169,19 +175,11 @@ def build(output, architecture='aarch64', builder_image=None):
     for tool in required:
         if shutil.which(tool) is None:
             raise RuntimeError(f'{tool} is required')
+    image = builder(buildenv, architecture, builder_image)
     (HERE / '.work').mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='desktop-', dir=HERE / '.work') as temporary:
         work = Path(temporary)
-        sources = work / 'source-build'
-        options = ['--architecture', architecture]
-        if builder_image:
-            options.extend(['--builder-image', builder_image])
-        subprocess.run([sys.executable, str(HERE / 'build-sources'), '--output', str(sources), *options], check=True)
-        built = json.loads((sources / 'manifest.json').read_text())
-        built_files = source_metadata(built, architecture)
-        for name, digest in built_files.items():
-            if sha(sources / name) != digest:
-                raise ValueError(f'Source-built file differs: {name}')
+        keyboard, built = build_keyboard(work, architecture, image)
         upstream = work / 'upstream'
         upstream.mkdir()
         subprocess.run(['git', '-C', str(upstream), 'init', '-q'], check=True)
@@ -195,21 +193,15 @@ def build(output, architecture='aarch64', builder_image=None):
         result_dir = work / 'result'
         result_dir.mkdir()
         subprocess.run([sys.executable, str(HERE / 'stage.py'), str(result_dir / 'payload'),
-                        '--upstream', str(upstream), '--keyboard', str(sources / 'wvkbd-mobintl'),
-                        '--keyboard-sha256', built_files['wvkbd-mobintl'],
+                        '--upstream', str(upstream), '--keyboard', str(keyboard),
+                        '--keyboard-sha256', built['sha256'],
                         '--omafox-xpi', str(FILES['omafox_xpi']), '--architecture', architecture], check=True)
         packages = result_dir / 'packages'
         packages.mkdir()
-        shutil.copyfile(sources / 'omafox.pkg.tar.xz', packages / 'omafox.pkg.tar.xz')
-        shutil.copyfile(sources / 'wlroots0.20.pkg.tar.xz', packages / 'wlroots0.20.pkg.tar.xz')
-        if architecture == 'armv7h':
-            shutil.copyfile(sources / 'omacalc.pkg.tar.zst', packages / 'omacalc.pkg.tar.zst')
-        for name in HARDWARE_PACKAGES if architecture == 'aarch64' else ():
-            shutil.copyfile(sources / name, packages / name)
         for name, (url, key) in DOWNLOADS.items() if architecture == 'aarch64' else ():
             download(pins[url], pins[key], packages / name)
         meta = {'architecture': architecture, 'omarchy_commit': commit,
-                'inputs': input_record(pins, architecture), 'source_build': built,
+                'inputs': input_record(pins, architecture), 'keyboard': built,
                 'payload_manifest_sha256': sha(result_dir / 'payload/arch-ipad-ui-manifest.json')}
         (result_dir / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')
         verify(result_dir, architecture)

@@ -20,9 +20,10 @@ on:
         description: Publish this run as the rolling nightly pre-release (from main only)
         type: boolean
         default: false
-  # Nightly: main with orchard's newest nightly, as the rolling `nightly`
-  # pre-release, when either changed since the last one. After orchard's own
-  # nightly (03:17 UTC), so a change there is usually in the same night's build.
+  # Nightly: main with orchard's newest nightly and the Orchard package
+  # repository's packages, as the rolling `nightly` pre-release, when any of
+  # them changed since the last one. After orchard's own nightly (03:17 UTC),
+  # so a change there is usually in the same night's build.
   schedule:
     - cron: '30 4 * * *'
 permissions:
@@ -36,11 +37,13 @@ jobs:
     # The orchard version this run builds with, resolved once for every job:
     # nightly becomes the newest nightly-YYYYMMDD-COMMIT, a tag stays as it is.
     # And whether this run is a nightly (ci/nightly): a scheduled run is one
-    # only when this commit or orchard's nightly differs from what the last
-    # nightly was built from (its latest.json), so an unchanged night ends here.
+    # only when this commit, orchard's nightly or the Orchard package
+    # repository differs from what the last nightly was built from (its
+    # latest.json), so an unchanged night ends here.
     runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
+      packages: ${{ steps.packages.outputs.index }}
       nightly: ${{ steps.plan.outputs.nightly }}
       name: ${{ steps.plan.outputs.name }}
     steps:
@@ -58,6 +61,15 @@ jobs:
           fi
           echo "orchard $tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      # The image installs Mesa, wlroots, Labwc and the rest from the Orchard
+      # package repository (system/assemble-rootfs): its index changes with
+      # every package published there, so its checksum identifies them all.
+      - id: packages
+        run: |
+          index=$(curl -fsSL --retry 3 https://github.com/OrchardLinux/packages/releases/download/repo-aarch64/orchard.db |
+            sha256sum | cut -d' ' -f1)
+          echo "Orchard packages $index"
+          echo "index=$index" >> "$GITHUB_OUTPUT"
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,12 +77,14 @@ jobs:
           EVENT: ${{ github.event_name }}
           WANTED: ${{ inputs.nightly }}
           ORCHARD_TAG: ${{ steps.resolve.outputs.tag }}
+          PACKAGES: ${{ steps.packages.outputs.index }}
         run: |
           # No earlier nightly, or none that can be read: the run builds one.
           gh release download nightly --pattern latest.json --dir previous 2>/dev/null || true
-          # A further input of the nightly is one more --input NAME=VALUE here.
+          # A further input of the nightly is one more --input NAME=VALUE here and where it is recorded (the nightly job).
           ci/nightly plan --event "$EVENT" --wanted "$WANTED" --commit "$GITHUB_SHA" \
-            --input "orchard=$ORCHARD_TAG" --previous previous/latest.json | tee -a "$GITHUB_OUTPUT"
+            --input "orchard=$ORCHARD_TAG" --input "packages=$PACKAGES" \
+            --previous previous/latest.json | tee -a "$GITHUB_OUTPUT"
   test:
     # Not on a night without a nightly: nothing changed since these last ran.
     # They do not depend on the orchard a build would use: a failure to resolve it leaves them running.
@@ -172,7 +186,7 @@ jobs:
     needs: orchard
     runs-on: ubuntu-24.04-arm
     container: docker.io/arch4edu/archlinuxarm@sha256:1db43d1af9917db5fd34af3dab64e2b229a21240e81bb765e3d2d3c34739d587
-    timeout-minutes: 180
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -193,53 +207,24 @@ jobs:
         if: inputs.reuse_run_id == ''
         with:
           persist-credentials: false
-      # The compiler cache of the last source build: Mesa, wlroots and the rest
-      # compile only what changed since. A new set of pins and recipes starts
-      # from the newest older cache.
-      - uses: actions/cache/restore@v4
-        if: inputs.reuse_run_id == ''
-        id: ccache
-        with:
-          path: .ccache
-          key: desktop-ccache-v1-${{ hashFiles('desktop/sources.json', 'desktop/arm64/sources.json', 'desktop/packages/**', 'desktop/labwc/**', 'desktop/keyboard/**') }}
-          restore-keys: desktop-ccache-v1-
       - name: Install the same signed-package toolchains as local builds
         if: inputs.reuse_run_id == ''
         run: |
           bash desktop/install-toolchain
-          bash desktop/labwc/install-toolchain
           bash system/install-toolchain
-          # CI only: Meson compiles through ccache when it is installed.
-          pacman -S --noconfirm --needed ccache
           bash ci/dependencies --tools-only
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
-          useradd --create-home --uid 2000 builder
-          chown -R builder:builder "$GITHUB_WORKSPACE"
-      - name: Build source components as an unprivileged user
+      # No package is built here: the root installs Mesa, wlroots, Labwc and the
+      # rest from the Orchard package repository. What is compiled is the
+      # keyboard and the cursor helper, a few seconds of C.
+      - name: Build the desktop payload and its helpers
         if: inputs.reuse_run_id == ''
+        env:
+          ORCHARD_CHECKOUT: ${{ github.workspace }}/.orchard
         run: |
-          # The builds run in new temporary directories every time: ccache reads
-          # paths below /tmp relative to the build directory and leaves that
-          # directory's name out of its keys, so the same sources hit.
-          builder=(runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID"
-            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard"
-            CCACHE_DIR="$GITHUB_WORKSPACE/.ccache" CCACHE_BASEDIR=/tmp CCACHE_NOHASHDIR=1)
-          "${builder[@]}" mkdir -p "$GITHUB_WORKSPACE/.ccache"
-          "${builder[@]}" ccache --zero-stats >/dev/null
-          started=$(date +%s)
-          "${builder[@]}" python desktop/build --output out/desktop
-          "${builder[@]}" python desktop/build-cursor-helper --output out/cursor
-          "${builder[@]}" python desktop/build-bluetooth-tools --output out/bluetooth
-          "${builder[@]}" python desktop/build-labwc --output out/labwc
-          # Keep only what this build used, so the saved cache stays one build large.
-          "${builder[@]}" ccache --evict-older-than "$(( $(date +%s) - started + 60 ))s" >/dev/null
-          { echo 'Compiler cache, source builds:'; echo '```'; "${builder[@]}" ccache --show-stats; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      # Saved here, not at the end of the job: a failure further down keeps the compiled work.
-      - uses: actions/cache/save@v4
-        if: inputs.reuse_run_id == '' && steps.ccache.outputs.cache-hit != 'true'
-        with:
-          path: .ccache
-          key: ${{ steps.ccache.outputs.cache-primary-key }}
+          python desktop/build --output out/desktop
+          python desktop/build-cursor-helper --output out/cursor
+          python desktop/build-bluetooth-tools --output out/bluetooth
       - name: Build the signed Arch root filesystem
         if: inputs.reuse_run_id == ''
         env:
@@ -253,7 +238,7 @@ jobs:
           if [[ "$REF_TYPE" == tag ]]; then VERSION="${REF_NAME#v}"; elif [[ -n "$NIGHTLY" ]]; then VERSION="$NIGHTLY"; fi
           bash system/build-rootfs --desktop out/desktop --release "$VERSION" --output out/base
           # Not compressed again: the root archive in it already is.
-          tar -C out -cf out/omarchy-userspace.tar base cursor bluetooth labwc
+          tar -C out -cf out/omarchy-userspace.tar base cursor bluetooth
       - uses: actions/upload-artifact@v4
         with:
           name: omarchy-userspace
@@ -348,7 +333,7 @@ jobs:
             --base out/base/rootfs.tar.gz --base-receipt out/base/rootfs.tar.gz.json \
             --splash out/boot/artwork/splash --logo out/boot/artwork/logo.bin \
             --busybox "$(tool busybox)" --dropbear "$(tool dropbear)" --dropbearkey "$(tool dropbearkey)" \
-            --cursor-tools out/cursor --bluetooth-tools out/bluetooth --labwc-tools out/labwc \
+            --cursor-tools out/cursor --bluetooth-tools out/bluetooth \
             --output out/release
           python -m release.audit out/release/release.toml
           python -m orchard.manifests --verify-local out/release/index.toml
@@ -443,13 +428,14 @@ jobs:
         env:
           NAME: ${{ needs.orchard.outputs.name }}
           ORCHARD_TAG: ${{ needs.orchard.outputs.tag }}
+          PACKAGES: ${{ needs.orchard.outputs.packages }}
           RUN_ID: ${{ github.run_id }}
         run: |
           (cd assets && sha256sum --check --strict SHA256SUMS)
           # A public build is attested (the assets job); its bundle is among the assets.
           if [[ -f assets/omarchy-a-build.sigstore.jsonl ]]; then gh attestation verify assets/SHA256SUMS --repo "$GH_REPO"; fi
           source/ci/nightly record --name "$NAME" --commit "$GITHUB_SHA" --run-id "$RUN_ID" \
-            --input "orchard=$ORCHARD_TAG" > assets/nightly.json
+            --input "orchard=$ORCHARD_TAG" --input "packages=$PACKAGES" > assets/nightly.json
           base="https://github.com/$GH_REPO/releases/download"
           printf '%s\n' "omarchy-a main $GITHUB_SHA with orchard $ORCHARD_TAG (run $RUN_ID). Untested on hardware, not a release; kept 7 days." \
             '' "Install: \`curl -fsSL $base/$NAME/install.sh | sh\`" > notes.md

@@ -16,7 +16,6 @@ def main():
     parser.add_argument('--artifact-only', action='store_true', help='audit/test shipped components without source overlays')
     parser.add_argument('--pointer-helper', required=True, type=Path)
     parser.add_argument('--bluetooth-tools', default=PROJECT / 'out/desktop/bluetooth-tools', type=Path)
-    parser.add_argument('--labwc-tools', default=PROJECT / 'out/desktop/labwc-tools', type=Path)
     args = parser.parse_args()
     if args.output.exists():
         parser.error('Choose a new evidence directory')
@@ -37,9 +36,8 @@ def main():
         from release.audit import audit
         audit(args.manifest)
     else:
-        from release.public_root import bluetooth_files, labwc_files
+        from release.public_root import bluetooth_files
         bluetooth_files(args.bluetooth_tools)
-        labwc_files(args.labwc_tools)
     args.output.mkdir(parents=True)
     output = args.output.resolve()
     sources = {
@@ -57,7 +55,6 @@ def main():
             PROJECT / 'desktop/shell/shell/bluetooth-pairing': '/source/ui',
             PROJECT / 'desktop/shell/bin/omarchy-bluetooth-device': '/source/pairing-cli.sh',
             PROJECT / 'desktop/shell/labwc-rc.xml': '/source/rc.xml',
-            args.labwc_tools / 'labwc': '/source/labwc',
         })
     command = ['podman', 'run', '--rm', '--network', 'none', '--userns', 'keep-id:uid=0,gid=0',
                '--cap-add', 'SYS_ADMIN', '--security-opt', 'seccomp=unconfined',
