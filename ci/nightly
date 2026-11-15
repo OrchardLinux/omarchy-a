@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""The rolling nightly: whether to build one, what it is called, and which old ones go.
+
+A nightly is made of its inputs, each a name and the value that identifies it:
+this repository's commit ("omarchy-a") and the orchard nightly whose tooling
+and components it takes ("orchard"). The record of the last nightly
+(latest.json of the release `nightly`) names the inputs it was built from; a
+scheduled run builds only when they differ from today's. A further input
+(--input NAME=VALUE, e.g. the checksum of a package repository's database)
+takes part without any other change.
+
+  ci/nightly plan --event EVENT --wanted BOOL --commit SHA --input NAME=VALUE ... [--previous latest.json]
+      prints nightly=true|false and name=nightly-YYYYMMDD-COMMIT (GitHub step outputs)
+  ci/nightly record --name NAME --commit SHA --run-id ID --input NAME=VALUE ...
+      prints the record: latest.json, and nightly.json of the dated release
+  ci/nightly expired --keep-days N < tags
+      prints the dated nightlies older than N days, never the newest
+"""
+import argparse
+from datetime import datetime, timedelta, timezone
+import json
+from pathlib import Path
+import re
+import sys
+
+SCHEMA = 1
+NAME = re.compile(r'nightly-([0-9]{8})-[0-9a-f]{12}')
+COMMIT = re.compile(r'[0-9a-f]{40}')
+
+
+def inputs(commit, pairs):
+    """{name: value} of what a nightly is built from; this repository's commit is always one."""
+    if not COMMIT.fullmatch(commit):
+        raise ValueError('Not a commit: ' + commit)
+    result = {'omarchy-a': commit}
+    for pair in pairs:
+        name, separator, value = pair.partition('=')
+        if not separator or not name or not value or name in result:
+            raise ValueError('Expected a new NAME=VALUE: ' + pair)
+        result[name] = value
+    return result
+
+
+def previous_inputs(path):
+    """The inputs the last nightly was built from; None when there is none or its record is unreadable."""
+    try:
+        record = json.loads(Path(path).read_text())
+        found = record['inputs']
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return found if isinstance(found, dict) else None
+
+
+def plan(event, wanted, current, previous):
+    """(build, reason): a scheduled run builds when the inputs changed, a dispatch when it asks for a nightly."""
+    if event == 'workflow_dispatch':
+        return (True, 'asked for by this dispatch') if wanted else (False, 'this dispatch asked for no nightly')
+    if event != 'schedule':
+        return False, f'{event} runs publish no nightly'
+    if previous is None:
+        return True, 'no earlier nightly names its inputs'
+    changed = sorted(name for name in {*current, *previous} if current.get(name) != previous.get(name))
+    if not changed:
+        return False, 'unchanged since the last nightly'
+    return True, 'changed since the last nightly: ' + ', '.join(
+        f'{name} {previous.get(name, "(new)")} -> {current.get(name, "(gone)")}' for name in changed)
+
+
+def name(commit, now):
+    return f'nightly-{now:%Y%m%d}-{commit[:12]}'
+
+
+def record(name, commit, run_id, built, current):
+    if not NAME.fullmatch(name):
+        raise ValueError('Not a nightly name: ' + name)
+    return {'schema': SCHEMA, 'name': name, 'commit': commit, 'built': f'{built:%Y-%m-%dT%H:%M:%SZ}',
+            'run_id': run_id, 'inputs': current}
+
+
+def expired(tags, keep_days, today):
+    """The dated nightlies among TAGS older than KEEP_DAYS, except the newest one."""
+    nightlies = sorted(tag for tag in tags if NAME.fullmatch(tag))
+    cutoff = f'{today - timedelta(days=keep_days):%Y%m%d}'
+    return [tag for tag in nightlies[:-1] if NAME.fullmatch(tag).group(1) < cutoff]
+
+
+def main(argv=None, now=None):
+    now = now or datetime.now(timezone.utc)
+    parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    actions = parser.add_subparsers(dest='action', required=True)
+    planned = actions.add_parser('plan')
+    planned.add_argument('--event', required=True)
+    planned.add_argument('--wanted', default='')
+    planned.add_argument('--previous', type=Path)
+    recorded = actions.add_parser('record')
+    recorded.add_argument('--name', required=True)
+    recorded.add_argument('--run-id', required=True, type=int)
+    for action in (planned, recorded):
+        action.add_argument('--commit', required=True)
+        action.add_argument('--input', action='append', default=[], metavar='NAME=VALUE')
+    old = actions.add_parser('expired')
+    old.add_argument('--keep-days', required=True, type=int)
+    args = parser.parse_args(argv)
+    try:
+        if args.action == 'expired':
+            for tag in expired(sys.stdin.read().split(), args.keep_days, now):
+                print(tag)
+            return 0
+        current = inputs(args.commit, args.input)
+        if args.action == 'record':
+            print(json.dumps(record(args.name, args.commit, args.run_id, now, current)))
+            return 0
+        build, reason = plan(args.event, args.wanted == 'true', current,
+                             previous_inputs(args.previous) if args.previous else None)
+    except ValueError as error:
+        parser.error(str(error))
+    print(('Nightly: ' if build else 'No nightly: ') + reason, file=sys.stderr)
+    print('nightly=' + ('true' if build else 'false'))
+    print('name=' + (name(args.commit, now) if build else ''))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

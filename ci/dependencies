@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install orchard (main for tests, the pinned release for builds) and its verified component bundles.
+# Install orchard (main for tests, the published release for builds) and its verified component bundles.
 set -euo pipefail
 # Downloads under 10 KiB/s for 60 s count as failed, and --retry starts them again.
 fetch() { curl -fL --retry 3 --speed-limit 10240 --speed-time 60 "$@"; }
@@ -15,24 +15,39 @@ fi
 [[ "$HARDWARE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || "$HARDWARE_TAG" =~ ^nightly-[0-9]{8}-[0-9a-f]{12}$ ]] || {
   echo 'The component release tag must be vMAJOR.MINOR.PATCH, nightly-YYYYMMDD-COMMIT or nightly' >&2; exit 2;
 }
-# A build uses the orchard release it pins whole: its tools (loader, platform
-# layer, defaults, recovery) and its compiled components come from the same
-# tag. Tests set ORCHARD_REF=main. The release receipt records the commit.
-ref=${ORCHARD_REF:-$HARDWARE_TAG}
-if [[ ! -f .orchard/pyproject.toml ]]; then
-  git clone --quiet --depth 1 --branch "$ref" https://github.com/OrchardLinux/orchard.git .orchard
+# A build uses the orchard release it names whole, as that release published
+# it: its tools (loader, platform layer, defaults, recovery) are the release's
+# orchard-source.tar.gz and its compiled components the bundles beside it.
+# Nothing of orchard is checked out or compiled. Two cases clone instead: the
+# tests, which follow orchard main (ORCHARD_REF=main), and a build from an
+# orchard run whose release is not published yet (HARDWARE_ARTIFACT_DIR), at
+# that release's tag.
+base="https://github.com/OrchardLinux/orchard/releases/download/$HARDWARE_TAG"
+mkdir -p out/downloads
+if [[ -f .orchard/pyproject.toml ]]; then
+  echo "orchard: the snapshot already in .orchard"
+elif [[ -n "${ORCHARD_REF:-}" || -n "${HARDWARE_ARTIFACT_DIR:-}" ]]; then
+  git clone --quiet --depth 1 --branch "${ORCHARD_REF:-$HARDWARE_TAG}" https://github.com/OrchardLinux/orchard.git .orchard
+  echo "orchard $(git -C .orchard rev-parse HEAD)"
+else
+  fetch "$base/SHA256SUMS" -o out/downloads/SHA256SUMS
+  fetch "$base/orchard-source.tar.gz" -o out/downloads/orchard-source.tar.gz
+  (cd out/downloads && grep -E ' (\./)?orchard-source\.tar\.gz$' SHA256SUMS | sha256sum --check --strict)
+  mkdir .orchard
+  tar -xzf out/downloads/orchard-source.tar.gz -C .orchard
+  # The commit git archive recorded in the archive: the release receipt names it (release/snapshot.py).
+  # Not a pipe: git stops reading after the header, which pipefail would take for a failure.
+  git get-tar-commit-id < <(gzip -dc out/downloads/orchard-source.tar.gz) > .orchard/.source-commit
+  echo "orchard $HARDWARE_TAG ($(cat .orchard/.source-commit))"
 fi
-echo "orchard $(git -C .orchard rev-parse HEAD)"
 python3 -m venv .venv
 # validate: the JSON schemas, which release CI checks every manifest against.
 .venv/bin/python -m pip install -e './.orchard[validate]'
 .venv/bin/python -m pip check
 if [[ "${1:-}" == --tools-only ]]; then exit 0; fi
 [[ $# == 0 ]] || { echo 'Usage: ci/dependencies [--tools-only]' >&2; exit 2; }
-mkdir -p out/downloads
 # One component bundle per platform: its kernel, modules and DTBs, and the shared tools.
 platforms=$(.venv/bin/python -c 'from orchard.image.platform import platforms; print(*platforms())')
-base="https://github.com/OrchardLinux/orchard/releases/download/$HARDWARE_TAG"
 if [[ -n "${HARDWARE_ARTIFACT_DIR:-}" ]]; then
   cp "$HARDWARE_ARTIFACT_DIR/SHA256SUMS" out/downloads/
 else

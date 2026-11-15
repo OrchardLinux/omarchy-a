@@ -9,6 +9,7 @@ orchard build names it in ORCHARD_CHECKOUT; a build without orchard passes
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tomllib
@@ -37,15 +38,28 @@ def command(root, module, *argv, **kwargs):
 
 
 def revision(root):
-    """{'commit', 'modified'} of a snapshot that is a git checkout or clone; None otherwise."""
+    """{'commit', 'modified'} of a snapshot; None when nothing names its commit.
+
+    A git checkout or clone names its own. A release's orchard-source.tar.gz
+    unpacked has no repository: ci/dependencies keeps the commit git archive
+    recorded in the archive beside the files, in .source-commit.
+    """
+    root = Path(root)
     def git(*arguments):
         return subprocess.run(['git', '-C', str(root), *arguments], capture_output=True, text=True,
                               check=True).stdout.strip()
+    # Only the snapshot's own repository counts, not one further up that it merely lies in.
+    if (root / '.git').exists():
+        try:
+            return {'commit': git('rev-parse', 'HEAD'),
+                    'modified': bool(git('status', '--porcelain', '--untracked-files=no'))}
+        except (OSError, subprocess.CalledProcessError):
+            return None
     try:
-        return {'commit': git('rev-parse', 'HEAD'),
-                'modified': bool(git('status', '--porcelain', '--untracked-files=no'))}
-    except (OSError, subprocess.CalledProcessError):
+        commit = (root / '.source-commit').read_text().strip()
+    except OSError:
         return None
+    return {'commit': commit, 'modified': False} if re.fullmatch('[0-9a-f]{40}', commit) else None
 
 
 def private_firmware(root):
