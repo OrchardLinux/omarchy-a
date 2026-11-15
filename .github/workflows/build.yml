@@ -67,11 +67,30 @@ jobs:
         env:
           ORCHARD_REF: main
       - run: .venv/bin/python -m unittest discover -s tests -v
+  # The build jobs start beside the tests, not after them: a failed test costs
+  # some building, and `assets` (so every draft and preview) still waits for both.
+  artwork-check:
+    # The artwork is drawn on a Mac, and only when boot/ changed: otherwise the
+    # kept result of its last drawing is used, on a Linux runner.
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    outputs:
+      runner: ${{ steps.kept.outputs.cache-hit == 'true' && 'ubuntu-24.04' || 'macos-15' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/cache/restore@v4
+        id: kept
+        with:
+          path: out/boot-inputs.tar.gz
+          key: boot-artwork-v1-${{ hashFiles('boot/**') }}
+          lookup-only: true
   # Pongo is not built here: releases ship hardware's one Pongo (quiet/pongo.bin).
   artwork:
     if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
-    needs: test
-    runs-on: macos-15
+    needs: artwork-check
+    runs-on: ${{ needs.artwork-check.outputs.runner }}
     timeout-minutes: 30
     steps:
       - name: Reuse unchanged successful outputs
@@ -86,14 +105,20 @@ jobs:
         if: inputs.reuse_run_id == ''
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/cache@v4
         if: inputs.reuse_run_id == ''
+        id: kept
+        with:
+          path: out/boot-inputs.tar.gz
+          key: boot-artwork-v1-${{ hashFiles('boot/**') }}
+      - uses: actions/setup-python@v5
+        if: inputs.reuse_run_id == '' && steps.kept.outputs.cache-hit != 'true'
         with:
           python-version: '3.14'
       - run: brew install imagemagick librsvg
-        if: inputs.reuse_run_id == ''
+        if: inputs.reuse_run_id == '' && steps.kept.outputs.cache-hit != 'true'
       - name: Generate the boot artwork, data for orchard's m1n1
-        if: inputs.reuse_run_id == ''
+        if: inputs.reuse_run_id == '' && steps.kept.outputs.cache-hit != 'true'
         run: |
           python boot/generate-logo.py --size 480 --output out/boot/omarchy-logo.h
           python boot/build-artwork --logo-header out/boot/omarchy-logo.h --output out/boot/artwork
@@ -107,7 +132,7 @@ jobs:
           retention-days: 2
   userspace:
     if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
-    needs: [test, orchard]
+    needs: orchard
     runs-on: ubuntu-24.04-arm
     container: docker.io/arch4edu/archlinuxarm@sha256:1db43d1af9917db5fd34af3dab64e2b229a21240e81bb765e3d2d3c34739d587
     timeout-minutes: 180
@@ -131,12 +156,24 @@ jobs:
         if: inputs.reuse_run_id == ''
         with:
           persist-credentials: false
+      # The compiler cache of the last source build: Mesa, wlroots and the rest
+      # compile only what changed since. A new set of pins and recipes starts
+      # from the newest older cache.
+      - uses: actions/cache/restore@v4
+        if: inputs.reuse_run_id == ''
+        id: ccache
+        with:
+          path: .ccache
+          key: desktop-ccache-v1-${{ hashFiles('desktop/sources.json', 'desktop/arm64/sources.json', 'desktop/packages/**', 'desktop/labwc/**', 'desktop/keyboard/**') }}
+          restore-keys: desktop-ccache-v1-
       - name: Install the same signed-package toolchains as local builds
         if: inputs.reuse_run_id == ''
         run: |
           bash desktop/install-toolchain
           bash desktop/labwc/install-toolchain
           bash system/install-toolchain
+          # CI only: Meson compiles through ccache when it is installed.
+          pacman -S --noconfirm --needed ccache
           bash ci/dependencies --tools-only
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
           useradd --create-home --uid 2000 builder
@@ -144,18 +181,28 @@ jobs:
       - name: Build source components as an unprivileged user
         if: inputs.reuse_run_id == ''
         run: |
-          runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
-            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard" \
-            python desktop/build --output out/desktop
-          runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
-            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard" \
-            python desktop/build-cursor-helper --output out/cursor
-          runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
-            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard" \
-            python desktop/build-bluetooth-tools --output out/bluetooth
-          runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID" \
-            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard" \
-            python desktop/build-labwc --output out/labwc
+          # The builds run in new temporary directories every time: ccache reads
+          # paths below /tmp relative to the build directory and leaves that
+          # directory's name out of its keys, so the same sources hit.
+          builder=(runuser -u builder -- env PATH="$PATH" ORCHARD_BUILD_NATIVE=1 ORCHARD_BUILD_ENV_ID="$ORCHARD_BUILD_ENV_ID"
+            ORCHARD_CHECKOUT="$GITHUB_WORKSPACE/.orchard"
+            CCACHE_DIR="$GITHUB_WORKSPACE/.ccache" CCACHE_BASEDIR=/tmp CCACHE_NOHASHDIR=1)
+          "${builder[@]}" mkdir -p "$GITHUB_WORKSPACE/.ccache"
+          "${builder[@]}" ccache --zero-stats >/dev/null
+          started=$(date +%s)
+          "${builder[@]}" python desktop/build --output out/desktop
+          "${builder[@]}" python desktop/build-cursor-helper --output out/cursor
+          "${builder[@]}" python desktop/build-bluetooth-tools --output out/bluetooth
+          "${builder[@]}" python desktop/build-labwc --output out/labwc
+          # Keep only what this build used, so the saved cache stays one build large.
+          "${builder[@]}" ccache --evict-older-than "$(( $(date +%s) - started + 60 ))s" >/dev/null
+          { echo 'Compiler cache, source builds:'; echo '```'; "${builder[@]}" ccache --show-stats; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # Saved here, not at the end of the job: a failure further down keeps the compiled work.
+      - uses: actions/cache/save@v4
+        if: inputs.reuse_run_id == '' && steps.ccache.outputs.cache-hit != 'true'
+        with:
+          path: .ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - name: Build the signed Arch root filesystem
         if: inputs.reuse_run_id == ''
         env:
@@ -167,11 +214,12 @@ jobs:
           VERSION="preview-$RUN_ID"
           if [[ "$REF_TYPE" == tag ]]; then VERSION="${REF_NAME#v}"; fi
           bash system/build-rootfs --desktop out/desktop --release "$VERSION" --output out/base
-          tar -C out -czf out/omarchy-userspace.tar.gz base cursor bluetooth labwc
+          # Not compressed again: the root archive in it already is.
+          tar -C out -cf out/omarchy-userspace.tar base cursor bluetooth labwc
       - uses: actions/upload-artifact@v4
         with:
           name: omarchy-userspace
-          path: out/omarchy-userspace.tar.gz
+          path: out/omarchy-userspace.tar*
           compression-level: 0
           if-no-files-found: error
           retention-days: 2
@@ -203,7 +251,8 @@ jobs:
           pattern: omarchy-*
           path: out/downloads
           merge-multiple: true
-      - run: sudo apt-get update && sudo apt-get install -y zstd
+      # The runner image has zstd; an apt mirror is asked only if that ever changes.
+      - run: command -v zstd || { sudo apt-get update && sudo apt-get install -y zstd; }
       - name: Await the exact hardware run without rebuilding components
         if: inputs.hardware_run_id != ''
         env:
@@ -229,7 +278,8 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           . .venv/bin/activate
-          tar -xzf out/downloads/omarchy-userspace.tar.gz -C out
+          # .tar, or .tar.gz from a run before the archive stopped being compressed twice.
+          tar -xf out/downloads/omarchy-userspace.tar* -C out
           tar -xzf out/downloads/boot-inputs.tar.gz -C out
           VERSION="preview-$RUN_ID"
           TAG="v$VERSION"
