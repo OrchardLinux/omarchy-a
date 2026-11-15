@@ -6,7 +6,9 @@ orchard runs it as `tools/build.py --version VERSION --output DIRECTORY
 has one root of one architecture: the selected platforms' (apple-armv7: armv7h), else
 --architecture, else aarch64. Components land in out/components/NAME/KEY/, keyed by the
 files they are made from and the architecture, so a build redoes only what changed: a shell edit
-rebuilds the desktop payload and the root, not Labwc. orchard supplies its
+rebuilds the desktop payload and the root, not the cursor helper. Packages are not
+built here: the root installs Mesa, wlroots, Labwc and the rest from the Orchard
+package repository (system/assemble-rootfs). orchard supplies its
 m1n1, Pongo, the static tools and every platform's kernel
 (python -m orchard.inputs); its producers run as commands from the orchard
 snapshot (ORCHARD_CHECKOUT, which orchard build sets, or --orchard DIR) and
@@ -29,13 +31,11 @@ from release.architecture import platform_arch, validate  # noqa: E402
 DESKTOP_IMAGE = ['desktop/Containerfile', 'desktop/install-toolchain', 'desktop/snapshot_buildenv.py']
 # What each component is made from, relative to this checkout.
 INPUTS = {
-    'desktop': ['desktop/build', 'desktop/build-sources', 'desktop/stage.py', 'desktop/target.py', 'desktop/arm64', 'desktop/armv7', 'desktop/keyboard',
-                'desktop/packages', 'desktop/sources.json', 'desktop/upstream.lock', 'desktop/configuration',
+    'desktop': ['desktop/build', 'desktop/stage.py', 'desktop/target.py', 'desktop/arm64', 'desktop/keyboard',
+                'desktop/sources.json', 'desktop/upstream.lock', 'desktop/configuration',
                 'desktop/greeter', 'desktop/shell', 'desktop/themes', 'release/architecture.py', *DESKTOP_IMAGE],
     'cursor': ['desktop/build-cursor-helper', 'desktop/cursor', 'desktop/target.py', 'release/architecture.py', *DESKTOP_IMAGE],
     'bluetooth': ['desktop/build-bluetooth-tools', 'desktop/bluetooth'],
-    'labwc': ['desktop/build-labwc', 'desktop/labwc', 'desktop/target.py', 'desktop/snapshot_buildenv.py',
-              'release/architecture.py'],
     'base': ['system/build-rootfs', 'system/assemble-rootfs', 'system/Containerfile',
              'system/install-toolchain', 'system/packages.txt', 'system/rank-mirrors',
              'system/pacman-download', 'release/architecture.py'],
@@ -98,7 +98,6 @@ def main():
     parser.add_argument('--architecture', choices=('aarch64', 'armv7h'),
                         help="the root's architecture (default: the selected platforms', else aarch64)")
     parser.add_argument('--builder-image', help='prepared Arch Linux ARM desktop/root builder for the selected architecture')
-    parser.add_argument('--labwc-builder-image', help='prepared Labwc builder; defaults to --builder-image')
     args = parser.parse_args()
     orchard = args.orchard or (Path(os.environ['ORCHARD_CHECKOUT']) if os.environ.get('ORCHARD_CHECKOUT') else None)
     if orchard is None or not (orchard / 'src/orchard').is_dir():
@@ -116,10 +115,7 @@ def main():
     if architecture == 'armv7h' and not args.builder_image:
         args.builder_image = ARMV7_BUILDER  # what system/build-armv7-builder prepares
     builder_args = ['--builder-image', args.builder_image] if args.builder_image else []
-    labwc_image = args.labwc_builder_image or args.builder_image
-    labwc_args = ['--builder-image', labwc_image] if labwc_image else []
     identity = builder_key(args.builder_image)
-    compiler_identity = builder_key(labwc_image)
 
     desktop, desktop_key = component(PROJECT, 'desktop', INPUTS['desktop'],
         lambda path, work: python('desktop/build', '--output', path, *target_args, *builder_args),
@@ -131,9 +127,6 @@ def main():
     bluetooth, _ = component(PROJECT, 'bluetooth', INPUTS['bluetooth'],
                              lambda path, work: python('desktop/build-bluetooth-tools', '--output', path),
                              artifact='bluetooth-tools')
-    labwc, _ = component(PROJECT, 'labwc', INPUTS['labwc'],
-                         lambda path, work: python('desktop/build-labwc', '--output', path, *target_args, *labwc_args),
-                         artifact='labwc-tools', extra=[architecture, compiler_identity])
     # The base names the component, not a release: it serves every build with the same inputs.
     base, _ = component(PROJECT, 'base', INPUTS['base'],
                         lambda path, work: run('system/build-rootfs', '--output', path, '--desktop', desktop,
@@ -151,7 +144,7 @@ def main():
            '--splash', artwork / 'splash', '--logo', artwork / 'logo.bin',
            *(part for name in ('busybox', 'dropbear', 'dropbearkey')
              for part in ('--' + name, tools[name])),
-           '--cursor-tools', cursor, '--bluetooth-tools', bluetooth, '--labwc-tools', labwc,
+           '--cursor-tools', cursor, '--bluetooth-tools', bluetooth,
            *target_args, '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
     # install.sh and orchard-install.pyz, with orchard's launch loaders.

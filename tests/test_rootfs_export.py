@@ -53,7 +53,6 @@ class RootfsExportTests(unittest.TestCase):
         (project / 'desktop/build').chmod(0o755)
         desktop = root / 'desktop'
         (desktop / 'payload').mkdir(parents=True)
-        (desktop / 'packages').mkdir()
         binary = root / 'bin'
         binary.mkdir()
         (binary / 'podman').write_text(PODMAN)

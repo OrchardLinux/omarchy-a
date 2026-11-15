@@ -30,7 +30,7 @@ orchard python -m unittest discover -s tests
 ```
 
 `orchard build` runs `tools/build.py`, which keeps each component (desktop,
-Labwc, base, loader, …) in `out/components/` and rebuilds it only when its files
+base, artwork, …) in `out/components/` and rebuilds it only when its files
 change; orchard brings Pongo, the recovery tools and the kernels.
 [BUILD.md](BUILD.md) describes the steps one by one.
 

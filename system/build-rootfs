@@ -15,8 +15,7 @@ while (($#)); do
     *) echo "Unknown argument: $1" >&2; exit 2;;
   esac
 done
-if [[ -z "$output" || -z "$release" || ! -d "$desktop/payload" ||
-      ! -d "$desktop/packages" || -e "$output" ]]; then
+if [[ -z "$output" || -z "$release" || ! -d "$desktop/payload" || -e "$output" ]]; then
   echo 'Usage: ./system/build-rootfs --output DIRECTORY --desktop DIRECTORY --release NAME [--architecture aarch64|armv7h] [--builder-image IMAGE]' >&2
   exit 2
 fi

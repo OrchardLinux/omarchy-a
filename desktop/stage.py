@@ -115,11 +115,8 @@ def main():
         CONFIG / "firefox-autoconfig.js": target / "usr/lib/firefox/defaults/pref/omarchy-a.js",
         CONFIG / "firefox.cfg": target / "usr/lib/firefox/omarchy-a.cfg",
     }
-    # The files app: 64-bit boards get Files (Folio with touch mode), whose
-    # package brings its own launcher entry. It has no ARMv7 build, so those
-    # boards keep Dolphin, with this entry for its wrapper.
-    if args.architecture == "armv7h":
-        mapping[CONFIG / "org.kde.dolphin.desktop"] = target / "home/tablet/.local/share/applications/org.kde.dolphin.desktop"
+    # The files app is Files (Folio with touch mode) on every board: its package
+    # (system/assemble-rootfs) brings its own launcher entry.
     for src, dst in mapping.items():
         copy(src, dst)
     # Branding is static; kernel, memory and CPU information use live probes.

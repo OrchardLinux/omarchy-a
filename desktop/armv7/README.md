@@ -1,22 +1,21 @@
 # ARMv7 desktop components
 
 `desktop/build --architecture armv7h` builds the same desktop payload for an
-ARMv7 Arch Linux ARM userspace. AArch64 images install Omacalc from upstream
-Omarchy's package repository, which has no ARMv7 build, so ARMv7 builds compile
-it from the source recorded in `sources.json`, with the recipe in `../packages/omacalc`.
-
-The Omacalc archive is pinned to upstream v0.3.1, commit
-`573d7106f5c6c0225864eb8634ae37ddcb657f63`. Its SHA-256 was measured from the
-265,215-byte GitHub commit archive. The recipe installs upstream's MIT license
-and the bundled font's OFL notice, and runs the upstream Qt tests offscreen.
+ARMv7 Arch Linux ARM userspace: the pinned Omarchy UI and the keyboard, compiled
+for ARMv7. No package is built: the image installs `wlroots0.20`, `labwc`,
+`omafox`, `omactivity`, `folio-touch` (Files) and `omacalc` from the ARMv7 channel of the
+[Orchard package repository](https://github.com/OrchardLinux/packages)
+(`repo-armv7h`), listed before Arch Linux ARM's repositories. Upstream Omarchy
+publishes no ARMv7 packages, so an ARMv7 image has no `[omarchy]` repository
+and Omacalc is the Orchard repository's build of upstream's pinned source.
+Mesa is Arch Linux ARM's there.
 
 A provisioned native ARMv7 Arch Linux ARM environment can run the recipes with
 `ORCHARD_BUILD_NATIVE=1` and `ORCHARD_BUILD_ENV_ID` set to its reproducible image
 identity. Orchard's ARMv7 build environment support is required. Container
 builds take `--builder-image IMAGE`, naming an ARMv7 Arch Linux ARM compiler
-with the dependencies from `desktop/install-toolchain` and
-`desktop/labwc/install-toolchain`, plus `qt6-base`, `qt6-declarative` and
-`qt6-tools`. The same option is accepted by the component builders. The
+with the dependencies from `desktop/install-toolchain`. The same option is
+accepted by the component builders. The
 repository's pinned AArch64 container is selected by AArch64 builds.
 
 `system/build-armv7-builder` prepares that compiler image from the official
@@ -54,6 +53,6 @@ including the ARM EABI5 hard-float flags. Each component receipt records the
 userspace architecture, and the release refuses a component, base or static
 tool of another one.
 
-These source recipes require a full ARMv7 component build and desktop smoke
-check before hardware qualification. Tests of the architecture guards use
+An ARMv7 release requires a full component build and desktop smoke check
+before hardware qualification. Tests of the architecture guards use
 synthetic packages and executable headers.

@@ -25,7 +25,7 @@ class NoOrchardImports(unittest.TestCase):
     def test_no_build_file_imports_orchard(self):
         files = list(python_files())
         self.assertIn(PROJECT / 'tools/build.py', files)
-        self.assertIn(PROJECT / 'desktop/build-labwc', files)
+        self.assertIn(PROJECT / 'desktop/build-cursor-helper', files)
         for path in files:
             for node in ast.walk(ast.parse(path.read_text(), str(path))):
                 names = ([alias.name for alias in node.names] if isinstance(node, ast.Import) else

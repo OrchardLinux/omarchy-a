@@ -35,16 +35,18 @@ class CIEfficiency(unittest.TestCase):
         self.assertIn('runs-on: ${{ needs.artwork-check.outputs.runner }}', artwork)
         self.assertEqual(artwork.count("steps.kept.outputs.cache-hit != 'true'"), 3)
 
-    def test_source_builds_keep_their_compiler_cache_across_temporary_build_directories(self):
+    def test_no_package_is_built_here(self):
+        # Mesa, wlroots, Labwc and the rest come built from the Orchard package repository.
         body = job(self.workflow, 'userspace')
-        self.assertIn('path: .ccache', body)
-        self.assertIn('restore-keys: desktop-ccache-v1-\n', body)
-        self.assertIn('CCACHE_DIR="$GITHUB_WORKSPACE/.ccache" CCACHE_BASEDIR=/tmp CCACHE_NOHASHDIR=1', body)
-        # Restored before the workspace is handed to the unprivileged builder.
-        self.assertLess(body.index('path: .ccache'), body.index('chown -R builder:builder "$GITHUB_WORKSPACE"'))
-        # The compiler cache is CI's: the toolchain recipes local builds share do not install it.
-        for recipe in ('desktop/install-toolchain', 'desktop/labwc/install-toolchain', 'system/install-toolchain'):
-            self.assertNotIn('ccache', (ROOT / recipe).read_text())
+        for gone in ('ccache', 'makepkg', 'build-sources', 'build-labwc', 'labwc/install-toolchain', 'useradd'):
+            self.assertNotIn(gone, body)
+        for gone in ('desktop/build-sources', 'desktop/build-labwc', 'desktop/packages', 'desktop/labwc'):
+            self.assertFalse((ROOT / gone).exists(), gone)
+        # What is compiled is the keyboard and the cursor helper: the toolchain is a C compiler, no more.
+        toolchain = (ROOT / 'desktop/install-toolchain').read_text()
+        for gone in ('meson', 'llvm', 'clang', 'base-devel', 'mesa'):
+            self.assertNotRegex(toolchain, r'(?m)^packages=.*\b' + gone + r'\b')
+        self.assertNotIn('labwc', self.workflow.replace('Labwc', ''))
 
     def test_the_root_archive_is_not_compressed_twice_on_its_way_to_assembly(self):
         self.assertIn('tar -C out -cf out/omarchy-userspace.tar base', job(self.workflow, 'userspace'))

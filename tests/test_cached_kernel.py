@@ -15,7 +15,7 @@ from release import build
 
 SNAPSHOT = Path(orchard.__file__).resolve().parents[2]
 INPUTS = ('base', 'base-receipt', 'splash', 'logo', 'busybox', 'dropbear', 'dropbearkey',
-          'cursor-tools', 'bluetooth-tools', 'labwc-tools')
+          'cursor-tools', 'bluetooth-tools')
 
 
 class ReleaseInputs(unittest.TestCase):
