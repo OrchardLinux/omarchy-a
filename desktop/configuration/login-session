@@ -26,8 +26,9 @@ export LIBGL_ALWAYS_SOFTWARE=1 LIBSEAT_BACKEND=seatd MOZ_ENABLE_WAYLAND=1
 # drawn a frame that way in this boot and the display took its buffer. Every
 # other board, a boot with modprobe.blacklist=powervr and a boot whose probe
 # fails or does not finish keep the software desktop above; the journal says
-# which (journalctl -t omarchy-gpu-probe). The shell stays on Qt's software
-# renderer either way; the apps it starts don't (uwsm-app).
+# which (journalctl -t omarchy-gpu-probe). On the GPU desktop the shell and
+# its apps draw with Qt Quick on the GPU; on the software desktop with Qt's
+# software renderer.
 gpu=
 for node in /sys/class/drm/renderD*; do
   if [[ $(basename "$(readlink -f "$node/device/driver")") == powervr ]]; then gpu=$node; fi
@@ -65,7 +66,8 @@ if [[ -n $gpu ]]; then
         if wait "$gpu_pid"; then
           gpu_verdict="GPU desktop after $((tick / 10)).$((tick % 10)) s: $gpu_detail"
           export "${gpu_desktop[@]}"
-          unset LIBGL_ALWAYS_SOFTWARE
+          # The shell (and every app) draws on the GPU too, not Qt's software renderer.
+          unset LIBGL_ALWAYS_SOFTWARE QT_QUICK_BACKEND
         else
           gpu_verdict="software desktop: ${gpu_detail:-the GPU probe failed}"
         fi
