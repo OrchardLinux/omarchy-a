@@ -1,0 +1,8 @@
+# A gamepad's touchpad is not a pointer here. hid_playstation exposes the
+# DualShock 4 and DualSense touchpads as input devices, and libinput would
+# drive the desktop cursor with them. On a touch-only tablet that cursor is
+# drawn in software, which keeps fullscreen games from direct scanout. Games
+# still read the touchpad through SDL's hidraw/evdev paths, which this does not
+# affect.
+ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="*Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="*DualSense*Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
