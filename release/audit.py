@@ -6,12 +6,18 @@ from pathlib import Path, PurePosixPath
 import subprocess
 import tarfile
 
+import gzip
+
 from release import snapshot
-from release.architecture import validate
+from release.architecture import validate, check_elf
+from release.package_permissions import parse_mtree
 from release.manifests import read_release
 
-from .common import PROJECT
 from .public_root import sha
+
+# The two compiled helpers of the omarchy-a package, of the root's architecture.
+HELPERS = {'usr/libexec/omarchy-wtype': 'startup cursor helper',
+           'usr/share/omarchy/trials/wvkbd-mobintl-v0.20-font18-special15-state': 'on-screen keyboard'}
 
 def private_firmware(orchard=None):
     """Where any board of the orchard snapshot puts its private firmware; none of it may be public."""
@@ -89,7 +95,9 @@ def audit(manifest, orchard=None):
         layers[name] = layer['hashes']
     hashes, links, modes, owners, groups, sizes = {}, {}, {}, {}, {}, {}
     names, ancestors, directories = set(), set(), set()
-    desktop = privileges = cursor = bluetooth = None
+    desktop, desktop_package = None, None
+    privileges = None
+    headers = {}
     with subprocess.Popen(['zstd', '-d', '-q', '-c', str(root_path)], stdout=subprocess.PIPE) as decoder:
         with tarfile.open(fileobj=decoder.stdout, mode='r|') as archive:
             for member in archive:
@@ -107,12 +115,15 @@ def audit(manifest, orchard=None):
                 elif member.isfile():
                     data = archive.extractfile(member).read()
                     hashes[name] = hashlib.sha256(data).hexdigest()
-                    if name == 'arch-ipad-ui-manifest.json':
-                        desktop = json.loads(data)
-                    if name == 'etc/omarchy/cursor-helper.json':
-                        cursor = json.loads(data)
-                    if name == 'etc/omarchy/bluetooth-helper.json':
-                        bluetooth = json.loads(data)
+                    # This repository's package, as pacman installed it.
+                    if name.startswith('var/lib/pacman/local/omarchy-a-') and name.endswith('/mtree'):
+                        if desktop is not None:
+                            raise ValueError('Two omarchy-a packages in the root')
+                        desktop_package = PurePosixPath(name).parent.name
+                        desktop = dict(parse_mtree((gzip.decompress(data) if data[:2] == b'\x1f\x8b' else data).decode(),
+                                                   every=True))
+                    if name in HELPERS:
+                        headers[name] = data[:64]
                     if name == 'etc/omarchy/package-privileges.json':
                         privileges = json.loads(data)
                 elif member.isdir():
@@ -134,10 +145,8 @@ def audit(manifest, orchard=None):
             if target_path.is_absolute() or '..' in target_path.parts or str(target_path) not in hashes:
                 raise ValueError('Hardlink is not to a regular in-root member: ' + name)
     if not desktop:
-        raise ValueError('Missing desktop integrity manifest')
-    for name, expected in desktop.items():
-        if hashes.get(name) != expected:
-            raise ValueError('Desktop content mismatch: ' + name)
+        raise ValueError('The root has no omarchy-a package')
+    verify_package(desktop, hashes, links, modes, owners, directories)
     for name, layer in layers.items():
         # The installer refuses to write a layer file the root already has.
         clash = sorted((names - directories) & layer.keys())
@@ -158,16 +167,17 @@ def audit(manifest, orchard=None):
                 actual = hashes.get(links[name][1])
             if actual != expected['sha256']:
                 raise ValueError('Privileged package file differs: ' + name)
-    if not cursor or hashes.get('usr/libexec/omarchy-wtype') != cursor['files'].get('wtype'):
-        raise ValueError('Startup cursor helper differs from build receipt')
     # The helpers built for the desktop are of the root's architecture.
-    if cursor.get('architecture') != architecture:
-        raise ValueError('Startup cursor helper architecture differs from root')
-    if hashes.get('usr/share/licenses/omarchy-wtype/LICENSE') != cursor['files'].get('LICENSE'):
+    for name, label in HELPERS.items():
+        if name not in headers:
+            raise ValueError('The root lacks the ' + label)
+        check_elf(headers[name], architecture, label)
+    if 'usr/share/licenses/omarchy-wtype/LICENSE' not in hashes:
         raise ValueError('Missing startup cursor helper license')
-    verify_bluetooth(bluetooth, hashes, modes, owners, groups)
-    if 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml' not in desktop:
-        raise ValueError('Pairing UI is absent from desktop integrity manifest')
+    verify_bluetooth(hashes, modes, owners, groups)
+    if 'usr/share/omarchy/shell/bluetooth-pairing/shell.qml' not in desktop:
+        raise ValueError('Pairing UI is absent from the omarchy-a package')
+    verify_package_setup(desktop, hashes)
     for name in ('omarchy-desktop-ready', 'omarchy-wtype', 'omarchy-powerd', 'omarchy-powerctl', 'omarchy-bluetooth-pair'):
         if modes.get('usr/libexec/' + name) != 0o755:
             raise ValueError('Required helper is not executable: ' + name)
@@ -178,24 +188,57 @@ def audit(manifest, orchard=None):
     if links.get('lib') != (True, 'usr/lib') or owners.get('home/tablet') != 1000 or sizes.get('etc/machine-id') != 0:
         raise ValueError('Invalid root/session contract')
     return {'passed': True, 'hardware_validated': False, 'release': record['release'], 'architecture': architecture,
-            'members': len(names), 'desktop_files_verified': len(desktop),
+            'members': len(names), 'desktop_package': desktop_package, 'desktop_files_verified': len(desktop),
             'root_sha256': record['root']['sha256'], 'platforms': platforms,
             'privileged_entries_verified': len(privileges)}
 
 
-def verify_bluetooth(record, hashes, modes, owners, groups):
-    pin = json.loads((PROJECT / 'desktop/bluetooth/dbus-next.json').read_text())
-    if not record or record.get('schema') != 1 or record.get('source') != pin:
-        raise ValueError('Missing pinned Bluetooth dependency receipt')
-    if not {'lib/dbus_next/__init__.py', 'LICENSE'} <= record.get('files', {}).keys():
-        raise ValueError('Incomplete Bluetooth dependency receipt')
-    for name, digest in record['files'].items():
-        if '..' in PurePosixPath(name).parts or (name != 'LICENSE' and not (name.startswith('lib/dbus_next/') and name.endswith('.py'))):
-            raise ValueError('Unsafe Bluetooth dependency path')
-        path = ('usr/share/licenses/omarchy-bluetooth-dbus-next/LICENSE' if name == 'LICENSE'
-                else 'usr/lib/omarchy-bluetooth/' + name.removeprefix('lib/'))
-        if (hashes.get(path), modes.get(path), owners.get(path), groups.get(path)) != (digest, 0o644, 0, 0):
-            raise ValueError('Bluetooth dependency content/metadata differs: ' + path)
+def verify_package(entries, hashes, links, modes, owners, directories):
+    """Every file and link of the omarchy-a package is in the root as pacman recorded it."""
+    for name, entry in entries.items():
+        if entry['type'] == 'file':
+            if (hashes.get(name) != entry['sha256'] or modes.get(name, 0) & 0o7777 != entry['mode'] or
+                    owners.get(name) != entry['uid']):
+                raise ValueError('The root differs from the omarchy-a package: ' + name)
+        elif entry['type'] == 'link':
+            if links.get(name) != (True, entry['link']):
+                raise ValueError('The root differs from the omarchy-a package: ' + name)
+        elif entry['type'] == 'dir':
+            if name not in directories:
+                raise ValueError('The root lacks a directory of the omarchy-a package: ' + name)
+        else:
+            raise ValueError('Unexpected omarchy-a package entry: ' + name)
+
+
+def verify_package_setup(entries, hashes):
+    """What the package's install did: its versions of other packages' files are in place, and the
+    tablet user, made from /etc/skel, has every migration it ships marked done."""
+    overrides = 'usr/share/omarchy/etc-overrides/'
+    markers = 'etc/skel/.local/state/omarchy/migrations/'
+    for name, entry in entries.items():
+        if name.startswith(overrides) and entry['type'] == 'file':
+            if hashes.get(name.removeprefix(overrides)) != entry['sha256']:
+                raise ValueError('The package hook did not put its file in place: /' + name.removeprefix(overrides))
+        if name.startswith(markers) and entry['type'] == 'file':
+            if 'home/tablet/.local/state/omarchy/migrations/' + name.removeprefix(markers) not in hashes:
+                raise ValueError('The tablet user would run a migration meant for older installs: ' + name)
+    migrations = {name.removeprefix('usr/share/omarchy/migrations/') for name in entries
+                  if name.startswith('usr/share/omarchy/migrations/') and name.endswith('.sh')}
+    marked = {name.removeprefix(markers) for name in entries if name.startswith(markers)} - {''}
+    if migrations != marked:
+        raise ValueError('/etc/skel does not mark exactly the package\'s migrations as done')
+
+
+def verify_bluetooth(hashes, modes, owners, groups):
+    """The Bluetooth helper's D-Bus library, root's and readable by all."""
+    library = [name for name in hashes if name.startswith('usr/lib/omarchy-bluetooth/dbus_next/')]
+    for name in ('usr/lib/omarchy-bluetooth/dbus_next/__init__.py',
+                 'usr/share/licenses/omarchy-bluetooth-dbus-next/LICENSE'):
+        if name not in hashes:
+            raise ValueError('Missing Bluetooth dependency file: ' + name)
+    for name in library + ['usr/share/licenses/omarchy-bluetooth-dbus-next/LICENSE']:
+        if (modes.get(name), owners.get(name), groups.get(name)) != (0o644, 0, 0):
+            raise ValueError('Bluetooth dependency metadata differs: ' + name)
 
 
 def verify_reachable(hashes, links):

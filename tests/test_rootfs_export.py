@@ -46,13 +46,13 @@ class RootfsExportTests(unittest.TestCase):
         project = root / 'project'
         (project / 'system').mkdir(parents=True)
         shutil.copy2(PROJECT / 'system/build-rootfs', project / 'system/build-rootfs')
-        (project / 'desktop').mkdir()
-        # This fixture exercises export and verification after desktop checking
+        (project / 'release').mkdir()
+        # This fixture exercises export and verification after the package check
         # and native assembly have succeeded, without starting a container.
-        (project / 'desktop/build').write_text('#!/usr/bin/env python3\n')
-        (project / 'desktop/build').chmod(0o755)
-        desktop = root / 'desktop'
-        (desktop / 'payload').mkdir(parents=True)
+        (project / 'release/package.py').write_text('')
+        package = root / 'package'
+        package.mkdir()
+        (package / 'package.json').write_text('{}')
         binary = root / 'bin'
         binary.mkdir()
         (binary / 'podman').write_text(PODMAN)
@@ -81,7 +81,7 @@ class RootfsExportTests(unittest.TestCase):
         stream.write_bytes(data)
         drained, calls, output = root / 'drained', root / 'calls.jsonl', root / 'output'
         result = subprocess.run(['bash', str(project / 'system/build-rootfs'),
-            '--output', str(output), '--desktop', str(desktop), '--release', 'export-fixture',
+            '--output', str(output), '--package', str(package), '--release', 'export-fixture',
             '--architecture', 'armv7h', '--builder-image', 'export-fixture'], capture_output=True,
             text=True, timeout=20, env={**os.environ, 'ORCHARD_BUILD_NATIVE': '0',
                 'PATH': str(binary) + os.pathsep + os.environ['PATH'],

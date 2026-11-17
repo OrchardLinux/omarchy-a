@@ -1,2 +1,2 @@
 #!/bin/sh
-exec /usr/local/libexec/arch-ipad-auto-brightness "$@"
+exec /usr/libexec/arch-ipad-auto-brightness "$@"

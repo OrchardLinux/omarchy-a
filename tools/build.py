@@ -6,9 +6,10 @@ orchard runs it as `tools/build.py --version VERSION --output DIRECTORY
 has one root of one architecture: the selected platforms' (apple-armv7: armv7h), else
 --architecture, else aarch64. Components land in out/components/NAME/KEY/, keyed by the
 files they are made from and the architecture, so a build redoes only what changed: a shell edit
-rebuilds the desktop payload and the root, not the cursor helper. Packages are not
-built here: the root installs Mesa, wlroots, Labwc and the rest from the Orchard
-package repository (system/assemble-rootfs). orchard supplies its
+rebuilds the omarchy-a package and the root, not the artwork. The one package built here is
+omarchy-a, this checkout's own files, with the Orchard package repository's recipe
+(release/package.py); the root installs it, and Mesa, wlroots, Labwc and the rest from that
+repository's [orchard] (system/assemble-rootfs). orchard supplies its
 m1n1, Pongo, the static tools and every platform's kernel
 (python -m orchard.inputs); its producers run as commands from the orchard
 snapshot (ORCHARD_CHECKOUT, which orchard build sets, or --orchard DIR) and
@@ -16,9 +17,11 @@ none of its Python is imported (orchard docs/distribution-contract.md). The
 release itself is always assembled anew.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -28,14 +31,12 @@ from components import component  # noqa: E402
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
 from release.architecture import platform_arch, validate  # noqa: E402
+from release.package import version as package_version, recipe as fetch_recipe  # noqa: E402
 DESKTOP_IMAGE = ['desktop/Containerfile', 'desktop/install-toolchain', 'desktop/snapshot_buildenv.py']
 # What each component is made from, relative to this checkout.
 INPUTS = {
-    'desktop': ['desktop/build', 'desktop/stage.py', 'desktop/target.py', 'desktop/arm64', 'desktop/keyboard',
-                'desktop/sources.json', 'desktop/upstream.lock', 'desktop/configuration',
-                'desktop/greeter', 'desktop/shell', 'desktop/themes', 'release/architecture.py', *DESKTOP_IMAGE],
-    'cursor': ['desktop/build-cursor-helper', 'desktop/cursor', 'desktop/target.py', 'release/architecture.py', *DESKTOP_IMAGE],
-    'bluetooth': ['desktop/build-bluetooth-tools', 'desktop/bluetooth'],
+    # Everything the omarchy-a package is made from: the whole tree but the image's own parts.
+    'package': ['Makefile', 'desktop', 'system/overlay', 'release/package.py', 'release/architecture.py'],
     'base': ['system/build-rootfs', 'system/assemble-rootfs', 'system/Containerfile',
              'system/install-toolchain', 'system/packages.txt', 'system/rank-mirrors',
              'system/pacman-download', 'release/architecture.py'],
@@ -117,21 +118,24 @@ def main():
     builder_args = ['--builder-image', args.builder_image] if args.builder_image else []
     identity = builder_key(args.builder_image)
 
-    desktop, desktop_key = component(PROJECT, 'desktop', INPUTS['desktop'],
-        lambda path, work: python('desktop/build', '--output', path, *target_args, *builder_args),
-        artifact='desktop', extra=[architecture, identity])
-    cursor, _ = component(PROJECT, 'cursor', INPUTS['cursor'],
-                          lambda path, work: python('desktop/build-cursor-helper', '--output', path,
-                                                    *target_args, *builder_args),
-                          artifact='cursor-tools', extra=[architecture, identity])
-    bluetooth, _ = component(PROJECT, 'bluetooth', INPUTS['bluetooth'],
-                             lambda path, work: python('desktop/build-bluetooth-tools', '--output', path),
-                             artifact='bluetooth-tools')
+    # This checkout as the omarchy-a package, made with the Orchard package
+    # repository's recipe (OMARCHY_A_RECIPE: a checkout's packages/omarchy-a/arch), so the
+    # image carries what this commit is. A changed recipe makes a new package.
+    pkgver = package_version()
+    recipe = PROJECT / 'out/components/.recipe'
+    if recipe.exists():
+        shutil.rmtree(recipe)
+    fetch_recipe(recipe)
+    recipe_key = hashlib.sha256(b''.join((recipe / name).read_bytes() for name in sorted(os.listdir(recipe)))).hexdigest()
+    package, package_key = component(PROJECT, 'package', INPUTS['package'],
+        lambda path, work: python('-m', 'release.package', '--output', path, '--recipe', recipe,
+                                  *target_args, *builder_args),
+        artifact='package', extra=[recipe_key, pkgver, architecture, identity])
     # The base names the component, not a release: it serves every build with the same inputs.
     base, _ = component(PROJECT, 'base', INPUTS['base'],
-                        lambda path, work: run('system/build-rootfs', '--output', path, '--desktop', desktop,
-                                               '--release', 'base-' + desktop_key[:16], *target_args, *builder_args),
-                        artifact='base', extra=[desktop_key, architecture, identity])
+                        lambda path, work: run('system/build-rootfs', '--output', path, '--package', package,
+                                               '--release', 'base-' + package_key[:16], *target_args, *builder_args),
+                        artifact='base', extra=[package_key, architecture, identity])
     # The Omarchy mark: the splash of the root, the logo of the release.
     artwork, _ = component(PROJECT, 'artwork', INPUTS['artwork'],
                            lambda path, work: python('boot/build-artwork', '--output', path), artifact='artwork')
@@ -144,7 +148,6 @@ def main():
            '--splash', artwork / 'splash', '--logo', artwork / 'logo.bin',
            *(part for name in ('busybox', 'dropbear', 'dropbearkey')
              for part in ('--' + name, tools[name])),
-           '--cursor-tools', cursor, '--bluetooth-tools', bluetooth,
            *target_args, '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
     # install.sh and orchard-install.pyz, with orchard's launch loaders.

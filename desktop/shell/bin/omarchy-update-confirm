@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# omarchy:summary=Prompt for confirmation before starting an update
+
+# Upstream Omarchy's prompt, without gum, which Omarchy A does not install.
+cat <<'NOTICE'
+Ready to update Omarchy A and the system's packages.
+
+  * Keep the tablet on power and connected until the update is done.
+  * What's new: https://github.com/OrchardLinux/omarchy-a/blob/main/CHANGELOG.md
+
+NOTICE
+
+read -r -p "Continue? [Y/n] " answer || answer=n
+case "${answer,,}" in
+  ''|y|yes) exit 0 ;;
+esac
+echo "Update cancelled"
+exit 1

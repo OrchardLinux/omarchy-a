@@ -17,7 +17,8 @@ mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-armv7|linux-
 # What is compiled here is small: the keyboard (a patched wvkbd) and the
 # startup cursor helper (wtype). Mesa, wlroots, Labwc and the other packages
 # come built from the Orchard package repository (system/assemble-rootfs).
-packages=(gcc make pkgconf patch wayland libxkbcommon pango python python-pip git curl tar gzip)
+# fakeroot: makepkg packs the omarchy-a package with it (release/package.py).
+packages=(gcc make pkgconf patch wayland libxkbcommon pango python python-pip git curl tar gzip fakeroot)
 # With the whole system brought up to date: a package installed new beside the
 # image's older libraries can miss symbols in them (today's Python and the
 # image's expat), and pacman does not update a dependency that is installed.

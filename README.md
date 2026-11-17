@@ -102,6 +102,33 @@ It also leaves `orchard` in `~/.local/bin` for starting Omarchy A again (below);
 
 Installs from the previous installer (one Linux partition, no boot partition) can't be started or converted by this one. The installer offers that partition as a target and says so before erasing it. To keep files, copy them off first: start the old system with the previous CLI release, then copy them over the network (for example with `scp`).
 
+## Update an installed tablet
+
+On the tablet, in a terminal, or with **Update > Omarchy** in the menu:
+
+```sh
+omarchy-update
+```
+
+It updates every package, the desktop with it: Omarchy A's own files are the
+`omarchy-a` package, which each release publishes in the `[orchard]`
+repository the tablet already lists. Then it runs the migrations the new
+version brings for your own files, and says whether to log out and back in. A
+plain `sudo pacman -Syu` updates the same packages; the migrations then run at
+the next login. Your files in `~/.config` stay yours: a migration that has to
+replace one keeps your version next to it as a backup.
+
+A tablet installed before the package existed has the desktop copied into its
+home. Once the first release with the package is out, once, on the tablet:
+
+```sh
+sudo pacman -Syu
+sudo pacman -S --overwrite '*' omarchy-a
+```
+
+`--overwrite` lets the package take over the files the image copied; log out
+and back in afterwards. From then on, `omarchy-update`.
+
 ## Start Linux after a restart
 
 Connect the iPad in DFU mode and run:

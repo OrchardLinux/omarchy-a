@@ -13,7 +13,7 @@ if (($# == 0)); then
 fi
 
 # labwc runs key bindings without the session's OMARCHY_PATH (labwc-autostart's).
-export OMARCHY_PATH=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
+export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 WINDOW_PATTERN="$1"
 LAUNCH_COMMAND="${2:-"uwsm-app -- $WINDOW_PATTERN"}"

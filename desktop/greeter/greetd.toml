@@ -4,5 +4,5 @@
 vt = 1
 
 [default_session]
-command = "/usr/local/libexec/omarchy-greeter-session"
+command = "/usr/libexec/omarchy-greeter-session"
 user = "greeter"

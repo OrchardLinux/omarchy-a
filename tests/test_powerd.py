@@ -475,7 +475,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(powerd.SETTLE_SECONDS, 10.0)
 
     def test_the_daemon_is_enabled_and_executable(self):
-        from release.public_root import system_files
+        from package_tree import system_files
         self.assertIn("'omarchy-powerd.service'", (PROJECT / 'release/public_root.py').read_text())
         files = system_files()
         self.assertEqual(files['usr/libexec/omarchy-powerd'][1], 0o755)

@@ -8,8 +8,8 @@ mount --rbind /dev /candidate/dev
 install -d -m 700 -o 1000 -g 1000 /candidate/run/user/1000
 mkdir -p /candidate/tmp/pairing-ui /candidate/tmp/pairing-desktop/shell/bluetooth-pairing
 if test "${OMA_INPUT_ARTIFACT_ONLY:-0}" = 1; then
-    ui=/candidate/home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml
-    cli=/candidate/home/tablet/.local/share/omarchy-ipad/bin/omarchy-bluetooth-device
+    ui=/candidate/usr/share/omarchy/shell/bluetooth-pairing/shell.qml
+    cli=/candidate/usr/share/omarchy/bin/omarchy-bluetooth-device
 else
     mkdir -p /candidate/usr/lib/omarchy-bluetooth
     cp -a /source/dbus_next /candidate/usr/lib/omarchy-bluetooth/

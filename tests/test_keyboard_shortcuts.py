@@ -5,6 +5,9 @@ import unittest
 import xml.etree.ElementTree as ET
 
 PROJECT = Path(__file__).resolve().parents[1]
+# What the omarchy-a recipe (OrchardLinux/packages, packages/omarchy-a/arch) depends on and the
+# bindings run; that recipe is where a new one must be added too.
+RECIPE_DEPENDS = ('grim', 'foot', 'firefox', 'wlr-randr', 'jq', 'socat', 'pipewire', 'wireplumber')
 
 
 class KeyboardShortcutTests(unittest.TestCase):
@@ -22,7 +25,7 @@ class KeyboardShortcutTests(unittest.TestCase):
         self.assertEqual([key for key, n in counts.items() if n > 1], [])
 
     def test_executed_programs_ship_with_the_image(self):
-        packages = set((PROJECT / 'system/packages.txt').read_text().split())
+        packages = set(RECIPE_DEPENDS)
         scripts = {p.name for p in (PROJECT / 'desktop/shell/bin').iterdir()}
         for binding in self.bindings:
             action = binding.find('action')
@@ -76,7 +79,7 @@ class KeyboardShortcutTests(unittest.TestCase):
         # A press that woke the screen in the grace before the lock opens nothing.
         self.assertLess(home.index('== wake'), home.index('omarchy-overview-open'))
         self.assertIn('omarchy-overview-open"', changed)
-        self.assertIn('omarchy-overview-open', (PROJECT / 'desktop/configuration/labwc-autostart').read_text())
+        self.assertIn('omarchy-overview-open', (PROJECT / 'desktop/shell/default/labwc/autostart').read_text())
         # The greeter has nothing to switch between.
         self.assertNotIn('overview', (PROJECT / 'desktop/greeter/labwc/rc.xml').read_text())
 

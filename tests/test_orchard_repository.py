@@ -1,4 +1,5 @@
-"""The image takes the platform's packages from the Orchard package repository; nothing is built here.
+"""The image takes the platform's packages from the Orchard package repository, and its own files as
+the omarchy-a package built from the same checkout (release/package.py).
 
 system/assemble-rootfs with a pacman that records its calls: no network, no root.
 """
@@ -54,7 +55,8 @@ class Repositories(unittest.TestCase):
     def test_order_on_64_bit(self):
         code, text = self.configure('aarch64')
         self.assertEqual(code, 0)
-        self.assertEqual(re.findall(r'^\[(\w+)\]$', text, re.M), ['options', 'orchard', 'omarchy', 'core', 'extra', 'alarm'])
+        self.assertEqual(re.findall(r'^\[([\w-]+)\]$', text, re.M),
+                         ['options', 'orchard', 'omarchy', 'core', 'extra', 'alarm'])
         self.assertIn('[orchard]\nSigLevel = Optional TrustAll\n'
                       'Server = https://github.com/OrchardLinux/packages/releases/download/repo-$arch\n\n'
                       '[omarchy]\nServer = https://pkgs.omarchy.org/stable/$arch\n\n[core]\n', text)
@@ -64,7 +66,7 @@ class Repositories(unittest.TestCase):
     def test_armv7_has_orchard_and_no_omarchy(self):
         code, text = self.configure('armv7h')
         self.assertEqual(code, 0)
-        self.assertEqual(re.findall(r'^\[(\w+)\]$', text, re.M), ['options', 'orchard', 'core', 'extra', 'alarm'])
+        self.assertEqual(re.findall(r'^\[([\w-]+)\]$', text, re.M), ['options', 'orchard', 'core', 'extra', 'alarm'])
 
     def test_a_file_that_already_lists_one_is_refused(self):
         for name in ('orchard', 'omarchy'):
@@ -81,10 +83,10 @@ class Repositories(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('bash'), 'bash is required')
 class Installation(unittest.TestCase):
-    def install(self, architecture, planned=None, consistent=True, owner='mesa'):
+    def install(self, architecture, planned=None, consistent=True, owner='mesa', ours='omarchy-a-build'):
         """The package installation with a pacman that records its calls.
 
-        PLANNED: what pacman says the transaction takes from [orchard].
+        PLANNED: what pacman says the transaction takes from [orchard]; OURS: the repository omarchy-a comes from.
         """
         planned = ORCHARD[architecture] if planned is None else planned
         block = section('for name in "${orchard_packages[@]}"; do\n  [[ " ${requested[*]} "', 'useradd --root')
@@ -94,12 +96,12 @@ class Installation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / 'calls'
             script = ('pacman() { echo "$*" >> "$LOG"; case " $* " in\n'
-                      '  *" --print "*) printf "core/base\\n"; for name in $PLANNED; do echo "orchard/$name"; done;;\n'
+                      '  *" --print "*) printf "core/base\\n$OURS/omarchy-a\\n"; for name in $PLANNED; do echo "orchard/$name"; done;;\n'
                       '  *" -Qoq "*) echo "$OWNER"; echo "$OWNER";;\n'
                       '  *" -Dk "*) [[ -n $CONSISTENT ]];; esac; }\n'
                       'config=c root=/r gpgdir=g desktop=/d requested=(base labwc)\n' + packages + block)
             result = bash(script, LOG=str(log), architecture=architecture, PLANNED=' '.join(planned), OWNER=owner,
-                          CONSISTENT='1' if consistent else '')
+                          CONSISTENT='1' if consistent else '', OURS=ours)
             calls = [re.sub(r'^(download )?(--(config|root|gpgdir) \S+ )+', r'\1', line)
                      for line in log.read_text().splitlines()]
             return result.returncode, calls, result.stderr
@@ -108,7 +110,7 @@ class Installation(unittest.TestCase):
         code, calls, error = self.install('aarch64')
         self.assertEqual(code, 0, error)
         # labwc is asked for once.
-        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch mesa libva-v4l2-request'
+        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch mesa libva-v4l2-request omarchy-a'
         self.assertEqual(calls[:3], [f'download -Sy --noconfirm {wanted}',
                                      f'-S --print --print-format %r/%n {wanted}', f'-S --noconfirm {wanted}'])
         self.assertEqual(calls[3], 'repositories')
@@ -122,7 +124,7 @@ class Installation(unittest.TestCase):
     def test_armv7_takes_files_and_omacalc_from_ours_and_keeps_archs_mesa(self):
         code, calls, error = self.install('armv7h')
         self.assertEqual(code, 0, error)
-        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch omacalc'
+        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch omacalc omarchy-a'
         self.assertEqual(calls, [f'download -Sy --noconfirm {wanted}', f'-S --print --print-format %r/%n {wanted}',
                                  f'-S --noconfirm {wanted}', 'repositories', '-Dk'])
 
@@ -135,6 +137,26 @@ class Installation(unittest.TestCase):
                 self.assertIn('Expected from [orchard] exactly', error)
                 self.assertEqual(len(calls), 2)
 
+    def test_omarchy_a_from_anywhere_but_this_checkout_is_refused(self):
+        # [orchard]'s omarchy-a is the last release, not this checkout; nor is anyone else's.
+        for ours in ('orchard', 'omarchy'):
+            code, calls, error = self.install('aarch64', ours=ours)
+            self.assertNotEqual(code, 0)
+            self.assertEqual(len(calls), 2)
+        self.assertIn('Expected omarchy-a built from this checkout', error)
+
+    def test_the_build_installs_the_package_of_this_checkout_and_the_image_lists_the_published_one(self):
+        text = ASSEMBLE.read_text()
+        self.assertIn('repo-add -q "$build_pacman/omarchy-a-build/omarchy-a-build.db.tar.gz"', text)
+        # Listed before [orchard] in the build's pacman.conf only; the image's never names it.
+        self.assertIn('$0 == "[orchard]" && !done { print "[omarchy-a-build]"', text)
+        self.assertLess(text.index('repositories /etc/pacman.conf "$config"'), text.index('[omarchy-a-build]'))
+        self.assertIn('repositories "$root/etc/pacman.conf" "$root/etc/pacman.conf"', text)
+        # The tablet user's home is made from /etc/skel after the package filled it, never copied.
+        self.assertLess(text.index('pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --noconfirm'),
+                        text.index('useradd --root'))
+        self.assertNotIn('payload', text)
+
     def test_an_unmet_dependency_or_another_mesa_is_refused(self):
         self.assertNotEqual(self.install('aarch64', consistent=False)[0], 0)
         self.assertNotEqual(self.install('armv7h', consistent=False)[0], 0)
@@ -144,7 +166,7 @@ class Installation(unittest.TestCase):
         # Dolphin is on no image: not asked for, no launcher entry or wrapper staged.
         self.assertNotIn('dolphin', (PROJECT / 'system/packages.txt').read_text().split())
         self.assertNotIn('dolphin', ASSEMBLE.read_text().lower())
-        self.assertNotIn('dolphin', (PROJECT / 'desktop/stage.py').read_text().lower())
+        self.assertNotIn('dolphin', (PROJECT / 'desktop/install-tree').read_text().lower())
         self.assertFalse((PROJECT / 'desktop/shell/bin/omarchy-dolphin').exists())
 
     def test_the_login_finds_the_probe_the_mesa_package_ships(self):

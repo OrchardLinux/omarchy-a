@@ -42,8 +42,8 @@ class WifiCountry(unittest.TestCase):
         # NetworkManager runs only executable dispatcher scripts.
         import sys
         sys.path.insert(0, str(PROJECT))
-        from release import public_root
-        files = public_root.system_files()
+        from package_tree import system_files
+        files = system_files()
         self.assertEqual(files['etc/NetworkManager/dispatcher.d/60-omarchy-a-wifi-country'][1], 0o755)
 
 

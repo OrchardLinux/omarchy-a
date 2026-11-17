@@ -101,7 +101,7 @@ Put the device in DFU mode and run `orchard launch`. m1n1 reads the boot entries
 
 - **New hardware does not require a new user workflow.** A port supplies its kernel, device tree, firmware recipe and device description; the recovery and the install script are the same for every device.
 - **Desktop changes do not belong in the boot transport.** Omarchy A can evolve its shell, applications, and system policy without touching USB upload or storage safety logic.
-- **The kernel is orchard's, the rest is an ordinary Arch system.** Kernel updates come from orchard as a new platform layer; packages update through pacman.
+- **The kernel is orchard's, the rest is an ordinary Arch system.** Kernel updates come from orchard as a new platform layer; packages update through pacman. Omarchy A's own files are a package too (`omarchy-a`, each release published in `[orchard]`), so `omarchy-update` or `pacman -Syu` updates the desktop like everything else ([BUILD.md](../BUILD.md#packages)).
 - **Private inputs remain separate from public releases.** The same published artifacts can be used while preparing the device-specific firmware locally.
 
 The minimal Alpine-based [example image](https://github.com/OrchardLinux/minimal-linux) exercises the same boundaries without Omarchy A's desktop or systemd policy.

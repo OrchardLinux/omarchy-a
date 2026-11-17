@@ -8,7 +8,7 @@ import sys
 import time
 import tomllib
 
-root = Path(os.environ.get("OMARCHY_PATH", str(Path.home() / ".local/share/omarchy-ipad")))
+root = Path(os.environ.get("OMARCHY_PATH", "/usr/share/omarchy"))
 runtime = Path(os.environ["XDG_RUNTIME_DIR"])
 binary = root / "trials/wvkbd-mobintl-v0.20-font18-special15-state"
 pid_file = runtime / "omarchy-keyboard.pid"

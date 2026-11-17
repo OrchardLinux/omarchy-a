@@ -97,15 +97,10 @@ class AutoBrightness(unittest.TestCase):
         self.assertLess(max(steps),0.08)  # no single step brighter than ~8% perceived
         self.assertLess(steps[0],max(steps))  # eased in: starts gentler than the middle
 
-    def test_public_root_and_fresh_staging_both_include_helpers(self):
-        from release.public_root import desktop_additions, desktop_replacements
-        additions=desktop_additions(); replacements=desktop_replacements()
-        self.assertEqual(additions['usr/local/libexec/arch-ipad-auto-brightness'][1],0o755)
-        for command in ('omarchy-auto-brightness',):
-            self.assertIn('usr/local/bin/'+command,additions)
-        self.assertIn('usr/local/libexec/arch-ipad-rotate-output',replacements)
-        stage=(PROJECT/'desktop/stage.py').read_text()
-        self.assertIn('arch-ipad-auto-brightness',stage)
-        self.assertIn('arch-ipad-auto-brightness',(PROJECT/'desktop/configuration/labwc-autostart').read_text())
+    def test_the_package_stages_the_helper_and_the_session_starts_it(self):
+        install=(PROJECT/'desktop/install-tree').read_text()
+        self.assertIn('$config/auto-brightness usr/libexec/arch-ipad-auto-brightness 755',install)
+        self.assertIn('exec /usr/libexec/arch-ipad-auto-brightness',(PROJECT/'desktop/shell/bin/omarchy-auto-brightness').read_text())
+        self.assertIn('/usr/libexec/arch-ipad-auto-brightness',(PROJECT/'desktop/shell/default/labwc/autostart').read_text())
 
 if __name__=='__main__': unittest.main()

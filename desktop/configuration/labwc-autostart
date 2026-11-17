@@ -1,0 +1,5 @@
+#!/bin/sh
+# Labwc runs this when the tablet session starts. The session itself (the
+# shell, the keyboard, rotation, brightness) comes from the omarchy-a package
+# and is updated with it; add your own commands below that line.
+. /usr/share/omarchy/default/labwc/autostart

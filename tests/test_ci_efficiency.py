@@ -35,11 +35,20 @@ class CIEfficiency(unittest.TestCase):
         self.assertIn('runs-on: ${{ needs.artwork-check.outputs.runner }}', artwork)
         self.assertEqual(artwork.count("steps.kept.outputs.cache-hit != 'true'"), 3)
 
-    def test_no_package_is_built_here(self):
+    def test_no_package_but_omarchy_a_is_built_here(self):
         # Mesa, wlroots, Labwc and the rest come built from the Orchard package repository.
         body = job(self.workflow, 'userspace')
-        for gone in ('ccache', 'makepkg', 'build-sources', 'build-labwc', 'labwc/install-toolchain', 'useradd'):
+        for gone in ('ccache', 'makepkg', 'build-sources', 'build-labwc', 'labwc/install-toolchain', 'useradd',
+                     'desktop/build '):
             self.assertNotIn(gone, body)
+        # The one package: this commit's omarchy-a, with the package repository's recipe; nothing publishes it.
+        self.assertIn('python -m release.package --output out/package --architecture aarch64', body)
+        self.assertIn('fetch-depth: 0', body)
+        self.assertIn('system/build-rootfs --package out/package', body)
+        for gone in ('publish-package', 'package-armv7h', 'package-aarch64', 'repo-add'):
+            self.assertNotIn(gone, self.workflow)
+        self.assertFalse((ROOT / 'ci/publish-package').exists())
+        self.assertFalse((ROOT / 'package').exists())
         for gone in ('desktop/build-sources', 'desktop/build-labwc', 'desktop/packages', 'desktop/labwc'):
             self.assertFalse((ROOT / gone).exists(), gone)
         # What is compiled is the keyboard and the cursor helper: the toolchain is a C compiler, no more.

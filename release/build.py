@@ -39,8 +39,7 @@ def orchard_files(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    for name in ('base', 'base-receipt', 'splash', 'logo', 'busybox', 'dropbear', 'dropbearkey',
-                 'cursor-tools', 'bluetooth-tools', 'output'):
+    for name in ('base', 'base-receipt', 'splash', 'logo', 'busybox', 'dropbear', 'dropbearkey', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--architecture', choices=sorted(INDEXES), default='aarch64', help="the root's architecture")
     parser.add_argument('--platform', action='append', default=[],
@@ -58,9 +57,6 @@ def main():
     for name in ('base', 'base_receipt', 'splash', 'logo', 'busybox', 'dropbear', 'dropbearkey'):
         if not getattr(args, name).is_file():
             parser.error(f'Missing input file: {getattr(args, name)}')
-    for name in ('cursor_tools', 'bluetooth_tools'):
-        if not getattr(args, name).is_dir():
-            parser.error(f'Missing tools directory: {getattr(args, name)}')
     try:
         validate(args.architecture)
         args.orchard = snapshot.directory(args.orchard)
@@ -77,7 +73,6 @@ def main():
     if not revision:
         parser.error(f'{args.orchard} is no git checkout and no --inputs names its revision')
     public_root = build_root(args.base, args.base_receipt, args.output, args.release,
-                             args.cursor_tools, args.bluetooth_tools,
                              tools={'dropbear': args.dropbear, 'dropbearkey': args.dropbearkey, 'busybox': args.busybox},
                              splash=args.splash, architecture=args.architecture)
     offered = orchard_files(args)

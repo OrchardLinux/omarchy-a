@@ -46,7 +46,7 @@ Panel {
   readonly property var scales: scaleChoice.scales
   readonly property int scaleIndex: scaleChoice.index
   readonly property string rotationHelper: (Quickshell.env("OMARCHY_PATH") ||
-    Quickshell.env("HOME") + "/.local/share/omarchy-ipad") + "/bin/omarchy-rotation-lock"
+    "/usr/share/omarchy") + "/bin/omarchy-rotation-lock"
 
   function setAuto(on) {
     if (!autoAvailable || autoWriteProc.running) return

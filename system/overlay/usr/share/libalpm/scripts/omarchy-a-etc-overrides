@@ -1,0 +1,20 @@
+#!/bin/sh
+# Copy /usr/share/omarchy/etc-overrides/PATH to /PATH where it differs: the
+# files of the omarchy-a package that another package owns, so pacman cannot
+# install them there itself. A link (filesystem's /etc/os-release) is replaced
+# by the file, never written through.
+set -eu
+overrides=${OMARCHY_ETC_OVERRIDES:-/usr/share/omarchy/etc-overrides}
+root=${OMARCHY_ETC_OVERRIDES_ROOT:-}
+[ -d "$overrides" ] || exit 0
+cd "$overrides"
+find . -type f | sort | while IFS= read -r file; do
+  target="$root/${file#./}"
+  if [ -L "$target" ] || ! cmp -s "$file" "$target"; then
+    mkdir -p "$(dirname "$target")"
+    rm -f -- "$target"
+    cp -- "$file" "$target"
+    chmod 644 "$target"
+    echo "omarchy-a: ${target#"$root"}"
+  fi
+done

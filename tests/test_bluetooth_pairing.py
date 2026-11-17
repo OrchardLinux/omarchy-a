@@ -1,16 +1,10 @@
 import asyncio
-import hashlib
-import io
 import json
 from pathlib import Path
 import runpy
-import tempfile
 import unittest
-from unittest.mock import patch
 import xml.etree.ElementTree as ET
-import zipfile
 
-from release import public_root, audit
 
 PROJECT = Path(__file__).resolve().parents[1]
 policy = runpy.run_path(str(PROJECT / 'system/overlay/usr/lib/omarchy-bluetooth/policy.py'))
@@ -91,36 +85,22 @@ class PairingPackagingTests(unittest.TestCase):
             self.assertIsNone(tree.find("./keyboard/keybind[@key='%s']" % key).get('onRelease'))
 
     def test_public_sources_include_isolated_ui_and_pair_helper(self):
-        replacements = public_root.desktop_replacements()
-        self.assertIn('home/tablet/.local/share/omarchy-ipad/bin/omarchy-bluetooth-device', replacements)
-        self.assertIn('home/tablet/.local/share/omarchy-ipad/shell/plugins/panels/bluetooth/Panel.qml', replacements)
-        self.assertIn('home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml', public_root.desktop_additions())
-        files = public_root.system_files()
+        # The whole Omarchy tree is the package's, the pairing UI with it.
+        for name in ('bin/omarchy-bluetooth-device', 'shell/plugins/panels/bluetooth/Panel.qml',
+                     'shell/bluetooth-pairing/shell.qml'):
+            self.assertTrue((PROJECT / 'desktop/shell' / name).is_file(), name)
+        from package_tree import system_files
+        files = system_files()
         self.assertEqual(files['usr/libexec/omarchy-bluetooth-pair'][1], 0o755)
         self.assertEqual(files['usr/lib/omarchy-bluetooth/policy.py'][1], 0o644)
 
-    def test_dependency_preparation_and_tamper_detection(self):
-        script = runpy.run_path(str(PROJECT / 'desktop/build-bluetooth-tools'))
-        data = io.BytesIO()
-        with zipfile.ZipFile(data, 'w') as wheel:
-            wheel.writestr('dbus_next/__init__.py', '# fixture\n')
-            wheel.writestr('dbus_next-0.2.3.dist-info/LICENSE', 'MIT fixture\n')
-        pin = {'name': 'dbus-next', 'version': '0.2.3', 'sha256': hashlib.sha256(data.getvalue()).hexdigest()}
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / 'desktop/bluetooth').mkdir(parents=True)
-            (root / 'desktop/bluetooth/dbus-next.json').write_text(json.dumps(pin))
-            output = root / 'tools'
-            script['prepare'](data.getvalue(), pin, output)
-            with patch.object(public_root, 'PROJECT', root):
-                files = public_root.bluetooth_files(output)
-                self.assertIn('usr/lib/omarchy-bluetooth/dbus_next/__init__.py', files)
-                self.assertIn('usr/share/licenses/omarchy-bluetooth-dbus-next/LICENSE', files)
-                (output / 'lib/dbus_next/__init__.py').write_text('tampered')
-                with self.assertRaises(ValueError):
-                    public_root.bluetooth_files(output)
-            with self.assertRaises(ValueError):
-                script['prepare'](b'wrong', pin, root / 'wrong')
+    def test_the_library_is_installed_from_its_wheel(self):
+        # The recipe fetches the pinned wheel; desktop/install-tree takes every module of it.
+        from package_tree import system_files
+        files = system_files()
+        for name in ('usr/lib/omarchy-bluetooth/dbus_next/__init__.py', 'usr/lib/omarchy-bluetooth/dbus_next/aio/__init__.py',
+                     'usr/share/licenses/omarchy-bluetooth-dbus-next/LICENSE'):
+            self.assertEqual(files[name][1], 0o644, name)
 
 
 class Reconnect(unittest.TestCase):

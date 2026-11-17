@@ -1,18 +1,12 @@
-"""Desktop build targets, checked against component bytes."""
+"""The builder of the omarchy-a package for an image: the pinned Arch Linux ARM container, or native CI."""
 from pathlib import Path
-import json
 import platform
 import sys
 
 PROJECT = Path(__file__).resolve().parents[1]
 if str(PROJECT) not in sys.path:
     sys.path.insert(0, str(PROJECT))
-from release.architecture import validate, check_elf, machine, podman_arch
-
-
-def source_pins():
-    """The pinned sources compiled here: the keyboard's."""
-    return json.loads((Path(__file__).resolve().parent / 'sources.json').read_text())
+from release.architecture import validate, machine, podman_arch  # noqa: F401 (podman_arch: callers)
 
 
 def builder(buildenv, architecture, image=None):

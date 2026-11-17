@@ -208,24 +208,25 @@ jobs:
         if: inputs.reuse_run_id == ''
         with:
           persist-credentials: false
+          # The package's version is the last release tag.
+          fetch-depth: 0
       - name: Install the same signed-package toolchains as local builds
         if: inputs.reuse_run_id == ''
         run: |
           bash desktop/install-toolchain
           bash system/install-toolchain
           bash ci/dependencies --tools-only
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
-      # No package is built here: the root installs Mesa, wlroots, Labwc and the
-      # rest from the Orchard package repository. What is compiled is the
-      # keyboard and the cursor helper, a few seconds of C.
-      - name: Build the desktop payload and its helpers
+      # The one package built here: this commit as omarchy-a, with the Orchard
+      # package repository's recipe; the root installs it, and Mesa, wlroots,
+      # Labwc and the rest from [orchard]. It is the image's only: [orchard]
+      # gets omarchy-a when a release moves the recipe to its tag.
+      - name: Build the omarchy-a package of this commit
         if: inputs.reuse_run_id == ''
         env:
           ORCHARD_CHECKOUT: ${{ github.workspace }}/.orchard
-        run: |
-          python desktop/build --output out/desktop
-          python desktop/build-cursor-helper --output out/cursor
-          python desktop/build-bluetooth-tools --output out/bluetooth
+        run: python -m release.package --output out/package --architecture aarch64
       - name: Build the signed Arch root filesystem
         if: inputs.reuse_run_id == ''
         env:
@@ -237,9 +238,9 @@ jobs:
         run: |
           VERSION="preview-$RUN_ID"
           if [[ "$REF_TYPE" == tag ]]; then VERSION="${REF_NAME#v}"; elif [[ -n "$NIGHTLY" ]]; then VERSION="$NIGHTLY"; fi
-          bash system/build-rootfs --desktop out/desktop --release "$VERSION" --output out/base
+          bash system/build-rootfs --package out/package --release "$VERSION" --output out/base
           # Not compressed again: the root archive in it already is.
-          tar -C out -cf out/omarchy-userspace.tar base cursor bluetooth
+          tar -C out -cf out/omarchy-userspace.tar base
       - uses: actions/upload-artifact@v4
         with:
           name: omarchy-userspace
@@ -334,7 +335,6 @@ jobs:
             --base out/base/rootfs.tar.gz --base-receipt out/base/rootfs.tar.gz.json \
             --splash out/boot/artwork/splash --logo out/boot/artwork/logo.bin \
             --busybox "$(tool busybox)" --dropbear "$(tool dropbear)" --dropbearkey "$(tool dropbearkey)" \
-            --cursor-tools out/cursor --bluetooth-tools out/bluetooth \
             --output out/release
           python -m release.audit out/release/release.toml
           python -m orchard.manifests --verify-local out/release/index.toml

@@ -1,0 +1,42 @@
+#!/bin/bash
+# Root's part of a change between versions of the omarchy-a package; pacman
+# runs it as the package's install script (the recipe's omarchy-a.install,
+# in the Orchard package repository, only calls this). The tablet user's part
+# is a migration (/usr/share/omarchy/migrations), never this.
+#
+#   package-install post-install NEW
+#   package-install post-upgrade NEW OLD
+set -euo pipefail
+
+post_install() {
+  # A tablet installed before this package had the desktop copied into the
+  # tablet user's home, its commands linked from /usr/local/bin and its helpers
+  # in /usr/local/libexec, none of them owned by a package. The package's are
+  # in /usr/share/omarchy, /usr/bin and /usr/libexec; links into the old copy
+  # would come first on PATH. The copy itself goes with a migration.
+  local link
+  for link in /usr/local/bin/*; do
+    case "$(readlink "$link" 2>/dev/null)" in
+      /home/*/.local/share/omarchy-ipad/bin/*) rm -f -- "$link" ;;
+    esac
+  done
+  rm -f -- /usr/local/bin/omarchy-auto-brightness \
+    /usr/local/libexec/arch-ipad-first-theme /usr/local/libexec/arch-ipad-scale-output \
+    /usr/local/libexec/arch-ipad-auto-brightness /usr/local/libexec/arch-ipad-rotate-output \
+    /usr/local/libexec/arch-ipad-touch-output /usr/local/libexec/arch-ipad-login-session \
+    /usr/local/libexec/omarchy-greeter-session /usr/local/share/applications/foot.desktop \
+    /arch-ipad-ui-manifest.json
+  # Only when nothing else is in them.
+  rmdir /usr/local/libexec 2>/dev/null || true
+  rmdir /usr/local/share/applications 2>/dev/null || true
+}
+
+post_upgrade() {
+  :
+}
+
+case "${1:-}" in
+  post-install) post_install ;;
+  post-upgrade) post_upgrade ;;
+  *) echo "Usage: package-install post-install|post-upgrade" >&2; exit 2 ;;
+esac

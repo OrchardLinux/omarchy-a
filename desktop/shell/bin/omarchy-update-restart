@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# omarchy:summary=Say what an update needs before it takes effect
+# omarchy:args=[omarchy-a-before omarchy-a-after]
+
+# Upstream Omarchy's, for a tablet. A new kernel needs Linux started again
+# (with `orchard launch` from the computer: a reboot leaves Linux); a new
+# omarchy-a package needs the session started again, since the running shell
+# and helpers are the old ones.
+
+kernel_modules_path="${OMARCHY_KERNEL_MODULES_PATH:-/usr/lib/modules}"
+running_kernel=$(uname -r)
+
+# Only kernels a package owns tell anything: until the kernel is a package,
+# orchard's platform layer puts it there and no update changes it.
+owned=0
+kernel_current=0
+for kernel in "$kernel_modules_path"/*/modules.builtin; do
+  if [[ -f $kernel ]] && pacman -Qo "$kernel" &>/dev/null; then
+    owned=1
+    if [[ $(basename "$(dirname "$kernel")") == "$running_kernel" ]]; then
+      kernel_current=1
+    fi
+  fi
+done
+
+echo
+if (( owned && ! kernel_current )); then
+  echo -e "\e[33mA new kernel is installed. Shut down and start Linux again (orchard launch) to use it.\e[0m"
+elif [[ -f $HOME/.local/state/omarchy/reboot-required ]]; then
+  echo -e "\e[33mThis update needs Linux started again: shut down, then start it with orchard launch.\e[0m"
+elif [[ ${1:-} != "${2:-}" ]]; then
+  echo -e "\e[33mOmarchy A was updated (${2#omarchy-a }). Log out and back in to use it.\e[0m"
+else
+  echo -e "\e[32mEverything is up to date.\e[0m"
+fi

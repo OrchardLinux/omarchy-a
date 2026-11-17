@@ -1,94 +1,98 @@
-import hashlib
-import importlib.util
+"""The package's layout (desktop/install-tree): the greeter, the Omarchy tree, the user's defaults."""
 import os
 from pathlib import Path
-import sys
-import struct
+import shutil
+import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
 
-STAGE = Path(__file__).resolve().parents[1] / 'desktop/stage.py'
-spec = importlib.util.spec_from_file_location('desktop_stage', STAGE)
-stage = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(stage)
+from package_tree import INSTALL, PROJECT, mode, tree
+
+HERE = PROJECT / 'desktop'
 
 
+@unittest.skipUnless(shutil.which('bash'), 'bash runs desktop/install-tree')
 class GreeterStagingTests(unittest.TestCase):
+    def test_modes_whatever_the_umask(self):
+        target = tree()
+        skel = target / 'etc/skel'
+        for directory in [target, *target.rglob('*')]:
+            if not directory.is_symlink() and directory.is_dir():
+                expected = 0o700 if directory.is_relative_to(skel) and directory != skel else 0o755
+                self.assertEqual(mode(directory), expected, directory)
+        # The package writes into no home: the tablet user's defaults are /etc/skel's.
+        self.assertFalse((target / 'home').exists())
+
     def test_trusted_ui_fallback_theme_and_tmpfiles_are_staged(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            upstream = root / 'upstream'
-            theme = upstream / 'themes/osaka-jade'
-            (theme / 'backgrounds').mkdir(parents=True)
-            (theme / 'colors.toml').write_text('foreground = "#ffffff"\n')
-            (theme / 'backgrounds/first.webp').write_bytes(b'fallback')
-            (upstream / 'applications').mkdir()
-            (upstream / 'applications/foot.desktop').write_text('[Desktop Entry]\n')
-            outside = root / 'outside-theme'
-            outside.mkdir(mode=0o711)
-            outside.chmod(0o711)
-            (upstream / 'themes/external-theme').symlink_to(outside, target_is_directory=True)
-            keyboard = root / 'keyboard'
-            elf = bytearray(64)
-            elf[:7] = b'\x7fELF\x02\x01\x01'
-            struct.pack_into('<HHI', elf, 16, 3, 183, 1)
-            struct.pack_into('<H', elf, 52, 64)
-            keyboard.write_bytes(elf)
-            xpi = root / 'extension.xpi'
-            xpi.write_bytes(b'extension')
-            target = root / 'payload'
-            args = ['stage.py', str(target), '--upstream', str(upstream), '--keyboard', str(keyboard),
-                    '--keyboard-sha256', hashlib.sha256(keyboard.read_bytes()).hexdigest(),
-                    '--omafox-xpi', str(xpi)]
-            with patch.object(sys, 'argv', args), patch.object(stage, 'XPI_SHA', hashlib.sha256(xpi.read_bytes()).hexdigest()):
-                previous = os.umask(0o077)
-                try:
-                    stage.main()
-                finally:
-                    os.umask(previous)
-            for directory in [target, *target.rglob('*')]:
-                if not directory.is_symlink() and directory.is_dir():
-                    expected = 0o700 if directory.is_relative_to(target / 'home/tablet') else 0o755
-                    self.assertEqual(directory.stat().st_mode & 0o777, expected, directory)
-            self.assertEqual(outside.stat().st_mode & 0o777, 0o711)
-            self.assertTrue((target / 'home/tablet/.local/share/omarchy-ipad/themes/external-theme').is_symlink())
-            self.assertEqual((target / 'etc/greetd/config.toml').stat().st_mode & 0o777,
-                             (stage.HERE / 'greeter/greetd.toml').stat().st_mode & 0o777)
-            self.assertEqual((target / 'usr/local/libexec/arch-ipad-login-session').stat().st_mode & 0o777, 0o755)
-            menu = target / 'home/tablet/.local/share/omarchy-ipad/default/omarchy/omarchy-menu.jsonc'
-            self.assertIn('"system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system shutdown"}', menu.read_text())
-            self.assertIn('"system.reboot": {"icon":"󰜉","label":"Reboot (leaves Linux)","action":"omarchy-system reboot"}', menu.read_text())
-            self.assertIn('"label":"Logout","action":"omarchy-system logout"}', menu.read_text())
-            for command in ('omarchy-system', 'omarchy-system-lock', 'omarchy-system-wake'):
-                self.assertTrue((target / 'usr/local/bin' / command).is_symlink(), command)
-            greeter = target / 'usr/share/omarchy-greeter'
-            self.assertEqual((greeter / 'plugins/lock/LockView.qml').read_bytes(),
-                             (stage.PORT / 'shell/plugins/lock/LockView.qml').read_bytes())
-            self.assertTrue((greeter / 'Commons/Color.qml').is_file())
-            jade = stage.HERE / 'themes/jade-horse'
-            self.assertEqual((greeter / 'default-theme/background').read_bytes(),
-                             (jade / 'backgrounds/01-mountain-horses.webp').read_bytes())
-            self.assertEqual((greeter / 'default-theme/colors.toml').read_bytes(),
-                             (jade / 'colors.toml').read_bytes())
-            themes = target / 'home/tablet/.local/share/omarchy-ipad/themes'
-            self.assertFalse((themes / 'osaka-jade').exists())
-            self.assertEqual((themes / 'jade-horse/icons.theme').read_text().strip(), 'Yaru-sage')
-            first_theme = (target / 'usr/local/libexec/arch-ipad-first-theme').read_text()
-            self.assertIn('themes/jade-horse', first_theme)
-            self.assertIn("'jade-horse' >", first_theme)
-            self.assertNotIn('tokyo-night', first_theme)
-            self.assertIn('tablet tablet', (target / 'usr/lib/tmpfiles.d/omarchy-greeter-theme.conf').read_text())
-            self.assertTrue((target / 'home/tablet/.local/share/omarchy-ipad/bin/omarchy-greeter-theme-publish').is_file())
-            # Boot login is the PIN greeter on VT1, not a tty1 autologin.
-            greetd = (target / 'etc/greetd/config.toml').read_text()
-            self.assertIn('vt = 1', greetd)
-            self.assertIn('command = "/usr/local/libexec/omarchy-greeter-session"', greetd)
-            self.assertTrue((target / 'etc/systemd/system/greetd.service.d/seatd.conf').is_file())
-            self.assertFalse((target / 'etc/systemd/system/getty@tty1.service.d').exists())
-            self.assertFalse((target / 'home/tablet/.bash_profile').exists())
-            self.assertTrue((target / 'usr/local/libexec/arch-ipad-rotate-output').stat().st_mode & 0o111)
-            self.assertTrue((target / 'usr/local/libexec/arch-ipad-touch-output').stat().st_mode & 0o111)
+        target = tree()
+        skel = target / 'etc/skel'
+        omarchy = target / 'usr/share/omarchy'
+        self.assertTrue((omarchy / 'themes/external-theme').is_symlink())
+        # greetd owns its config: the package's goes there through its etc-overrides.
+        overrides = omarchy / 'etc-overrides'
+        self.assertFalse((target / 'etc/greetd').exists())
+        self.assertEqual((overrides / 'etc/greetd/config.toml').read_bytes(), (HERE / 'greeter/greetd.toml').read_bytes())
+        self.assertEqual((overrides / 'etc/skel/.bashrc').read_bytes(), (HERE / 'configuration/bashrc').read_bytes())
+        self.assertEqual(mode(target / 'usr/libexec/arch-ipad-login-session'), 0o755)
+        menu = (omarchy / 'default/omarchy/omarchy-menu.jsonc').read_text()
+        self.assertIn('"system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system shutdown"}', menu)
+        self.assertIn('"system.reboot": {"icon":"󰜉","label":"Reboot (leaves Linux)","action":"omarchy-system reboot"}', menu)
+        self.assertIn('"label":"Logout","action":"omarchy-system logout"}', menu)
+        # Suspend is offered once the charger PM contract is ready.
+        self.assertIn('"when":"command -v ipadlinux-suspend-ready >/dev/null && ipadlinux-suspend-ready"', menu)
+        self.assertNotIn('! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled', menu)
+        for command in ('omarchy-system', 'omarchy-system-lock', 'omarchy-system-wake', 'omarchy-update',
+                        'omarchy-migrate', 'omarchy-launch-floating-terminal-with-presentation'):
+            self.assertEqual(os.readlink(target / 'usr/bin' / command), '/usr/share/omarchy/bin/' + command)
+            self.assertTrue(mode(omarchy / 'bin' / command) & 0o111, command)
+        greeter = target / 'usr/share/omarchy-greeter'
+        self.assertEqual((greeter / 'plugins/lock/LockView.qml').read_bytes(),
+                         (HERE / 'shell/shell/plugins/lock/LockView.qml').read_bytes())
+        self.assertTrue((greeter / 'Commons/Color.qml').is_file())
+        jade = HERE / 'themes/jade-horse'
+        self.assertEqual((greeter / 'default-theme/background').read_bytes(),
+                         (jade / 'backgrounds/01-mountain-horses.webp').read_bytes())
+        self.assertEqual((greeter / 'default-theme/colors.toml').read_bytes(), (jade / 'colors.toml').read_bytes())
+        themes = omarchy / 'themes'
+        self.assertFalse((themes / 'osaka-jade').exists())
+        self.assertTrue((themes / 'tokyo-night/colors.toml').is_file())
+        self.assertEqual((themes / 'jade-horse/icons.theme').read_text().strip(), 'Yaru-sage')
+        first_theme = (target / 'usr/libexec/arch-ipad-first-theme').read_text()
+        self.assertIn('themes/jade-horse', first_theme)
+        self.assertIn("'jade-horse' >", first_theme)
+        self.assertIn('tablet tablet', (target / 'usr/lib/tmpfiles.d/omarchy-greeter-theme.conf').read_text())
+        self.assertTrue((omarchy / 'bin/omarchy-greeter-theme-publish').is_file())
+        # Boot login is the PIN greeter on VT1, not a tty1 autologin.
+        greetd = (overrides / 'etc/greetd/config.toml').read_text()
+        self.assertIn('vt = 1', greetd)
+        self.assertIn('command = "/usr/libexec/omarchy-greeter-session"', greetd)
+        self.assertTrue(mode(target / 'usr/libexec/omarchy-greeter-session') & 0o111)
+        self.assertTrue((target / 'etc/systemd/system/greetd.service.d/seatd.conf').is_file())
+        self.assertFalse((target / 'etc/systemd/system/getty@tty1.service.d').exists())
+        self.assertFalse((skel / '.bash_profile').exists())
+        self.assertTrue(mode(target / 'usr/libexec/arch-ipad-rotate-output') & 0o111)
+        self.assertTrue(mode(target / 'usr/libexec/arch-ipad-touch-output') & 0o111)
+        # The user's defaults, and the same files where omarchy-refresh-config takes them from.
+        for name in ('labwc/rc.xml', 'labwc/autostart', 'foot/foot.ini', 'omarchy-ipad/shell.json'):
+            self.assertEqual((skel / '.config' / name).read_bytes(), (omarchy / 'config' / name).read_bytes(), name)
+        self.assertIn('. /usr/share/omarchy/default/labwc/autostart', (skel / '.config/labwc/autostart').read_text())
+        self.assertTrue(mode(omarchy / 'default/labwc/autostart') & 0o111)
+        self.assertTrue((skel / '.local/share/applications/foot.desktop').is_file())
+        self.assertTrue((omarchy / 'applications/foot.desktop').is_file())
+        # The compiled helpers and the extension.
+        self.assertEqual(mode(omarchy / 'trials/wvkbd-mobintl-v0.20-font18-special15-state'), 0o755)
+        self.assertEqual(mode(target / 'usr/libexec/omarchy-wtype'), 0o755)
+        self.assertTrue((target / 'usr/lib/firefox/distribution/extensions/@omafox.xpi').is_file())
+        self.assertFalse(list(target.rglob('__pycache__')))
+
+    def test_missing_inputs_are_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            result = subprocess.run(['bash', str(INSTALL), str(base / 'root'), str(base), str(base), str(base)],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Missing input', result.stderr)
+            self.assertFalse((base / 'root').exists())
 
 
 if __name__ == '__main__':

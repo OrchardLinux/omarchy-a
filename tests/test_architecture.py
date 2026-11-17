@@ -144,13 +144,18 @@ class ArchitectureSelectionTests(unittest.TestCase):
             with patch.dict(os.environ, dict(os.environ)), patch.object(sys, 'argv', argv), patch.object(entry, 'PROJECT', root), \
                     patch.object(entry, 'component', component), patch.object(entry, 'orchard_command', command), \
                     patch.object(entry, 'builder_key', side_effect=lambda image: 'id:' + (image or '')), \
+                    patch.object(entry, 'package_version', return_value='0.3.1'), \
+                    patch.object(entry, 'fetch_recipe', side_effect=lambda path: (path.mkdir(parents=True),
+                                                                                 (path / 'PKGBUILD').write_text('r'))), \
                     patch.object(entry, 'run', side_effect=lambda *args: calls.append(tuple(map(str, args)))):
                 entry.main()
             self.assertEqual(inputs[0][-2:], ('--platform', 'apple-armv7'))
-            for name in ('desktop', 'cursor', 'base'):
+            # The package is keyed by the recipe and the version too.
+            self.assertIn('0.3.1', keys['package'])
+            for name in ('package', 'base'):
                 self.assertIn('armv7h', keys[name])
                 self.assertIn('id:' + entry.ARMV7_BUILDER, keys[name])
-            for script in ('desktop/build', 'desktop/build-cursor-helper', 'system/build-rootfs'):
+            for script in ('release.package', 'system/build-rootfs'):
                 call = next(call for call in calls if script in call)
                 self.assertEqual(call[call.index('--architecture') + 1], 'armv7h')
                 self.assertEqual(call[call.index('--builder-image') + 1], entry.ARMV7_BUILDER)
@@ -182,15 +187,17 @@ class ArchitectureSelectionTests(unittest.TestCase):
         entry = build_entry()
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            for name in ('desktop', 'cursor'):
+            for name in ('package',):
                 for relative in entry.INPUTS[name]:
-                    path = root / relative
+                    # A directory input gets a file in it; the wrapper below is one of the desktop's.
+                    path = root / relative / 'fixture' if (PROJECT / relative).is_dir() else root / relative
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text('source fixture')
+            (root / 'desktop/snapshot_buildenv.py').write_text('wrapper')
             make = lambda path, work: path.write_text('binary fixture')
             first = {}
             producer = json.dumps(PRODUCER, sort_keys=True)
-            for name in ('desktop', 'cursor'):
+            for name in ('package',):
                 _, first[name] = entry.component(root, name, entry.INPUTS[name], make, artifact='binary', extra=[producer])
             (root / 'desktop/snapshot_buildenv.py').write_text('changed wrapper')
             second = {}
