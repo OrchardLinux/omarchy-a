@@ -6,7 +6,12 @@ from pathlib import Path
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
+
+# Tests run helpers out of the shared tree; they must not leave __pycache__ in it.
+sys.dont_write_bytecode = True
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 
 PROJECT = Path(__file__).resolve().parents[1]
 INSTALL = PROJECT / 'desktop/install-tree'
