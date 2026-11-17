@@ -134,12 +134,12 @@ class Scenarios(unittest.TestCase):
         self.assertEqual((machine.state, machine.playing, machine.inflight), (DARK, True, False))
         self.assertEqual(machine.handle('not-playing'), ['arm-settle'])
 
-    def test_a_board_without_suspend_stays_dark_until_pressed(self):
+    def test_a_refused_sleep_is_asked_for_again_dark_and_locked(self):
         machine = asleep()
-        self.assertEqual(machine.handle('suspend-refused'), ['take-inhibitor'])
-        self.assertEqual(machine.state, DARK)
-        self.assertEqual(machine.handle('not-playing'), [])
-        self.assertEqual(machine.state, DARK)
+        self.assertEqual(machine.handle('suspend-refused'), ['take-inhibitor', 'arm-retry'])
+        self.assertEqual((machine.state, machine.inflight, machine.no_suspend), (SETTLING, False, False))
+        self.assertEqual(machine.handle('settle'), ['suspend'])
+        self.assertEqual(machine.handle('suspend-refused'), ['take-inhibitor', 'arm-retry'])
         self.assertIn('light', machine.handle('power'))
 
     def test_a_cancelled_suspend_cannot_swallow_presses_for_ever(self):

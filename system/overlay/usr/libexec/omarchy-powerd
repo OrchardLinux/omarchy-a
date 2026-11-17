@@ -29,6 +29,8 @@ EVENTS = ('power', 'home', 'wake', 'idle', 'settle', 'lock-ok', 'lock-failed', '
 IDLE_GRACE_SECONDS = 8.0
 FADE_SECONDS = 0.24
 SETTLE_SECONDS = 10.0
+# A refused sleep is asked for again after this, dark and locked meanwhile.
+RETRY_SECONDS = 60.0
 TICK_SECONDS = 0.05
 # Ticks of this loop: they count the time it ran, on a kernel whatever its clocks do in sleep.
 SUSPEND_TICKS = int(30 / TICK_SECONDS)
@@ -189,8 +191,10 @@ class Machine:
             self.inflight = False
             return ['take-inhibitor'] + self._settle_again()
         if event == 'suspend-refused':
-            self.inflight, self.no_suspend, self.state = False, True, DARK
-            return ['take-inhibitor']
+            # Refused this time (logind's CanSuspend): never dark and awake
+            # for good. Stay dark and locked, and ask again later.
+            self.inflight, self.state, self.settle_due = False, SETTLING, False
+            return ['take-inhibitor', 'arm-retry']
         if event == 'suspend-blocked':
             self.inflight, self.playing, self.state = False, True, DARK
             return ['take-inhibitor']
@@ -681,6 +685,9 @@ class Daemon:
     def do_cancel_settle(self, _):
         self.settle_at = None
 
+    def do_arm_retry(self, _):
+        self.settle_at = time.monotonic() + RETRY_SECONDS
+
     def do_take_inhibitor(self, _):
         self.take_inhibitor()
 
@@ -884,7 +891,14 @@ class Daemon:
         if now == self.seen_counters:
             return
         if now[1] != self.seen_counters[1]:
-            log(f'kernel attempt failed: suspend_stats {now}')
+            last = {}
+            for name in ('last_failed_dev', 'last_failed_errno', 'last_failed_step'):
+                try:
+                    last[name] = (STATS / name).read_text().strip()
+                except OSError:
+                    last[name] = '?'
+            log(f'kernel attempt failed: suspend_stats {now} device {last["last_failed_dev"] or "-"} '
+                f'errno {last["last_failed_errno"]} step {last["last_failed_step"]}')
             self.arm_wakeup()  # the failed attempt used it up
         self.seen_counters = now
         if not self.watching_unit:

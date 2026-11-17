@@ -113,7 +113,7 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 | `playing`, `not-playing` | playback check, once a second while dark |
 | `sleep-signal` | logind `PrepareForSleep(true)`, someone else's suspend |
 | `sleep-ended` | `systemd-suspend.service` finished, or `PrepareForSleep(false)` |
-| `suspend-refused` | `CanSuspend` is not yes: this board cannot sleep |
+| `suspend-refused` | `CanSuspend` is not yes: not now, asked again after `RETRY_SECONDS` (60 s) |
 | `suspend-blocked` | a block inhibitor appeared just before asking |
 | `suspend-busy` | a wakeup event was in progress at the `wakeup_count` handshake, or the request failed |
 | `timeout` | the suspend never happened (30 s of running time) |
@@ -148,7 +148,7 @@ restart the settle timer. Explicit locking is never undone by grace.
 | `DARK` | `lock-failed` | `ON` | light; notify |
 | `SUSPENDING` | `power`, `home`, `wake` | `ON` | light at once; the sleep ends or aborts by itself |
 | `SUSPENDING` | `sleep-ended` | `SETTLING` | stay dark, arm settle: no button woke it (charger, alarm, abort) |
-| `SUSPENDING` | `suspend-refused` | `DARK` | until a press |
+| `SUSPENDING` | `suspend-refused` | `SETTLING` | retry in 60 s, dark and locked |
 | `SUSPENDING` | `suspend-blocked` | `DARK` | as playing; `not-playing` settles again |
 | `SUSPENDING` | `suspend-busy` | `SETTLING` | try again after the settle time |
 | `SUSPENDING` | `timeout` | `SETTLING` | try again after the settle time |
