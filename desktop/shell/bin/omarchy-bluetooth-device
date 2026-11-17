@@ -58,7 +58,7 @@ case "$action" in
     trap finish_pair EXIT
     trap 'exit 2' HUP INT TERM
     export OMARCHY_PAIR_RESULT="$result" OMARCHY_PAIR_ADDRESS="$address"
-    root=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
+    root=${OMARCHY_PATH:-/usr/share/omarchy}
     qs -p "$root/shell/bluetooth-pairing/shell.qml" &
     pair_ui=$!
     wait "$pair_ui" || true

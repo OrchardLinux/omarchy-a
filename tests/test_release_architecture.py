@@ -1,5 +1,4 @@
 """Release boundaries reject a desktop component or root of another architecture."""
-import hashlib
 import json
 from pathlib import Path
 import struct
@@ -21,28 +20,6 @@ def elf(architecture):
 
 
 class ReleaseArchitecture(unittest.TestCase):
-    def cursor(self, root, binary_architecture, receipt_architecture):
-        contents = {'wtype': elf(binary_architecture), 'LICENSE': b'MIT'}
-        for name, data in contents.items():
-            (root / name).write_bytes(data)
-        pin = json.loads((public_root.PROJECT / 'desktop/cursor/wtype.json').read_text())
-        record = {'schema': 1, 'architecture': receipt_architecture, 'source': pin,
-                  'files': {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}}
-        (root / 'manifest.json').write_text(json.dumps(record))
-
-    def test_correct_hash_cannot_disguise_wrong_isa_cursor(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self.cursor(root, 'armv7h', 'armv7h')
-            self.assertEqual(public_root.cursor_files(root, 'armv7h')['usr/libexec/omarchy-wtype'][0],
-                             elf('armv7h'))
-            self.cursor(root, 'aarch64', 'armv7h')
-            with self.assertRaisesRegex(ValueError, 'ELF|architecture'):
-                public_root.cursor_files(root, 'armv7h')
-            self.cursor(root, 'armv7h', 'aarch64')
-            with self.assertRaisesRegex(ValueError, 'receipt'):
-                public_root.cursor_files(root, 'armv7h')
-
     def test_access_tools_must_match_target(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -62,8 +39,7 @@ class ReleaseArchitecture(unittest.TestCase):
             receipt = root / 'base.json'
             receipt.write_text(json.dumps({'architecture': 'aarch64'}))
             with self.assertRaisesRegex(ValueError, 'Base root architecture'):
-                public_root.build(root / 'base.gz', receipt, root / 'out', 'test', root,
-                                  architecture='armv7h')
+                public_root.build(root / 'base.gz', receipt, root / 'out', 'test', architecture='armv7h')
             self.assertFalse((root / 'out').exists())
 
     def test_armv7_manifest_names_the_32_bit_loaders_without_pongo(self):

@@ -1,0 +1,172 @@
+#!/bin/bash
+# Put every file of the omarchy-a package into ROOT: what `make install` runs.
+#
+#   desktop/install-tree ROOT BUILD OMARCHY DBUS_NEXT
+#
+# BUILD holds the compiled keyboard and cursor helper (`make`), OMARCHY the
+# pinned upstream Omarchy (desktop/upstream.lock), DBUS_NEXT the unpacked
+# dbus-next wheel. The layout is upstream Omarchy's package's: the Omarchy
+# tree in /usr/share/omarchy (OMARCHY_PATH) with its commands in /usr/bin, the
+# greeter in /usr/share/omarchy-greeter, helpers in /usr/libexec, the tablet
+# user's defaults in /etc/skel (and /usr/share/omarchy/config, where
+# omarchy-refresh-config copies them from), system/overlay where it says.
+# Files another package owns go to /usr/share/omarchy/etc-overrides; the
+# package's pacman hook puts them in place. Nothing goes into a home.
+set -euo pipefail
+(($# == 4)) || { echo 'Usage: desktop/install-tree ROOT BUILD OMARCHY DBUS_NEXT' >&2; exit 2; }
+root=$1 build=$2 upstream=$3 dbus_next=$4
+here=$(cd "$(dirname "$0")" && pwd)
+project=$(dirname "$here")
+shell=$here/shell config=$here/configuration
+omarchy=$root/usr/share/omarchy
+for input in "$build/wvkbd-mobintl" "$build/wtype" "$build/wtype.LICENSE" "$upstream/themes" \
+    "$upstream/applications/foot.desktop" "$dbus_next/dbus_next/__init__.py"; do
+  [[ -e $input ]] || { echo "Missing input: $input" >&2; exit 1; }
+done
+umask 022
+
+# FILE DESTINATION [MODE]
+put() {
+  mkdir -p "$(dirname "$2")"
+  cp "$1" "$2"
+  chmod "${3:-644}" "$2"
+}
+
+sha256() {
+  if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
+}
+
+# The Omarchy tree.
+mkdir -p "$omarchy"
+cp -R "$shell/." "$omarchy/"
+find "$omarchy" \( -name __pycache__ -o -name '*.pyc' \) -prune -exec rm -rf {} +
+
+# The greeter, system-owned: never read from the user's home directory, with the
+# shell's shared UI code.
+greeter=$root/usr/share/omarchy-greeter
+mkdir -p "$greeter"
+cp -R "$here/greeter/." "$greeter/"
+cp -R "$shell/shell/Commons" "$shell/shell/Ui" "$greeter/"
+for name in LockView.qml LockFeedSurface.qml; do
+  put "$shell/shell/plugins/lock/$name" "$greeter/plugins/lock/$name"
+done
+chmod 755 "$greeter/labwc/autostart"
+put "$here/greeter/greeter-session" "$root/usr/libexec/omarchy-greeter-session" 755
+
+# Upstream's themes at the pin, with this repository's Jade Horse in place of Osaka Jade.
+cp -RP "$upstream/themes" "$omarchy/themes"
+rm -rf "$omarchy/themes/osaka-jade"
+mkdir -p "$omarchy/themes/jade-horse"
+cp -R "$here/themes/jade-horse/." "$omarchy/themes/jade-horse/"
+theme=$omarchy/themes/jade-horse
+put "$theme/colors.toml" "$greeter/default-theme/colors.toml"
+[[ ! -f $theme/shell.toml ]] || put "$theme/shell.toml" "$greeter/default-theme/shell.toml"
+background=$(find "$theme/backgrounds" -maxdepth 1 -type f \
+  \( -iname '*.webp' -o -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | LC_ALL=C sort | head -n 1)
+[[ -n $background ]] || { echo 'The default theme has no image background' >&2; exit 1; }
+put "$background" "$greeter/default-theme/background"
+mkdir -p "$root/usr/lib/tmpfiles.d"
+printf 'd /var/lib/omarchy-greeter-theme 0755 tablet tablet -\n' > "$root/usr/lib/tmpfiles.d/omarchy-greeter-theme.conf"
+
+# The keyboard and the startup cursor helper.
+put "$build/wvkbd-mobintl" "$omarchy/trials/wvkbd-mobintl-v0.20-font18-special15-state" 755
+put "$build/wtype" "$root/usr/libexec/omarchy-wtype" 755
+put "$build/wtype.LICENSE" "$root/usr/share/licenses/omarchy-wtype/LICENSE"
+
+# The Bluetooth helper's D-Bus library, from its wheel.
+(cd "$dbus_next" && find dbus_next -type f -name '*.py' | LC_ALL=C sort) | while read -r file; do
+  put "$dbus_next/$file" "$root/usr/lib/omarchy-bluetooth/$file"
+done
+put "$dbus_next/dbus_next-0.2.3.dist-info/LICENSE" "$root/usr/share/licenses/omarchy-bluetooth-dbus-next/LICENSE"
+
+# Every command on PATH as /usr/bin/NAME, as upstream's.
+mkdir -p "$root/usr/bin"
+for script in "$omarchy"/bin/*; do
+  [[ -f $script ]] || continue
+  chmod 755 "$script"
+  ln -s "/usr/share/omarchy/bin/${script##*/}" "$root/usr/bin/${script##*/}"
+done
+
+# The tablet user's defaults: useradd copies /etc/skel into a new home, and
+# /usr/share/omarchy/config keeps the same files for omarchy-refresh-config.
+# A release never writes into an existing home: a migration does.
+skel=$root/etc/skel
+while read -r source name; do
+  put "$source" "$skel/$name"
+  [[ $name != .config/* ]] || put "$source" "$omarchy/config/${name#.config/}"
+done <<EOF
+$shell/config/omarchy/shell.json .config/omarchy-ipad/shell.json
+$shell/labwc-rc.xml .config/labwc/rc.xml
+$config/labwc-autostart .config/labwc/autostart
+$shell/foot/foot.ini .config/foot/foot.ini
+$shell/fastfetch/config.jsonc .config/fastfetch/config.jsonc
+$shell/starship/starship.toml .config/starship.toml
+$shell/fontconfig/fonts.conf .config/fontconfig/fonts.conf
+$shell/fastfetch/about.txt .config/omarchy/branding/about.txt
+$shell/fastfetch/about-compact.txt .config/omarchy/branding/about-compact.txt
+$upstream/applications/foot.desktop .local/share/applications/foot.desktop
+EOF
+chmod 755 "$skel/.config/labwc/autostart" "$omarchy/config/labwc/autostart" "$omarchy/default/labwc/autostart"
+# Where a migration takes the terminal's entry from for an existing user.
+put "$upstream/applications/foot.desktop" "$omarchy/applications/foot.desktop"
+# Every migration this package ships is done for a user made from /etc/skel.
+mkdir -p "$skel/.local/state/omarchy/migrations"
+for migration in "$omarchy"/migrations/*.sh; do
+  [[ -f $migration ]] || continue
+  : > "$skel/.local/state/omarchy/migrations/${migration##*/}"
+done
+
+# Files another package owns (bash's /etc/skel/.bashrc, greetd's config).
+overrides=$omarchy/etc-overrides
+put "$config/bashrc" "$overrides/etc/skel/.bashrc"
+put "$here/greeter/greetd.toml" "$overrides/etc/greetd/config.toml"
+
+# The session's helpers and system files.
+while read -r source name mode; do
+  put "$source" "$root/$name" "$mode"
+done <<EOF
+$config/first-theme usr/libexec/arch-ipad-first-theme 755
+$config/scale-output usr/libexec/arch-ipad-scale-output 755
+$config/auto-brightness usr/libexec/arch-ipad-auto-brightness 755
+$config/rotate-output usr/libexec/arch-ipad-rotate-output 755
+$config/touch-output usr/libexec/arch-ipad-touch-output 755
+$config/login-session usr/libexec/arch-ipad-login-session 755
+$here/greeter/greetd-seatd.conf etc/systemd/system/greetd.service.d/seatd.conf 644
+$config/networkmanager.rules etc/polkit-1/rules.d/40-arch-ipad-networkmanager.rules 644
+$config/firefox-policies.json usr/lib/firefox/distribution/policies.json 644
+$config/firefox-autoconfig.js usr/lib/firefox/defaults/pref/omarchy-a.js 644
+$config/firefox.cfg usr/lib/firefox/omarchy-a.cfg 644
+EOF
+# The signed Omafox extension, checked against its pin.
+xpi=$here/arm64/inputs/@omafox.xpi
+pin=$(sed -n 's/.*"omafox_xpi": *"\([0-9a-f]*\)".*/\1/p' "$here/arm64/inputs.json")
+[[ $(sha256 "$xpi") == "$pin" ]] || { echo 'The Omafox extension differs from its pin' >&2; exit 1; }
+put "$xpi" "$root/usr/lib/firefox/distribution/extensions/@omafox.xpi"
+
+# system/overlay: power, sleep, sudo, polkit, USB access and the package's own hook.
+(cd "$project/system/overlay" && find . -type f | LC_ALL=C sort) | while read -r file; do
+  name=${file#./}
+  case $name in
+    etc/os-release|etc/bluetooth/main.conf) put "$project/system/overlay/$name" "$overrides/$name" ;;
+    etc/sudoers.d/*) put "$project/system/overlay/$name" "$root/$name" 440 ;;
+    usr/libexec/*|etc/NetworkManager/dispatcher.d/*|usr/share/libalpm/scripts/*|usr/lib/omarchy-a/package-install)
+      put "$project/system/overlay/$name" "$root/$name" 755 ;;
+    *) put "$project/system/overlay/$name" "$root/$name" ;;
+  esac
+done
+
+# Branding is static; kernel, memory and CPU information use live probes.
+! grep -q 'VM prototype' "$skel/.config/fastfetch/config.jsonc"
+# Offer Suspend only when the kernel-side charger PM contract is ready.
+menu=$omarchy/default/omarchy/omarchy-menu.jsonc
+awk -v stock='"when":"! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled"' \
+    -v ours='"when":"command -v ipadlinux-suspend-ready >/dev/null && ipadlinux-suspend-ready"' '
+  { at = index($0, stock); if (at) { found++; $0 = substr($0, 1, at - 1) ours substr($0, at + length(stock)) } print }
+  END { if (found != 1) { print "The menu has no single stock Suspend guard" > "/dev/stderr"; exit 1 } }' "$menu" > "$menu.new"
+mv "$menu.new" "$menu"
+
+# Distribution modes whatever the umask; the tablet user's defaults stay
+# private to that user once useradd has copied them.
+find "$root" -type d -exec chmod 755 {} +
+find "$skel" -mindepth 1 -type d -exec chmod 700 {} +
+echo "omarchy-a: $(find "$root" -type f | wc -l | tr -d ' ') files in $root"

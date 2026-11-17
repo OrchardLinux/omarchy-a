@@ -8,7 +8,6 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from release import public_root
 
 PROJECT = Path(__file__).resolve().parents[1]
 BIN = PROJECT / 'desktop/shell/bin'
@@ -211,14 +210,12 @@ class Packaging(unittest.TestCase):
         # Setup > Monitors opens that panel: there is no monitors.lua to edit here.
         menu = (PROJECT / 'desktop/shell/default/omarchy/omarchy-menu.jsonc').read_text()
         self.assertIn('"setup.monitors": {"icon":"󰍹","label":"Monitors","action":"omarchy-shell shell summon omarchy.monitor"}', menu)
-        additions, links = public_root.desktop_additions(), public_root.desktop_links()
+        # Every command of the Omarchy tree is on PATH as /usr/bin/NAME (desktop/install-tree).
         for command in ('omarchy-hyprland-monitor-scaling', 'omarchy-hyprland-monitor-persist'):
-            path = 'home/tablet/.local/share/omarchy-ipad/bin/' + command
-            self.assertEqual(additions[path], ((BIN / command).read_bytes(), 0o755))
-            self.assertEqual(links['usr/local/bin/' + command], '/' + path)
-        replacements = public_root.desktop_replacements()
-        self.assertEqual(replacements['usr/local/libexec/arch-ipad-scale-output'], SCALE_OUTPUT.read_bytes())
-        self.assertIn('home/tablet/.local/share/omarchy-ipad/shell/plugins/panels/monitor/Panel.qml', replacements)
+            self.assertTrue(os.access(BIN / command, os.X_OK), command)
+        install = (PROJECT / 'desktop/install-tree').read_text()
+        self.assertIn('ln -s "/usr/share/omarchy/bin/${script##*/}" "$root/usr/bin/${script##*/}"', install)
+        self.assertIn('$config/scale-output usr/libexec/arch-ipad-scale-output 755', install)
 
 
 if __name__ == '__main__':

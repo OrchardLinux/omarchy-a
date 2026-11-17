@@ -3,6 +3,12 @@
 
 Retains upstream international/compose layouts and protocol/input handling.
 Usage: friendly-layout.py SOURCE_DIRECTORY
+
+The package build does not run this: it applies wvkbd-0.20-layout.patch, this
+script's result. After a change here, regenerate that patch from a wvkbd v0.20
+tree with wvkbd-0.20.patch applied (A) and a copy of it this ran on (B):
+`diff -ruN A B`, file names without timestamps
+(tests/test_keyboard_layout.py checks the two agree when WVKBD_SOURCE is set).
 """
 import json
 from pathlib import Path

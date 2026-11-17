@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 import tarfile
 import tempfile
 
-from .common import group_membership, PROJECT, SYSTEM, NETWORK_RULE
+from .common import group_membership
 from release.package_permissions import privileged_entries, apply as apply_package_permissions
 from release.architecture import validate, check_elf
 
@@ -30,110 +30,6 @@ def safe_name(name):
     return str(path)
 
 
-def desktop_replacements():
-    prefix = 'home/tablet/.local/share/omarchy-ipad/'
-    replacements = {prefix + name: (PROJECT / 'desktop/shell' / name).read_bytes() for name in (
-        'shell/shell.qml', 'shell/Ui/BarIconButton.qml', 'shell/Ui/ScreenMoveRemap.qml', 'labwc-rc.xml',
-        'shell/plugins/panels/power/Panel.qml', 'shell/plugins/panels/power/Model.js',
-        'shell/plugins/panels/bluetooth/Model.js', 'shell/plugins/panels/bluetooth/Panel.qml',
-        'bin/omarchy-bluetooth-device', 'bin/omarchy-keyboard',
-        'shell/plugins/panels/monitor/Panel.qml', 'shell/plugins/services/idle/Service.qml',
-        'shell/plugins/background/Background.qml')}
-    replacements['home/tablet/.config/labwc/rc.xml'] = (PROJECT / 'desktop/shell/labwc-rc.xml').read_bytes()
-    replacements['home/tablet/.config/labwc/autostart'] = (PROJECT / 'desktop/configuration/labwc-autostart').read_bytes()
-    replacements['usr/local/libexec/arch-ipad-rotate-output'] = (PROJECT / 'desktop/configuration/rotate-output').read_bytes()
-    replacements[prefix + 'shell/plugins/panels/monitor/Panel.qml'] = (PROJECT / 'desktop/shell/shell/plugins/panels/monitor/Panel.qml').read_bytes()
-    replacements[prefix + 'default/i18n/en/shell.json'] = (PROJECT / 'desktop/shell/default/i18n/en/shell.json').read_bytes()
-    replacements['usr/local/libexec/arch-ipad-scale-output'] = (PROJECT / 'desktop/configuration/scale-output').read_bytes()
-    return replacements
-
-
-def cursor_files(directory, architecture='aarch64'):
-    validate(architecture)
-    record = json.loads((directory / 'manifest.json').read_text())
-    pin = json.loads((PROJECT / 'desktop/cursor/wtype.json').read_text())
-    if record.get('schema') != 1 or record.get('architecture') != architecture or record.get('source') != pin:
-        raise ValueError('Incompatible startup cursor helper receipt')
-    files = {}
-    for name, destination, mode in (
-            ('wtype', 'usr/libexec/omarchy-wtype', 0o755),
-            ('LICENSE', 'usr/share/licenses/omarchy-wtype/LICENSE', 0o644)):
-        path = directory / name
-        if path.is_symlink() or not path.is_file():
-            raise ValueError('Invalid startup cursor helper file: ' + name)
-        data = path.read_bytes()
-        if hashlib.sha256(data).hexdigest() != record['files'].get(name):
-            raise ValueError('Startup cursor helper differs from receipt: ' + name)
-        if name == 'wtype':
-            check_elf(data, architecture, 'startup cursor helper')
-        files[destination] = (data, mode)
-    files['etc/omarchy/cursor-helper.json'] = (json.dumps(record, sort_keys=True).encode(), 0o644)
-    return files
-
-
-def bluetooth_files(directory):
-    record = json.loads((directory / 'manifest.json').read_text())
-    pin = json.loads((PROJECT / 'desktop/bluetooth/dbus-next.json').read_text())
-    if record.get('schema') != 1 or record.get('source') != pin:
-        raise ValueError('Incompatible Bluetooth dependency receipt')
-    files = {}
-    if not {'lib/dbus_next/__init__.py', 'LICENSE'} <= record['files'].keys():
-        raise ValueError('Incomplete Bluetooth dependency receipt')
-    for name, digest in record['files'].items():
-        if name != 'LICENSE' and not (name.startswith('lib/dbus_next/') and name.endswith('.py')):
-            raise ValueError('Unexpected Bluetooth dependency file')
-        if safe_name(name) != name:
-            raise ValueError('Unsafe Bluetooth dependency path')
-        path = directory / name
-        if path.is_symlink() or not path.is_file():
-            raise ValueError('Invalid Bluetooth dependency file')
-        data = path.read_bytes()
-        if hashlib.sha256(data).hexdigest() != digest:
-            raise ValueError('Bluetooth dependency differs from receipt')
-        destination = ('usr/share/licenses/omarchy-bluetooth-dbus-next/LICENSE' if name == 'LICENSE'
-                       else 'usr/lib/omarchy-bluetooth/' + name.removeprefix('lib/'))
-        files[destination] = (data, 0o644)
-    files['etc/omarchy/bluetooth-helper.json'] = (json.dumps(record, sort_keys=True).encode(), 0o644)
-    return files
-
-
-# Commands newer than the base root, run by name: desktop/stage.py links every
-# shell command into /usr/local/bin, so the root gets the same link for these.
-DESKTOP_COMMANDS = ('omarchy-hyprland-monitor-scaling', 'omarchy-hyprland-monitor-persist')
-
-
-def desktop_additions():
-    name = 'home/tablet/.local/share/omarchy-ipad/shell/bluetooth-pairing/shell.qml'
-    additions = {name: ((PROJECT / 'desktop/shell/shell/bluetooth-pairing/shell.qml').read_bytes(), 0o644),
-                 'home/tablet/.local/share/omarchy-ipad/bin/omarchy-rotation-lock':
-                     ((PROJECT / 'desktop/shell/bin/omarchy-rotation-lock').read_bytes(), 0o755),
-                 'usr/local/libexec/arch-ipad-auto-brightness':
-                     ((PROJECT / 'desktop/configuration/auto-brightness').read_bytes(), 0o755),
-                 'usr/local/bin/omarchy-auto-brightness':
-                     ((PROJECT / 'desktop/shell/bin/omarchy-auto-brightness').read_bytes(), 0o755)}
-    for command in DESKTOP_COMMANDS:
-        additions['home/tablet/.local/share/omarchy-ipad/bin/' + command] = (
-            (PROJECT / 'desktop/shell/bin' / command).read_bytes(), 0o755)
-    return additions
-
-
-def desktop_links():
-    return {'usr/local/bin/' + command: '/home/tablet/.local/share/omarchy-ipad/bin/' + command
-            for command in DESKTOP_COMMANDS}
-
-
-def system_files():
-    additions = {}
-    for path in sorted(SYSTEM.rglob('*')):
-        if path.is_file() and not path.is_symlink():
-            name = path.relative_to(SYSTEM).as_posix()
-            data = path.read_bytes()
-            mode = 0o440 if name.startswith('etc/sudoers.d/') else (
-                0o755 if name.startswith(('usr/libexec/', 'etc/NetworkManager/dispatcher.d/')) else 0o644)
-            additions[name] = (data, mode)
-    return additions
-
-
 def access_files(tools, architecture='aarch64'):
     """orchard's static dropbear (SSH) and BusyBox (DHCP on usb0) for the system's own services.
 
@@ -150,9 +46,14 @@ def access_files(tools, architecture='aarch64'):
     return result
 
 
-def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=None, tools=None,
-          splash=None, architecture='aarch64'):
-    """The root image for every platform: no kernel, DTBs or modules (orchard's layer has them)."""
+def build(base, base_receipt, outdir, release, tools=None, splash=None, architecture='aarch64'):
+    """The root image for every platform: no kernel, DTBs or modules (orchard's layer has them).
+
+    The base is the installed packages, this repository's omarchy-a among
+    them (system/assemble-rootfs); what is added here is what only an image
+    has: orchard's access tools, the boot splash, the release's name and the
+    services a first boot starts.
+    """
     validate(architecture)
     if outdir.exists():
         raise ValueError('Choose a new release output directory')
@@ -163,23 +64,16 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
         raise ValueError('Base root differs from receipt')
     privileges = privileged_entries(base)
     privileged_digests = {}
-    additions = cursor_files(cursor_tools, architecture)
-    additions.update(bluetooth_files(bluetooth_tools or PROJECT / 'out/desktop/bluetooth-tools'))
-    desktop_extra = desktop_additions()
-    additions.update(desktop_extra)
-    additions['etc/omarchy/package-privileges.json'] = (json.dumps(privileges, sort_keys=True).encode(), 0o644)
-    additions.update(system_files())
+    additions = {'etc/omarchy/package-privileges.json': (json.dumps(privileges, sort_keys=True).encode(), 0o644)}
     if tools:
         additions.update(access_files(tools, architecture))
     if splash:
         # orchard launch paints it before the kernel (orchard docs/boot-contract.md).
         additions['usr/share/orchard/splash'] = (Path(splash).read_bytes(), 0o644)
-    additions['etc/polkit-1/rules.d/60-omarchy-tablet-network.rules'] = (NETWORK_RULE.read_bytes(), 0o644)
     additions['etc/orchard/release.json'] = (json.dumps({'protocol': 1, 'release': release}).encode(), 0o644)
     if privileges.keys() & additions.keys():
         raise ValueError('Runtime must not override privileged package files')
-    qml_path = 'home/tablet/.local/share/omarchy-ipad/shell/shell.qml'
-    replacements = desktop_replacements()
+    qml_path = 'usr/share/omarchy/shell/shell.qml'
     outdir.parent.mkdir(parents=True, exist_ok=True)
     seen, directories, expanded, count = set(), set(), 0, 0
     base_stamp = None
@@ -229,17 +123,6 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                                 raise ValueError('Base release stamp differs from its receipt')
                         if member.name in ('etc/group', 'etc/gshadow'):
                             data = group_membership(data, shadow=member.name == 'etc/gshadow')
-                        if member.name in replacements:
-                            data = replacements[member.name]
-                        if member.name == 'arch-ipad-ui-manifest.json':
-                            manifest = json.loads(data)
-                            for name, replacement in replacements.items():
-                                if name not in manifest:
-                                    raise ValueError('Desktop replacement is absent from base manifest: ' + name)
-                                manifest[name] = hashlib.sha256(replacement).hexdigest()
-                            for name, (content, mode) in desktop_extra.items():
-                                manifest[name] = hashlib.sha256(content).hexdigest()
-                            data = (json.dumps(manifest, indent=2) + '\n').encode()
                         if data is not None:
                             member.size = len(data)
                         if member.name in privileges:
@@ -263,12 +146,6 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
                     member = tarfile.TarInfo(name)
                     member.mode, member.size = mode, len(data)
                     add(member, data)
-                for link, target_path in sorted(desktop_links().items()):
-                    if link not in seen:
-                        member = tarfile.TarInfo(link)
-                        member.type, member.linkname, member.mode = tarfile.SYMTYPE, target_path, 0o777
-                        add_parents(link)
-                        add(member)
                 # A login on orchard's USB serial console as well, like minimal-linux.
                 wants = [('multi-user.target.wants/' + unit, unit) for unit in
                          ('omarchy-pacman-init.service', 'orchard-usb-network.service', 'orchard-ssh.service',
@@ -286,9 +163,8 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
             compressor.stdin.close()
             if compressor.wait():
                 raise ValueError('Public root compression failed')
-        required = {'lib', 'usr/lib/systemd/systemd', 'etc/group', 'etc/gshadow', qml_path,
-                    'arch-ipad-ui-manifest.json'}
-        if not required <= seen or not privileges.keys() <= seen or not replacements.keys() <= seen:
+        required = {'lib', 'usr/lib/systemd/systemd', 'etc/group', 'etc/gshadow', qml_path}
+        if not required <= seen or not privileges.keys() <= seen:
             raise ValueError('Incomplete public root or privileged package metadata')
         if record.get('release') is not None and base_stamp is None:
             raise ValueError('Base release stamp is missing')
@@ -303,13 +179,13 @@ def build(base, base_receipt, outdir, release, cursor_tools, bluetooth_tools=Non
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('base', 'base-receipt', 'outdir', 'cursor-tools', 'bluetooth-tools'):
+    for name in ('base', 'base-receipt', 'outdir'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--release', required=True)
     parser.add_argument('--architecture', choices=('aarch64', 'armv7h'), default='aarch64')
     args = parser.parse_args()
-    print(json.dumps(build(args.base, args.base_receipt, args.outdir, args.release, args.cursor_tools,
-                           args.bluetooth_tools, architecture=args.architecture), indent=2))
+    print(json.dumps(build(args.base, args.base_receipt, args.outdir, args.release,
+                           architecture=args.architecture), indent=2))
 
 
 if __name__ == '__main__':

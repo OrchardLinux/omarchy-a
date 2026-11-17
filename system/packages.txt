@@ -1,50 +1,6 @@
 # Arch Linux ARM userspace only. NEVER install linux-aarch64 in the iPad root.
-# Baseline; exact dependency snapshot comes from an empty pacman DB preview.
+# The image is these and omarchy-a, this repository's package
+# (package/PKGBUILD), which depends on everything the desktop needs.
 base
 archlinuxarm-keyring
 pacman
-sudo
-# The installer hashes the lock-screen PIN with it; the PIN check uses it too.
-openssl
-python
-# The Orchard package repository's, with the tablet patches (system/assemble-rootfs).
-labwc
-quickshell
-qt6-imageformats
-# Background picker thumbnails and cache checks (desktop/shell/bin/omarchy-menu-images).
-diffutils
-libvips
-ffmpegthumbnailer
-foot
-ttf-dejavu
-ttf-jetbrains-mono-nerd
-ttf-nerd-fonts-symbols
-firefox
-fastfetch
-starship
-seatd
-# Boot login: the touch PIN greeter (desktop/greeter) on VT1.
-greetd
-networkmanager
-iw
-bluez
-bluez-utils
-upower
-zram-generator
-grim
-wlr-randr
-# Device orientation from the accelerometer (desktop/configuration/rotate-output).
-iio-sensor-proxy
-xdg-desktop-portal
-xdg-desktop-portal-wlr
-pipewire
-pipewire-pulse
-wireplumber
-socat
-jq
-pango
-cairo
-wayland
-# Removable storage mounted through the session identity.
-udiskie
-udisks2

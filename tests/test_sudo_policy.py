@@ -2,7 +2,7 @@ import hashlib
 import unittest
 
 from release.audit import verify_tablet_sudo
-from release.public_root import system_files
+from package_tree import system_files
 
 POLICY = {'etc/sudoers.d/90-tablet': b'tablet ALL=(ALL:ALL) ALL\n',
           'etc/sudoers.d/omarchy-tzupdate': b'tablet ALL=(root) NOPASSWD: /usr/bin/timedatectl set-timezone *\n'}

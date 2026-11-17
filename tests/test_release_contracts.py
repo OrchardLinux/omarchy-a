@@ -1,7 +1,6 @@
 """Both architectures release the same way: orchard's index, then the root as a block image."""
 import argparse
 from contextlib import redirect_stderr
-import hashlib
 import io
 import json
 from pathlib import Path
@@ -38,15 +37,9 @@ class ReleaseContracts(unittest.TestCase):
     def arguments(self, root, architecture, *source):
         argv = ['build', '--release', 'contract-test', '--architecture', architecture,
                 '--orchard', str(SNAPSHOT), '--output', str(root / 'output'), *source]
-        for name in ('base', 'base-receipt', 'splash', 'logo', 'busybox', 'dropbear', 'dropbearkey',
-                     'cursor-tools', 'bluetooth-tools'):
+        for name in ('base', 'base-receipt', 'splash', 'logo', 'busybox', 'dropbear', 'dropbearkey'):
             path = root / name
-            if name.endswith('-tools'):
-                path.mkdir()
-                (path / 'component.txt').write_bytes(b'component')
-                (path / 'manifest.json').write_text(json.dumps({'schema': 1, 'files': {
-                    'component.txt': hashlib.sha256(b'component').hexdigest()}}))
-            elif not path.exists():
+            if not path.exists():
                 path.write_bytes(elf(architecture) if name in ('busybox', 'dropbear', 'dropbearkey') else b'fixture')
             argv.extend(('--' + name, str(path)))
         (root / 'base-receipt').write_text(json.dumps({'release': 'base-fixture', 'architecture': architecture,

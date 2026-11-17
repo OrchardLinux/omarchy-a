@@ -227,10 +227,10 @@ print(Path(os.environ['TEST_ROOT'], 'picker-pid').read_text())
                 except ProcessLookupError: pass
 
     def test_thumbnail_dependencies_are_packaged(self):
-        packages=(PROJECT/'system/packages.txt').read_text().splitlines()
-        self.assertIn('diffutils', packages)
-        self.assertIn('libvips', packages)
-        self.assertIn('ffmpegthumbnailer', packages)
+        # The omarchy-a recipe (OrchardLinux/packages, packages/omarchy-a/arch) depends on them.
+        script=(PROJECT/'desktop/shell/bin/omarchy-menu-images').read_text()
+        for tool in ('vips','ffmpegthumbnailer','cmp'):
+            self.assertIn(tool,script)
 
 
 @unittest.skipUnless(shutil.which('node'), 'Node is needed to execute the QML JavaScript functions')

@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# omarchy:summary=Launch a floating terminal with the Omarchy presentation wrapper
+# omarchy:args=<command>
+
+# Upstream Omarchy's, for Omarchy A: foot instead of xdg-terminal-exec, and a
+# plain Done/Failed line instead of the gum logo and prompt (no gum here). The
+# menu's Update > Omarchy runs omarchy-update through it.
+
+cmd="$*"
+# 130 is the user bailing with Ctrl-C; anything else gets the Done/Failed prompt.
+presentation_script="$cmd; code=\$?; if (( code != 130 )); then echo; if (( code == 0 )); then printf '\\033[32m● \\033[0mDone. '; else printf '\\033[31m● \\033[0mFailed (%s). ' \$code; fi; read -rsn 1 -p 'Press any key to close.'; fi"
+
+exec setsid uwsm-app -- foot --app-id=org.omarchy.terminal --title=Omarchy -e bash -c "$presentation_script"

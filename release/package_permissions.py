@@ -10,7 +10,8 @@ import re
 import tarfile
 
 
-def parse_mtree(text):
+def parse_mtree(text, every=False):
+    """(path, record) of each setuid/setgid entry of a pacman MTREE; with EVERY, of every entry."""
     defaults = {}
     for line in text.replace('\\\n', '').splitlines():
         fields = line.split()
@@ -29,13 +30,24 @@ def parse_mtree(text):
             continue
         attributes = {**defaults, **attributes}
         mode = int(attributes.get('mode', '0'), 8)
-        if not mode & 0o6000:
+        if not every and not mode & 0o6000:
             continue
         name = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m.group(1), 8)), fields[0])
         path = PurePosixPath(name)
         if path.is_absolute() or '..' in path.parts or '\0' in name or str(path) == '.':
             raise ValueError('Unsafe package permission path')
         kind = attributes.get('type')
+        if every:
+            if str(path).startswith('.') and len(path.parts) == 1:
+                continue  # the package's own metadata (.PKGINFO, .INSTALL, ...)
+            record = {'uid': int(attributes.get('uid', 0)), 'gid': int(attributes.get('gid', 0)),
+                      'mode': mode, 'type': kind}
+            if kind == 'file':
+                record['sha256'] = attributes.get('sha256digest', '')
+            elif kind == 'link':
+                record['link'] = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m.group(1), 8)), attributes.get('link', ''))
+            yield str(path), record
+            continue
         if kind not in ('file', 'dir'):
             raise ValueError('Special permissions on unsupported package entry')
         record = {'uid': int(attributes['uid']), 'gid': int(attributes['gid']),

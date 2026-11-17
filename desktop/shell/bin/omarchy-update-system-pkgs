@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# omarchy:summary=Update system packages with pacman
+# omarchy:requires-sudo=true
+
+# Upstream Omarchy's, for Omarchy A: one full upgrade, the omarchy-a package
+# with it. Files left unowned in /usr/share/omarchy give way to the package's.
+
+set -e
+
+echo -e "\e[32m\nUpdate system packages\e[0m"
+exec omarchy-update-pacman -Syu --noconfirm --overwrite '/usr/share/omarchy/*'

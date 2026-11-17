@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# omarchy:summary=Create a new Omarchy migration in the current source tree.
+# omarchy:args=[--no-edit]
+
+# Upstream Omarchy's, for this repository: the new migration goes into the
+# Omarchy tree this command is in (desktop/shell/migrations in a checkout),
+# named by the time it was made, which orders it after every older one.
+
+set -euo pipefail
+
+no_edit=0
+
+while (($#)); do
+  case "$1" in
+    --no-edit)
+      no_edit=1
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: omarchy-dev-add-migration [--no-edit]"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      echo "Usage: omarchy-dev-add-migration [--no-edit]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+cd "$(dirname "$(readlink -f "$0")")/.."
+mkdir -p migrations
+migration_file="migrations/$(date +%s).sh"
+[[ ! -e $migration_file ]] || { echo "Exists already: $PWD/$migration_file" >&2; exit 1; }
+touch "$migration_file"
+
+if (( ! no_edit )); then
+  "${EDITOR:-vi}" "$migration_file"
+fi
+
+printf '%s\n' "$PWD/$migration_file"

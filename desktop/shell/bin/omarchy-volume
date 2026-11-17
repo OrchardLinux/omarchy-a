@@ -3,7 +3,7 @@
 # the shell's volume OSD, as the media service draws it on Hyprland.
 set -u
 # labwc runs key bindings without the session's OMARCHY_PATH (labwc-autostart's).
-export OMARCHY_PATH=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
+export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 # The volume in whole percent, from "Volume: 0.45 [MUTED]".
 percent() { awk '{ printf "%d", $2 * 100 + 0.5 }' <<< "$1"; }
 state=$(wpctl get-volume @DEFAULT_AUDIO_SINK@) || exit 1

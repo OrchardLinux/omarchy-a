@@ -2,8 +2,6 @@
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[1]
-SYSTEM = PROJECT / 'system/overlay'
-NETWORK_RULE = SYSTEM / 'etc/polkit-1/rules.d/60-omarchy-tablet-network.rules'
 GROUPS = ('seat', 'video', 'input')
 
 

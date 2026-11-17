@@ -51,7 +51,7 @@ ShellRoot {
         }
         function onReadyToLaunch() {
             root.submittedPin = ""
-            Greetd.launch(["/usr/local/libexec/arch-ipad-login-session"])
+            Greetd.launch(["/usr/libexec/arch-ipad-login-session"])
         }
     }
 

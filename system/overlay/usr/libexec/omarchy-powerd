@@ -257,7 +257,8 @@ EV_SW, SW_MACHINE_COVER = 5, 0x10
 INPUT_EVENT = struct.Struct('qqHHi')
 EVIOCSCLOCKID = 0x400445a0
 SOCKET = '/run/omarchy-powerd.sock'
-SHELL_ROOT = '.local/share/omarchy-ipad'
+# OMARCHY_PATH: the omarchy-a package's Omarchy tree.
+SHELL_ROOT = '/usr/share/omarchy'
 STATS = Path('/sys/power/suspend_stats')
 WAKEUP_COUNT = Path('/sys/power/wakeup_count')
 BACKLIGHTS = Path('/sys/class/backlight')
@@ -415,9 +416,8 @@ def session_user():
 
 
 def as_user(user, *argv, timeout=5):
-    root = f'{user.pw_dir}/{SHELL_ROOT}'
     env = {'HOME': user.pw_dir, 'USER': user.pw_name, 'XDG_RUNTIME_DIR': f'/run/user/{user.pw_uid}',
-           'OMARCHY_PATH': root, 'PATH': f'{root}/bin:/usr/local/bin:/usr/bin'}
+           'OMARCHY_PATH': SHELL_ROOT, 'PATH': '/usr/local/bin:/usr/bin'}
     # setpriv looks the groups up in the child. In here, os.getgrouplist holds
     # Python's interpreter lock through NSS, and nss-systemd (group merges
     # with it) answers only once systemd has finished a sleep: the whole

@@ -15,6 +15,9 @@ pacman-key --populate archlinuxarm
 mapfile -t unneeded < <(pacman -Qq | grep -E '^(linux-aarch64|linux-armv7|linux-firmware.*)$')
 (( ${#unneeded[@]} == 0 )) || pacman -Rdd --noconfirm "${unneeded[@]}"
 packages=(arch-install-scripts python)
-pacman-download -Sy --noconfirm --needed "${packages[@]}"
-pacman -S --noconfirm --needed "${packages[@]}"
+# With the whole system brought up to date, as desktop/install-toolchain does: a
+# package installed new beside the image's older ones can conflict with them
+# (Arch Linux ARM's openssl-3 split, 2026-11).
+pacman-download -Syu --noconfirm --needed "${packages[@]}"
+pacman -Su --noconfirm --needed "${packages[@]}"
 pacman -Sc --noconfirm

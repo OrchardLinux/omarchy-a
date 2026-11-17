@@ -1,7 +1,7 @@
 #!/bin/bash
 # Per-user first-start initialization, before labwc/Quickshell/keyboard map.
 set -euo pipefail
-export OMARCHY_PATH=${OMARCHY_PATH:-$HOME/.local/share/omarchy-ipad}
+export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 export PATH=/usr/local/bin:/usr/bin
 state="$HOME/.local/state/omarchy/current"
 source_theme="$OMARCHY_PATH/themes/jade-horse"

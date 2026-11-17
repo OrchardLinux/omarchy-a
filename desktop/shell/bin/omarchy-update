@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# omarchy:summary=Update Omarchy and system packages
+# omarchy:alias=omarchy up
+# omarchy:args=[-y]
+# omarchy:examples=omarchy update | omarchy update -y
+# omarchy:requires-sudo=true
+
+# Upstream Omarchy's update, for a tablet: the system's packages (the desktop
+# itself is the omarchy-a package, each release of it in [orchard]), then the
+# migrations that changes in it need. A plain `sudo pacman -Syu` updates the
+# same packages; its migrations then run at the next login. Upstream's
+# snapshots, keyring refresh, dev checkout, mise, AUR packages and boot
+# verification have nothing to do on a tablet: Omarchy A has none of them.
+
+set -e
+
+sudo_keepalive_pid=""
+
+# Ask for the password once, then keep sudo's timestamp fresh so long package
+# downloads never outlast it and prompt again.
+authorize_update() {
+  sudo true || return 1
+
+  local update_pid=$$
+  (
+    [[ -z ${OMARCHY_UPDATE_LOCK_FD:-} ]] || exec {OMARCHY_UPDATE_LOCK_FD}>&-
+    sleep_pid=""
+    trap - EXIT HUP INT
+    trap '[[ -z $sleep_pid ]] || kill "$sleep_pid" 2>/dev/null; exit 0' TERM
+    while :; do
+      sleep 60 &
+      sleep_pid=$!
+      wait "$sleep_pid"
+      kill -0 "$update_pid" 2>/dev/null || exit 0
+      sudo -n true 2>/dev/null || exit 0
+    done
+  ) &
+  sudo_keepalive_pid=$!
+}
+
+end_update_authorization() {
+  if [[ -n $sudo_keepalive_pid ]]; then
+    kill "$sudo_keepalive_pid" 2>/dev/null || true
+    wait "$sudo_keepalive_pid" 2>/dev/null || true
+    sudo_keepalive_pid=""
+  fi
+}
+
+cleanup_update() {
+  local status=$?
+  trap - EXIT HUP INT TERM
+  end_update_authorization
+  exit "$status"
+}
+
+if [[ -z ${OMARCHY_UPDATE_LOGGED:-} ]] && command -v script >/dev/null; then
+  script_command=$(printf '%q ' "$0" "$@")
+  exec env OMARCHY_UPDATE_LOGGED=1 script -qefc "$script_command" "/tmp/omarchy-update.log"
+fi
+
+if ! omarchy-update-lock held; then
+  exec omarchy-update-lock run "$0" "$@"
+fi
+
+trap 'echo ""; echo -e "\033[0;31mSomething went wrong during the update!\n\nPlease review the output above carefully, correct the error, and retry the update.\033[0m"' ERR
+trap cleanup_update EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+[[ ${1:-} != "-y" ]] || export OMARCHY_UPDATE_UNATTENDED=${OMARCHY_UPDATE_UNATTENDED:-1}
+
+if [[ ${1:-} == "-y" ]] || omarchy-update-confirm; then
+  authorize_update
+
+  before=$(pacman -Q omarchy-a 2>/dev/null || true)
+  # Migrations ship with the packages installed here and are written against
+  # them, so everything below waits on this finishing.
+  omarchy-update-system-pkgs
+  omarchy-migrate
+  after=$(pacman -Q omarchy-a 2>/dev/null || true)
+  end_update_authorization
+
+  omarchy-update-restart "$before" "$after"
+fi

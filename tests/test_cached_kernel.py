@@ -14,8 +14,7 @@ import orchard
 from release import build
 
 SNAPSHOT = Path(orchard.__file__).resolve().parents[2]
-INPUTS = ('base', 'base-receipt', 'splash', 'logo', 'busybox', 'dropbear', 'dropbearkey',
-          'cursor-tools', 'bluetooth-tools')
+INPUTS = ('base', 'base-receipt', 'splash', 'logo', 'busybox', 'dropbear', 'dropbearkey')
 
 
 class ReleaseInputs(unittest.TestCase):
@@ -23,11 +22,7 @@ class ReleaseInputs(unittest.TestCase):
         argv = ['build', '--release', 'test', *source, '--output', str(root / 'output')]
         for name in INPUTS:
             path = root / name
-            if name.endswith('-tools'):
-                path.mkdir()
-                (path / 'manifest.json').write_text(json.dumps({'schema': 1, 'files': {}}))
-            else:
-                path.write_text('fixture')
+            path.write_text('fixture')
             argv += ['--' + name, str(path)]
         (root / 'base-receipt').write_text(json.dumps({'release': 'base-fixture',
             'bytes': (root / 'base').stat().st_size, 'sha256': hashlib.sha256((root / 'base').read_bytes()).hexdigest()}))

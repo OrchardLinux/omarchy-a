@@ -1,0 +1,674 @@
+diff -ruN a/config.mobintl.h b/config.mobintl.h
+--- a/config.mobintl.h
++++ b/config.mobintl.h
+@@ -2,9 +2,9 @@
+ #define config_h_INCLUDED
+ 
+ #define DEFAULT_FONT "JetBrainsMono Nerd Font 16"
+-#define SPECIAL_FONT "JetBrainsMono Nerd Font 13"
+-#define DEFAULT_ROUNDING 5
+-#define SHIFT_SPACE_IS_TAB
++#define SPECIAL_FONT "JetBrainsMono Nerd Font 10"
++#define DEFAULT_ROUNDING 7
++/* Shift+Space remains a space; Tab has its own key. */
+ static const int transparency = 255;
+ 
+ struct clr_scheme schemes[] = {
+@@ -31,7 +31,10 @@
+   .text = {.color = UINT32_MAX},
+   .font = SPECIAL_FONT,
+   .rounding = DEFAULT_ROUNDING,
+-}
++},
++{.font = DEFAULT_FONT}, /* Orchard logo font */
++{.font = SPECIAL_FONT}, /* Orchard space label */
++{.font = DEFAULT_FONT} /* Orchard editing icons */
+ };
+ 
+ /* layers is an ordered list of layouts, used to cycle through */
+diff -ruN a/keyboard.c b/keyboard.c
+--- a/keyboard.c
++++ b/keyboard.c
+@@ -70,7 +70,7 @@
+             }
+             layer_index = layercount - 1;
+         }
+-        if (!invert)
++        if (!invert && (kb->mods & Shift))
+             kb->mods ^= Shift;
+     } else {
+         // normal behaviour: switch to the next layout in the layer sequence
+@@ -406,6 +406,9 @@
+ void
+ kbd_press_key(struct kbd *kb, struct key *k, uint32_t time)
+ {
++    /* Only consecutive Shift taps may lock capitals. */
++    if (k->type != Mod || k->code != Shift)
++        kb->shift_tap.pending = false;
+     if ((kb->compose == 1) && (k->type != Compose) && (k->type != Mod)) {
+         if ((k->type == NextLayer) || (k->type == BackLayer) ||
+             ((k->type == Code) && (k->code == KEY_SPACE))) {
+@@ -461,6 +464,19 @@
+         }
+         break;
+     case Mod:
++        if (k->code == Shift) {
++            uint8_t before = kb->mods;
++            kb->mods = orchard_shift_press(&kb->shift_tap, before, time, Shift, CapsLock);
++            uint8_t released = before & ~kb->mods;
++            uint8_t pressed = kb->mods & ~before;
++            if (released)
++                zwp_virtual_keyboard_v1_key_mods(kb->vkbd, time, released, WL_KEYBOARD_KEY_STATE_RELEASED);
++            if (pressed)
++                zwp_virtual_keyboard_v1_key_mods(kb->vkbd, time, pressed, WL_KEYBOARD_KEY_STATE_PRESSED);
++            zwp_virtual_keyboard_v1_modifiers(kb->vkbd, kb->mods, 0, 0, 0);
++            kbd_draw_layout(kb);
++            break;
++        }
+         kb->mods ^= k->code;
+         if (kb->mods & k->code) {
+             if (kb->debug)
+@@ -631,6 +647,8 @@
+ {
+     const char *label = ((kb->mods & Shift)||((kb->mods & CapsLock) && 
+         strlen(k->label) == 1 && isalpha(k->label[0]))) ? k->shift_label : k->label;
++    if (k->type == Mod && k->code == Shift && (kb->mods & CapsLock))
++        label = "Caps";
+     if (kb->debug)
+         fprintf(stderr, "Draw key +%d+%d %dx%d -> %s\n", k->x, k->y, k->w, k->h,
+                 label);
+@@ -702,6 +720,7 @@
+             continue;
+         }
+         if ((next_key->type == Mod && kb->mods & next_key->code) ||
++            (next_key->type == Mod && next_key->code == Shift && (kb->mods & CapsLock)) ||
+             (next_key->type == Compose && kb->compose)) {
+             kbd_draw_key(kb, next_key, Press);
+         } else {
+diff -ruN a/keyboard.h b/keyboard.h
+--- a/keyboard.h
++++ b/keyboard.h
+@@ -4,6 +4,7 @@
+ #include "drw.h"
+ 
+ #define MAX_LAYERS 25
++#include "orchard-shift.h"
+ 
+ enum key_type;
+ enum key_modifier_type;
+@@ -108,6 +109,7 @@
+ 	bool shift_space_is_tab;
+ 	bool exclusive;
+ 	uint8_t mods;
++	struct orchard_shift_tap shift_tap;
+ 	uint8_t compose;
+ 	struct key *last_press;
+ 	struct key *last_swipe;
+diff -ruN a/layout.mobintl.h b/layout.mobintl.h
+--- a/layout.mobintl.h
++++ b/layout.mobintl.h
+@@ -6,7 +6,7 @@
+ #define KBD_PIXEL_LANDSCAPE_HEIGHT 120
+ 
+ /* spacing around each key */
+-#define KBD_KEY_BORDER 2
++#define KBD_KEY_BORDER 3
+ 
+ /* layout declarations */
+ enum layout_id {
+@@ -173,75 +173,72 @@
+  * - layout: layout to switch to when key is pressed
+  */
+ static struct key keys_full[] = {
+-  {"Esc", "Esc", 1.0, Code, KEY_ESC, .scheme = 1},
+-  {"Ctr", "Ctr", 1.0, Mod, Ctrl, .scheme = 1},
+-  {"↑", "↑", 1.0, Code, KEY_UP, .scheme = 1},
+-  {"↓", "↓", 1.0, Code, KEY_DOWN, .scheme = 1},
+-  {"←", "←", 1.0, Code, KEY_LEFT, .scheme = 1},
+-  {"→", "→", 1.0, Code, KEY_RIGHT, .scheme = 1},
+-  {"'", "\"", 1.0, Code, KEY_APOSTROPHE, &layouts[ComposeBracket] },
+-  {"-", "_", 1.0, Code, KEY_MINUS, &layouts[ComposeMath] },
+-  {"/", ">", 1.0, Code, KEY_SLASH,  &layouts[ComposePunctuation] },
+-  {"Tab", "Tab", 1.0, Code, KEY_TAB, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"1", "!", 1.0, Code, KEY_1},
+-  {"2", "@", 1.0, Code, KEY_2},
+-  {"3", "#", 1.0, Code, KEY_3},
+-  {"4", "$", 1.0, Code, KEY_4},
+-  {"5", "%", 1.0, Code, KEY_5},
+-  {"6", "^", 1.0, Code, KEY_6},
+-  {"7", "&", 1.0, Code, KEY_7},
+-  {"8", "*", 1.0, Code, KEY_8},
+-  {"9", "(", 1.0, Code, KEY_9, &layouts[ComposeBracket]},
+-  {"0", ")", 1.0, Code, KEY_0, &layouts[ComposeBracket]},
+-  {"", "", 0.0, EndRow},
+-
+-  {"q", "Q", 1.0, Code, KEY_Q, &layouts[Emoji]},
+-  {"w", "W", 1.0, Code, KEY_W, &layouts[ComposeW]},
+-  {"e", "E", 1.0, Code, KEY_E, &layouts[ComposeE]},
+-  {"r", "R", 1.0, Code, KEY_R, &layouts[ComposeR]},
+-  {"t", "T", 1.0, Code, KEY_T, &layouts[ComposeT]},
+-  {"y", "Y", 1.0, Code, KEY_Y, &layouts[ComposeY]},
+-  {"u", "U", 1.0, Code, KEY_U, &layouts[ComposeU]},
+-  {"i", "I", 1.0, Code, KEY_I, &layouts[ComposeI]},
+-  {"o", "O", 1.0, Code, KEY_O, &layouts[ComposeO]},
+-  {"p", "P", 1.0, Code, KEY_P, &layouts[ComposeP]},
+-  {"", "", 0.0, EndRow},
+-
+-  {"", "", 0.5, Pad},
+-  {"a", "A", 1.0, Code, KEY_A, &layouts[ComposeA]},
+-  {"s", "S", 1.0, Code, KEY_S, &layouts[ComposeS]},
+-  {"d", "D", 1.0, Code, KEY_D, &layouts[ComposeD]},
+-  {"f", "F", 1.0, Code, KEY_F, &layouts[ComposeF]},
+-  {"g", "G", 1.0, Code, KEY_G, &layouts[ComposeG]},
+-  {"h", "H", 1.0, Code, KEY_H, &layouts[ComposeH]},
+-  {"j", "J", 1.0, Code, KEY_J, &layouts[ComposeJ]},
+-  {"k", "K", 1.0, Code, KEY_K, &layouts[ComposeK]},
+-  {"l", "L", 1.0, Code, KEY_L, &layouts[ComposeL]},
+-  {"", "", 0.5, Pad},
+-  {"", "", 0.0, EndRow},
+-
+-  {"⇧", "⇫", 1.5, Mod, Shift, .scheme = 1},
+-  {"z", "Z", 1.0, Code, KEY_Z, &layouts[ComposeZ]},
+-  {"x", "X", 1.0, Code, KEY_X, &layouts[ComposeX]},
+-  {"c", "C", 1.0, Code, KEY_C, &layouts[ComposeC]},
+-  {"v", "V", 1.0, Code, KEY_V, &layouts[ComposeV]},
+-  {"b", "B", 1.0, Code, KEY_B, &layouts[ComposeB]},
+-  {"n", "N", 1.0, Code, KEY_N, &layouts[ComposeN]},
+-  {"m", "M", 1.0, Code, KEY_M, &layouts[ComposeM]},
+-  {"⌫", "⌫", 1.5, Code, KEY_BACKSPACE, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"⌨͕", "⌨͔", 1.5, NextLayer, .scheme = 1},
+-  {"Cmp", "Cmp", 1.0, Compose, .scheme = 1},
+-  {",", "'", 1.0, Code, KEY_COMMA, &layouts[ComposeMath]},
+-  {"", "Tab", 4.0, Code, KEY_SPACE},
+-  {".", "?", 1.0, Code, KEY_DOT, &layouts[ComposePunctuation]},
+-  {"Enter", "Enter", 1.5, Code, KEY_ENTER, .scheme = 1},
+-
+-  /* end of layout */
+-  {"", "", 0.0, Last},
++  {"Esc", "Esc", 1.25, Code, KEY_ESC, .scheme = 1},
++  {"1", "!", 1, Code, KEY_1},
++  {"2", "@", 1, Code, KEY_2},
++  {"3", "#", 1, Code, KEY_3},
++  {"4", "$", 1, Code, KEY_4},
++  {"5", "%", 1, Code, KEY_5},
++  {"6", "^", 1, Code, KEY_6},
++  {"7", "&", 1, Code, KEY_7},
++  {"8", "*", 1, Code, KEY_8},
++  {"9", "(", 1, Code, KEY_9},
++  {"0", ")", 1, Code, KEY_0},
++  {"-", "_", 0.875, Code, KEY_MINUS},
++  {"=", "+", 0.875, Code, KEY_EQUAL},
++  {"⌫", "⌫", 1.25, Code, KEY_BACKSPACE, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"Tab", "Tab", 1.5, Code, KEY_TAB, .scheme = 1},
++  {"q", "Q", 1, Code, KEY_Q},
++  {"w", "W", 1, Code, KEY_W},
++  {"e", "E", 1, Code, KEY_E},
++  {"r", "R", 1, Code, KEY_R},
++  {"t", "T", 1, Code, KEY_T},
++  {"y", "Y", 1, Code, KEY_Y},
++  {"u", "U", 1, Code, KEY_U},
++  {"i", "I", 1, Code, KEY_I},
++  {"o", "O", 1, Code, KEY_O},
++  {"p", "P", 1, Code, KEY_P},
++  {";", ":", 1, Code, KEY_SEMICOLON},
++  {"\\", "|", 1.75, Code, KEY_BACKSLASH},
++  {"", "", 0, EndRow},
++  {"[", "{", 0.875, Code, KEY_LEFTBRACE},
++  {"]", "}", 0.875, Code, KEY_RIGHTBRACE},
++  {"a", "A", 1, Code, KEY_A},
++  {"s", "S", 1, Code, KEY_S},
++  {"d", "D", 1, Code, KEY_D},
++  {"f", "F", 1, Code, KEY_F},
++  {"g", "G", 1, Code, KEY_G},
++  {"h", "H", 1, Code, KEY_H},
++  {"j", "J", 1, Code, KEY_J},
++  {"k", "K", 1, Code, KEY_K},
++  {"l", "L", 1, Code, KEY_L},
++  {"'", "\"", 1, Code, KEY_APOSTROPHE},
++  {"Enter", "Enter", 2.5, Code, KEY_ENTER, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"Shift", "Shift", 2, Mod, Shift, .scheme = 1},
++  {"z", "Z", 1, Code, KEY_Z},
++  {"x", "X", 1, Code, KEY_X},
++  {"c", "C", 1, Code, KEY_C},
++  {"v", "V", 1, Code, KEY_V},
++  {"b", "B", 1, Code, KEY_B},
++  {"n", "N", 1, Code, KEY_N},
++  {"m", "M", 1, Code, KEY_M},
++  {",", "<", 1, Code, KEY_COMMA},
++  {".", ">", 1, Code, KEY_DOT},
++  {"/", "?", 1, Code, KEY_SLASH},
++  {"`", "~", 1, Code, KEY_GRAVE},
++  {"↑", "↑", 1.25, Code, KEY_UP, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"Fn", "Fn", 1, NextLayer, 0, .scheme = 1},
++  {"Ctrl", "Ctrl", 1, Mod, Ctrl, .scheme = 1},
++  {"Alt", "Alt", 1, Mod, Alt, .scheme = 1},
++  {"", "", 1, Mod, Super, .scheme = 2},
++  {"space", "space", 7.25, Code, KEY_SPACE, .scheme = 3},
++  {"←", "←", 1, Code, KEY_LEFT, .scheme = 4},
++  {"↓", "↓", 1, Code, KEY_DOWN, .scheme = 4},
++  {"→", "→", 1, Code, KEY_RIGHT, .scheme = 4},
++  {"", "", 0, Last},
+ };
+ 
+ static struct key keys_full_wide[] = {
+@@ -319,62 +316,58 @@
+ };
+ 
+ static struct key keys_special[] = {
+-  {"Esc", "Esc", 1.0, Code, KEY_ESC, .scheme = 1},
+-  {"Alt", "Alt", 1.0, Mod, Alt, .scheme = 1},
+-  {"↑", "↑", 1.0, Code, KEY_UP, .scheme = 1},
+-  {"↓", "↓", 1.0, Code, KEY_DOWN, .scheme = 1},
+-  {"←", "←", 1.0, Code, KEY_LEFT, .scheme = 1},
+-  {"→", "→", 1.0, Code, KEY_RIGHT, .scheme = 1},
+-  {"⇈", "⇈", 1.0, Code, KEY_PAGEUP, .scheme = 1},
+-  {"⇊", "⇊", 1.0, Code, KEY_PAGEDOWN, .scheme = 1},
+-  {"⇤", "⇤", 1.0, Code, KEY_HOME, .scheme = 1},
+-  {"⇥", "⇥", 1.0, Code, KEY_END, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"1", "!", 1.0, Code, KEY_1},
+-  {"2", "@", 1.0, Code, KEY_2},
+-  {"3", "#", 1.0, Code, KEY_3},
+-  {"4", "$", 1.0, Code, KEY_4},
+-  {"5", "%", 1.0, Code, KEY_5},
+-  {"6", "^", 1.0, Code, KEY_6},
+-  {"7", "&", 1.0, Code, KEY_7},
+-  {"8", "*", 1.0, Code, KEY_8},
+-  {"9", "(", 1.0, Code, KEY_9, &layouts[ComposeBracket]},
+-  {"0", ")", 1.0, Code, KEY_0, &layouts[ComposeBracket]},
+-  {"", "", 0.0, EndRow},
+-
+-  {"CpL", "CpL", 1.0, Mod, CapsLock, .scheme = 1},
+-  {"Sup", "Sup", 1.0, Mod, Super, .scheme = 1},
+-  {"`", "~", 1.0, Code, KEY_GRAVE},
+-  {"'", "\"", 1.0, Code, KEY_APOSTROPHE},
+-  {"-", "_", 1.0, Code, KEY_MINUS},
+-  {"=", "+", 1.0, Code, KEY_EQUAL},
+-  {"[", "{", 1.0, Code, KEY_LEFTBRACE},
+-  {"]", "}", 1.0, Code, KEY_RIGHTBRACE},
+-  {"\\", "|", 1.0, Code, KEY_BACKSLASH},
+-  {"Del", "Del", 1.0, Code, KEY_DELETE, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"⇧", "⇫", 2.0, Mod, Shift, .scheme = 1},
+-  {";", ":", 1.0, Code, KEY_SEMICOLON},
+-  {"/", ">", 1.0, Code, KEY_SLASH},
+-  {"<", "«", 1.0, Code, KEY_COMMA, 0, AltGr},
+-  {">", "»", 1.0, Code, KEY_DOT, 0, AltGr},
+-  {"¡", "¿", 1.0, Code, KEY_MENU},
+-  {"🙂", "🙂", 1.0, Layout, 0, &layouts[Emoji]},
+-  {"AGr", "AGr", 1.0, Mod, AltGr, .scheme = 1},
+-  {"⌫", "⌫", 1.0, Code, KEY_BACKSPACE, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"Abc", "Abc", 1.0, BackLayer, .scheme = 1},
+-  {"⌨͕", "⌨͔", 1.0, NextLayer, .scheme = 1},
+-  {",", "'", 1.0, Code, KEY_COMMA, &layouts[ComposeMath]},
+-  {"", "Tab", 4.0, Code, KEY_SPACE},
+-  {".", "?", 1.0, Code, KEY_DOT, &layouts[ComposePunctuation]},
+-  {"Enter", "Enter", 2.0, Code, KEY_ENTER, .scheme = 1},
+-
+-  /* end of layout */
+-  {"", "", 0.0, Last},
++  {"F1", "F1", 1.1875, Code, KEY_F1, .scheme = 1},
++  {"F2", "F2", 1.1875, Code, KEY_F2, .scheme = 1},
++  {"F3", "F3", 1.1875, Code, KEY_F3, .scheme = 1},
++  {"F4", "F4", 1.1875, Code, KEY_F4, .scheme = 1},
++  {"F5", "F5", 1.1875, Code, KEY_F5, .scheme = 1},
++  {"F6", "F6", 1.1875, Code, KEY_F6, .scheme = 1},
++  {"F7", "F7", 1.1875, Code, KEY_F7, .scheme = 1},
++  {"F8", "F8", 1.1875, Code, KEY_F8, .scheme = 1},
++  {"F9", "F9", 1.1875, Code, KEY_F9, .scheme = 1},
++  {"F10", "F10", 1.1875, Code, KEY_F10, .scheme = 1},
++  {"F11", "F11", 1.1875, Code, KEY_F11, .scheme = 1},
++  {"F12", "F12", 1.1875, Code, KEY_F12, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"`", "~", 1, Code, KEY_GRAVE},
++  {"-", "_", 1, Code, KEY_MINUS},
++  {"=", "+", 1, Code, KEY_EQUAL},
++  {"[", "{", 1, Code, KEY_LEFTBRACE},
++  {"]", "}", 1, Code, KEY_RIGHTBRACE},
++  {"\\", "|", 1, Code, KEY_BACKSLASH},
++  {";", ":", 1, Code, KEY_SEMICOLON},
++  {"'", "\"", 1, Code, KEY_APOSTROPHE},
++  {"/", "?", 1, Code, KEY_SLASH},
++  {",", "<", 1, Code, KEY_COMMA},
++  {".", ">", 1, Code, KEY_DOT},
++  {"Del", "Del", 3.25, Code, KEY_DELETE, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"Home", "Home", 1.78125, Code, KEY_HOME, .scheme = 1},
++  {"↑", "↑", 1.78125, Code, KEY_UP, .scheme = 4},
++  {"End", "End", 1.78125, Code, KEY_END, .scheme = 1},
++  {"PgUp", "PgUp", 1.78125, Code, KEY_PAGEUP, .scheme = 1},
++  {"Ins", "Ins", 1.78125, Code, KEY_INSERT, .scheme = 1},
++  {"PrtSc", "PrtSc", 1.78125, Code, KEY_SYSRQ, .scheme = 1},
++  {"Menu", "Menu", 1.78125, Code, KEY_COMPOSE, .scheme = 1},
++  {"⌫", "⌫", 1.78125, Code, KEY_BACKSPACE, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"Shift", "Shift", 1.5, Mod, Shift, .scheme = 1},
++  {"←", "←", 1, Code, KEY_LEFT, .scheme = 4},
++  {"↓", "↓", 1, Code, KEY_DOWN, .scheme = 4},
++  {"→", "→", 1, Code, KEY_RIGHT, .scheme = 4},
++  {"PgDn", "PgDn", 1.5, Code, KEY_PAGEDOWN, .scheme = 1},
++  {"AltGr", "AltGr", 1.5, Mod, AltGr, .scheme = 1},
++  {"Enter", "Enter", 6.75, Code, KEY_ENTER, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"ABC", "ABC", 1, NextLayer, 0, .scheme = 1},
++  {"Ctrl", "Ctrl", 1, Mod, Ctrl, .scheme = 1},
++  {"Alt", "Alt", 1, Mod, Alt, .scheme = 1},
++  {"", "", 1, Mod, Super, .scheme = 2},
++  {"space", "space", 7.25, Code, KEY_SPACE, .scheme = 3},
++  {"←", "←", 1, Code, KEY_LEFT, .scheme = 4},
++  {"↓", "↓", 1, Code, KEY_DOWN, .scheme = 4},
++  {"→", "→", 1, Code, KEY_RIGHT, .scheme = 4},
++  {"", "", 0, Last},
+ };
+ 
+ static struct key keys_specialpad[] = {
+@@ -1102,122 +1095,129 @@
+ };
+ 
+ static struct key keys_landscape[] = {
+-  {"Esc", "Esc", 1.0, Code, KEY_ESC, .scheme = 1},
+-  {"", "", 0.5, Pad, .scheme = 1},
+-  {"q", "Q", 1.0, Code, KEY_Q, &layouts[Emoji]},
+-  {"w", "W", 1.0, Code, KEY_W, &layouts[ComposeW]},
+-  {"e", "E", 1.0, Code, KEY_E, &layouts[ComposeE]},
+-  {"r", "R", 1.0, Code, KEY_R, &layouts[ComposeR]},
+-  {"t", "T", 1.0, Code, KEY_T, &layouts[ComposeT]},
+-  {"y", "Y", 1.0, Code, KEY_Y, &layouts[ComposeY]},
+-  {"u", "U", 1.0, Code, KEY_U, &layouts[ComposeU]},
+-  {"i", "I", 1.0, Code, KEY_I, &layouts[ComposeI]},
+-  {"o", "O", 1.0, Code, KEY_O, &layouts[ComposeO]},
+-  {"p", "P", 1.0, Code, KEY_P, &layouts[ComposeP]},
+-  {"", "", 0.5, Pad, .scheme = 1},
+-  {"Tab", "Tab", 1.0, Code, KEY_TAB, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"↑", "↑", 0.75, Code, KEY_UP, .scheme = 1},
+-  {"↓", "↓", 0.75, Code, KEY_DOWN, .scheme = 1},
+-  {"", "", 0.5, Pad, .scheme = 1},
+-  {"a", "A", 1.0, Code, KEY_A, &layouts[ComposeA]},
+-  {"s", "S", 1.0, Code, KEY_S, &layouts[ComposeS]},
+-  {"d", "D", 1.0, Code, KEY_D, &layouts[ComposeD]},
+-  {"f", "F", 1.0, Code, KEY_F, &layouts[ComposeF]},
+-  {"g", "G", 1.0, Code, KEY_G, &layouts[ComposeG]},
+-  {"h", "H", 1.0, Code, KEY_H, &layouts[ComposeH]},
+-  {"j", "J", 1.0, Code, KEY_J, &layouts[ComposeJ]},
+-  {"k", "K", 1.0, Code, KEY_K, &layouts[ComposeK]},
+-  {"l", "L", 1.0, Code, KEY_L, &layouts[ComposeL]},
+-  {"'", "\"", 1.0, Code, KEY_APOSTROPHE, &layouts[ComposeBracket]},
+-  {"/", ">", 1.0, Code, KEY_SLASH},
+-  {"", "", 0.0, EndRow},
+-
+-  {"←", "←", 0.75, Code, KEY_LEFT, .scheme = 1},
+-  {"→", "→", 0.75, Code, KEY_RIGHT, .scheme = 1},
+-  {"⇧", "⇫", 1.5, Mod, Shift, .scheme = 1},
+-  {"z", "Z", 1.0, Code, KEY_Z, &layouts[ComposeZ]},
+-  {"x", "X", 1.0, Code, KEY_X, &layouts[ComposeX]},
+-  {"c", "C", 1.0, Code, KEY_C, &layouts[ComposeC]},
+-  {"v", "V", 1.0, Code, KEY_V, &layouts[ComposeV]},
+-  {"b", "B", 1.0, Code, KEY_B, &layouts[ComposeB]},
+-  {"n", "N", 1.0, Code, KEY_N, &layouts[ComposeN]},
+-  {"m", "M", 1.0, Code, KEY_M, &layouts[ComposeM]},
+-  {"", "", 0.5, Pad, .scheme = 1},
+-  {"-", "_", 1.0, Code, KEY_MINUS, &layouts[ComposeBracket]},
+-  {"⌫", "⌫", 1.5, Code, KEY_BACKSPACE, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"⌨͕", "⌨͔", 1.0, NextLayer, .scheme = 1},
+-  {"Cmp", "Cmp", 1.0, Compose, .scheme = 1},
+-  {"Ctr", "Ctr", 1.0, Mod, Ctrl, .scheme = 1},
+-  {",", "'", 1.0, Code, KEY_COMMA, &layouts[ComposeMath]},
+-  {"", "Tab", 5.0, Code, KEY_SPACE},
+-  {".", "?", 1.0, Code, KEY_DOT, &layouts[ComposePunctuation]},
+-  {"Enter", "Enter", 2.0, Code, KEY_ENTER, .scheme = 1},
+-
+-  /* end of layout */
+-  {"", "", 0.0, Last},
++  {"`", "~", 1, Code, KEY_GRAVE},
++  {"1", "!", 1, Code, KEY_1},
++  {"2", "@", 1, Code, KEY_2},
++  {"3", "#", 1, Code, KEY_3},
++  {"4", "$", 1, Code, KEY_4},
++  {"5", "%", 1, Code, KEY_5},
++  {"6", "^", 1, Code, KEY_6},
++  {"7", "&", 1, Code, KEY_7},
++  {"8", "*", 1, Code, KEY_8},
++  {"9", "(", 1, Code, KEY_9},
++  {"0", ")", 1, Code, KEY_0},
++  {"-", "_", 1, Code, KEY_MINUS},
++  {"=", "+", 1, Code, KEY_EQUAL},
++  {"⌫", "⌫", 2, Code, KEY_BACKSPACE, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"Tab", "Tab", 1.5, Code, KEY_TAB, .scheme = 1},
++  {"q", "Q", 1, Code, KEY_Q},
++  {"w", "W", 1, Code, KEY_W},
++  {"e", "E", 1, Code, KEY_E},
++  {"r", "R", 1, Code, KEY_R},
++  {"t", "T", 1, Code, KEY_T},
++  {"y", "Y", 1, Code, KEY_Y},
++  {"u", "U", 1, Code, KEY_U},
++  {"i", "I", 1, Code, KEY_I},
++  {"o", "O", 1, Code, KEY_O},
++  {"p", "P", 1, Code, KEY_P},
++  {";", ":", 1, Code, KEY_SEMICOLON},
++  {"\\", "|", 2.5, Code, KEY_BACKSLASH},
++  {"", "", 0, EndRow},
++  {"[", "{", 0.875, Code, KEY_LEFTBRACE},
++  {"]", "}", 0.875, Code, KEY_RIGHTBRACE},
++  {"a", "A", 1, Code, KEY_A},
++  {"s", "S", 1, Code, KEY_S},
++  {"d", "D", 1, Code, KEY_D},
++  {"f", "F", 1, Code, KEY_F},
++  {"g", "G", 1, Code, KEY_G},
++  {"h", "H", 1, Code, KEY_H},
++  {"j", "J", 1, Code, KEY_J},
++  {"k", "K", 1, Code, KEY_K},
++  {"l", "L", 1, Code, KEY_L},
++  {"'", "\"", 1, Code, KEY_APOSTROPHE},
++  {"Enter", "Enter", 3.25, Code, KEY_ENTER, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"Shift", "Shift", 2.25, Mod, Shift, .scheme = 1},
++  {"z", "Z", 1, Code, KEY_Z},
++  {"x", "X", 1, Code, KEY_X},
++  {"c", "C", 1, Code, KEY_C},
++  {"v", "V", 1, Code, KEY_V},
++  {"b", "B", 1, Code, KEY_B},
++  {"n", "N", 1, Code, KEY_N},
++  {"m", "M", 1, Code, KEY_M},
++  {",", "<", 1, Code, KEY_COMMA},
++  {".", ">", 1, Code, KEY_DOT},
++  {"/", "?", 1, Code, KEY_SLASH},
++  {"↑", "↑", 1, Code, KEY_UP, .scheme = 4},
++  {"Shift", "Shift", 1.75, Mod, Shift, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"Esc", "Esc", 1.25, Code, KEY_ESC, .scheme = 1},
++  {"Fn", "Fn", 1, NextLayer, 0, .scheme = 1},
++  {"Ctrl", "Ctrl", 1.25, Mod, Ctrl, .scheme = 1},
++  {"", "", 1.25, Mod, Super, .scheme = 2},
++  {"Alt", "Alt", 1.25, Mod, Alt, .scheme = 1},
++  {"space", "space", 6, Code, KEY_SPACE, .scheme = 3},
++  {"←", "←", 1, Code, KEY_LEFT, .scheme = 4},
++  {"↓", "↓", 1, Code, KEY_DOWN, .scheme = 4},
++  {"→", "→", 1, Code, KEY_RIGHT, .scheme = 4},
++  {"", "", 0, Last},
+ };
+ 
+ static struct key keys_landscape_special[] = {
+-  {"Esc", "Esc", 1.0, Code, KEY_ESC, .scheme = 1},
+-  {"", "", 0.5, Pad, .scheme = 1},
+-  {"1", "!", 1.0, Code, KEY_1},
+-  {"2", "@", 1.0, Code, KEY_2},
+-  {"3", "#", 1.0, Code, KEY_3},
+-  {"4", "$", 1.0, Code, KEY_4},
+-  {"5", "%", 1.0, Code, KEY_5},
+-  {"6", "^", 1.0, Code, KEY_6},
+-  {"7", "&", 1.0, Code, KEY_7},
+-  {"8", "*", 1.0, Code, KEY_8},
+-  {"9", "(", 1.0, Code, KEY_9, &layouts[ComposeBracket]},
+-  {"0", ")", 1.0, Code, KEY_0, &layouts[ComposeBracket]},
+-  {"", "", 0.5, Pad, .scheme = 1},
+-  {"Tab", "Tab", 1.0, Code, KEY_TAB, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"⇈", "⇈", 1.0, Code, KEY_PAGEUP, .scheme = 1},
+-  {"⇊", "⇊", 1.0, Code, KEY_PAGEDOWN, .scheme = 1},
+-  {"CpL", "CpL", 1.0, Mod, CapsLock, .scheme = 1},
+-  {"🙂", "🙂", 1.0, Layout, 0, &layouts[Emoji]},
+-  {"`", "~", 1.0, Code, KEY_GRAVE},
+-  {"'", "\"", 1.0, Code, KEY_APOSTROPHE},
+-  {"-", "_", 1.0, Code, KEY_MINUS},
+-  {"=", "+", 1.0, Code, KEY_EQUAL},
+-  {"[", "{", 1.0, Code, KEY_LEFTBRACE},
+-  {"]", "}", 1.0, Code, KEY_RIGHTBRACE},
+-  {"\\", "|", 1.0, Code, KEY_BACKSLASH},
+-  {"/", ">", 1.0, Code, KEY_SLASH},
+-  {"Del", "Del", 1.0, Code, KEY_DELETE, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"⇤", "⇤", 1.0, Code, KEY_HOME, .scheme = 1},
+-  {"⇥", "⇥", 1.0, Code, KEY_END, .scheme = 1},
+-  {"⇧", "⇫", 2.0, Mod, Shift, .scheme = 1},
+-  {";", ":", 1.0, Code, KEY_SEMICOLON},
+-  {"<", "«", 1.0, Code, KEY_COMMA, 0, AltGr},
+-  {">", "»", 1.0, Code, KEY_DOT, 0, AltGr},
+-  {"¡", "¿", 1.0, Code, KEY_MENU},
+-  {",", "'", 1.0, Code, KEY_COMMA, &layouts[ComposeMath]},
+-  {".", "?", 1.0, Code, KEY_DOT, &layouts[ComposePunctuation]},
+-  {"/", ">", 1.0, Code, KEY_SLASH},
+-  {"", "", 0.5, Pad, .scheme = 1},
+-  {"⌫", "⌫", 1.5, Code, KEY_BACKSPACE, .scheme = 1},
+-  {"", "", 0.0, EndRow},
+-
+-  {"Abc", "Abc", 1.0, BackLayer, .scheme = 1},
+-  {"⌨͕", "⌨͔", 1.0, NextLayer, .scheme = 1},
+-  {"Ctr", "Ctr", 1.0, Mod, Ctrl, .scheme = 1},
+-  {"Sup", "Sup", 1.0, Mod, Super, .scheme = 1},
+-  {"", "Tab", 5.0, Code, KEY_SPACE},
+-  {"Alt", "Alt", 1.0, Mod, Alt, .scheme = 1},
+-  {"AGr", "AGr", 1.0, Mod, AltGr, .scheme = 1},
+-  {"Enter", "Enter", 2.0, Code, KEY_ENTER, .scheme = 1},
+-
+-  /* end of layout */
+-  {"", "", 0.0, Last},
++  {"F1", "F1", 1.25, Code, KEY_F1, .scheme = 1},
++  {"F2", "F2", 1.25, Code, KEY_F2, .scheme = 1},
++  {"F3", "F3", 1.25, Code, KEY_F3, .scheme = 1},
++  {"F4", "F4", 1.25, Code, KEY_F4, .scheme = 1},
++  {"F5", "F5", 1.25, Code, KEY_F5, .scheme = 1},
++  {"F6", "F6", 1.25, Code, KEY_F6, .scheme = 1},
++  {"F7", "F7", 1.25, Code, KEY_F7, .scheme = 1},
++  {"F8", "F8", 1.25, Code, KEY_F8, .scheme = 1},
++  {"F9", "F9", 1.25, Code, KEY_F9, .scheme = 1},
++  {"F10", "F10", 1.25, Code, KEY_F10, .scheme = 1},
++  {"F11", "F11", 1.25, Code, KEY_F11, .scheme = 1},
++  {"F12", "F12", 1.25, Code, KEY_F12, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"`", "~", 1, Code, KEY_GRAVE},
++  {"-", "_", 1, Code, KEY_MINUS},
++  {"=", "+", 1, Code, KEY_EQUAL},
++  {"[", "{", 1, Code, KEY_LEFTBRACE},
++  {"]", "}", 1, Code, KEY_RIGHTBRACE},
++  {"\\", "|", 1, Code, KEY_BACKSLASH},
++  {";", ":", 1, Code, KEY_SEMICOLON},
++  {"'", "\"", 1, Code, KEY_APOSTROPHE},
++  {"/", "?", 1, Code, KEY_SLASH},
++  {",", "<", 1, Code, KEY_COMMA},
++  {".", ">", 1, Code, KEY_DOT},
++  {"Del", "Del", 4, Code, KEY_DELETE, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"Home", "Home", 1.875, Code, KEY_HOME, .scheme = 1},
++  {"↑", "↑", 1.875, Code, KEY_UP, .scheme = 4},
++  {"End", "End", 1.875, Code, KEY_END, .scheme = 1},
++  {"PgUp", "PgUp", 1.875, Code, KEY_PAGEUP, .scheme = 1},
++  {"Ins", "Ins", 1.875, Code, KEY_INSERT, .scheme = 1},
++  {"PrtSc", "PrtSc", 1.875, Code, KEY_SYSRQ, .scheme = 1},
++  {"Menu", "Menu", 1.875, Code, KEY_COMPOSE, .scheme = 1},
++  {"⌫", "⌫", 1.875, Code, KEY_BACKSPACE, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"Shift", "Shift", 1.5, Mod, Shift, .scheme = 1},
++  {"←", "←", 1, Code, KEY_LEFT, .scheme = 4},
++  {"↓", "↓", 1, Code, KEY_DOWN, .scheme = 4},
++  {"→", "→", 1, Code, KEY_RIGHT, .scheme = 4},
++  {"PgDn", "PgDn", 1.5, Code, KEY_PAGEDOWN, .scheme = 1},
++  {"AltGr", "AltGr", 1.5, Mod, AltGr, .scheme = 1},
++  {"Enter", "Enter", 7.5, Code, KEY_ENTER, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"Esc", "Esc", 1.25, Code, KEY_ESC, .scheme = 1},
++  {"ABC", "ABC", 1, NextLayer, 0, .scheme = 1},
++  {"Ctrl", "Ctrl", 1.25, Mod, Ctrl, .scheme = 1},
++  {"", "", 1.25, Mod, Super, .scheme = 2},
++  {"Alt", "Alt", 1.25, Mod, Alt, .scheme = 1},
++  {"space", "space", 6, Code, KEY_SPACE, .scheme = 3},
++  {"←", "←", 1, Code, KEY_LEFT, .scheme = 4},
++  {"↓", "↓", 1, Code, KEY_DOWN, .scheme = 4},
++  {"→", "→", 1, Code, KEY_RIGHT, .scheme = 4},
++  {"", "", 0, Last},
+ };
+ 
+ static struct key keys_compose_w[] = {
+diff -ruN a/main.c b/main.c
+--- a/main.c
++++ b/main.c
+@@ -1407,6 +1407,14 @@
+         zwp_input_method_v2_add_listener(input_method, &input_method_listener, NULL);
+     }
+ 
++    /* Inherit the active theme; only the Super label uses the logo font. */
++    schemes[2] = schemes[1];
++    schemes[2].font = "omarchy 14";
++    schemes[3] = schemes[0];
++    schemes[3].font = SPECIAL_FONT;
++    schemes[4] = schemes[1];
++    schemes[4].font = DEFAULT_FONT;
++
+     for (i = 0; i < countof(schemes); i++) {
+         schemes[i].font_description =
+             pango_font_description_from_string(schemes[i].font);
+diff -ruN a/orchard-shift.h b/orchard-shift.h
+--- a/orchard-shift.h
++++ b/orchard-shift.h
+@@ -0,0 +1,34 @@
++#ifndef ORCHARD_SHIFT_H
++#define ORCHARD_SHIFT_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++struct orchard_shift_tap {
++    uint32_t at;
++    bool pending;
++};
++
++/* Wayland event times are unsigned milliseconds and may wrap. A different
++ * key cancels pending before this function is called again. Caps Lock never
++ * holds Shift: punctuation/numbers keep their ordinary meanings. */
++static inline uint8_t
++orchard_shift_press(struct orchard_shift_tap *tap, uint8_t mods, uint32_t time,
++                    uint8_t shift_mask, uint8_t caps_mask)
++{
++    if (mods & caps_mask) {
++        mods &= ~(caps_mask | shift_mask);
++        tap->pending = false;
++    } else if (tap->pending && (mods & shift_mask) &&
++               (uint32_t)(time - tap->at) <= 400) {
++        mods = (mods & ~shift_mask) | caps_mask;
++        tap->pending = false;
++    } else {
++        mods ^= shift_mask;
++        tap->at = time;
++        tap->pending = (mods & shift_mask) != 0;
++    }
++    return mods;
++}
++
++#endif

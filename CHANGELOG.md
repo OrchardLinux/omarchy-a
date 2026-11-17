@@ -13,6 +13,10 @@ is missing or empty.
 
 ## Unreleased
 
+### Desktop
+
+- Updates without reinstalling: Omarchy A's desktop and system settings are now a package, so `omarchy-update` (or Update > Omarchy) brings each release to an installed tablet; your own settings stay yours.
+
 ## [0.3.1] - 2026-11-15
 
 Built on orchard 0.3.1.

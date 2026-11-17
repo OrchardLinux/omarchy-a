@@ -1,0 +1,17 @@
+# Omarchy A's version of files another package owns (filesystem's os-release,
+# bluez's main.conf, greetd's config, bash's /etc/skel/.bashrc): put back after
+# every transaction that installs or updates either side.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Path
+Target = etc/os-release
+Target = etc/bluetooth/main.conf
+Target = etc/greetd/config.toml
+Target = etc/skel/.bashrc
+Target = usr/share/omarchy/etc-overrides/*
+
+[Action]
+Description = Applying Omarchy A's system files...
+When = PostTransaction
+Exec = /usr/share/libalpm/scripts/omarchy-a-etc-overrides
