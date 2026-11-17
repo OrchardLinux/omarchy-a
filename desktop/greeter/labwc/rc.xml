@@ -2,6 +2,7 @@
 <labwc_config>
   <!-- Session transitions (labwc/0003), as the desktop's rc.xml. -->
   <core>
+    <hideCursorUntilPointerInput>yes</hideCursorUntilPointerInput>
     <decoration>server</decoration>
     <handoverDirectory>/run/omarchy-handover</handoverDirectory>
     <startupFade>yes</startupFade>
