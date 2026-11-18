@@ -24,13 +24,18 @@ import time
 ON, GRACE, SETTLING, DARK, SUSPENDING = 'ON', 'GRACE', 'SETTLING', 'DARK', 'SUSPENDING'
 STATES = (ON, GRACE, SETTLING, DARK, SUSPENDING)
 EVENTS = ('power', 'home', 'wake', 'idle', 'settle', 'lock-ok', 'lock-failed', 'playing', 'not-playing',
-          'suspend-refused', 'suspend-blocked', 'suspend-busy', 'sleep-signal', 'sleep-ended', 'timeout',
+          'suspend-refused', 'suspend-blocked', 'suspend-busy', 'sleep-signal', 'sleep-ended', 'sleep-aborted', 'timeout',
           'grace-ended', 'lock')
 IDLE_GRACE_SECONDS = 8.0
 FADE_SECONDS = 0.24
 SETTLE_SECONDS = 10.0
 # A refused sleep is asked for again after this, dark and locked meanwhile.
 RETRY_SECONDS = 60.0
+# Kernel attempts that aborted in a row, nothing pressed, before it stops asking for a while:
+# a board whose suspend never completes would otherwise freeze for every attempt, every settle.
+ABORTS_BEFORE_DARK = 3
+# How long it then stays dark and locked before it asks again; a press or a real sleep ends it.
+BACKOFF_SECONDS = 600.0
 TICK_SECONDS = 0.05
 # A suspend asked for and not seen to begin (no PrepareForSleep, no kernel attempt) in this
 # much time awake did not happen. Once it began, only its end ends it: logind's
@@ -67,6 +72,7 @@ class Machine:
         self.playing = False
         self.no_suspend = False
         self.hold_release = False
+        self.aborts = 0
 
     def _darken(self):
         self.lock_ok = self.settle_due = self.no_suspend = self.playing = False
@@ -74,13 +80,14 @@ class Machine:
         return ['dark', 'lock', 'arm-settle']
 
     def _light(self, *first):
-        self.state = ON
+        self.state, self.aborts = ON, 0
         self.playing = self.settle_due = False
         return [*first, 'light', 'woke']
 
     def _settle_again(self):
         self.state, self.settle_due = SETTLING, False
-        return ['arm-settle']
+        # Suspend keeps aborting here: ask again, but not before the backoff.
+        return ['arm-backoff' if self.aborts >= ABORTS_BEFORE_DARK else 'arm-settle']
 
     def _begin_suspend(self):
         self.state, self.inflight = SUSPENDING, True
@@ -113,8 +120,10 @@ class Machine:
         """The actions of EVENT, in order; the state afterwards is self.state."""
         if event not in EVENTS:
             raise ValueError(event)
+        if event == 'sleep-ended':
+            self.aborts = 0
         # A suspend ending or failing is bookkeeping unless it is what SUSPENDING waits for.
-        if event in ('sleep-ended', 'suspend-refused', 'suspend-blocked', 'suspend-busy', 'timeout') \
+        if event in ('sleep-ended', 'sleep-aborted', 'suspend-refused', 'suspend-blocked', 'suspend-busy', 'timeout') \
                 and self.state != SUSPENDING:
             if self.inflight:
                 self.inflight = False
@@ -195,8 +204,11 @@ class Machine:
             return self._lock_answer(True)
         if event == 'lock-failed':
             return self._lock_answer(False)
-        if event == 'sleep-ended':
+        if event in ('sleep-ended', 'sleep-aborted'):
             # Nothing pressed: a charger, an alarm, an aborted attempt. Stay dark.
+            # Aborted with nothing pressed counts: a press aborts it too, but lands in ON.
+            if event == 'sleep-aborted':
+                self.aborts = min(self.aborts + 1, ABORTS_BEFORE_DARK)
             self.inflight = False
             return ['take-inhibitor'] + self._settle_again()
         if event in ('suspend-busy', 'timeout'):
@@ -752,6 +764,10 @@ class Daemon:
     def do_arm_settle(self, _):
         self.settle_at = time.monotonic() + SETTLE_SECONDS
 
+    def do_arm_backoff(self, _):
+        log(f'{ABORTS_BEFORE_DARK} sleeps in a row aborted: asking again in {BACKOFF_SECONDS:.0f} s')
+        self.settle_at = time.monotonic() + BACKOFF_SECONDS
+
     def do_cancel_settle(self, _):
         self.settle_at = None
 
@@ -1022,7 +1038,7 @@ class Daemon:
         if how != 'logind' and self.logind_asleep:
             # logind's own end not seen (yet): its inhibitor waits for it, a while.
             self.logind_busy_until = time.monotonic() + LOGIND_END_WAIT_SECONDS
-        self.feed('sleep-ended')
+        self.feed('sleep-aborted' if result == 'aborted' else 'sleep-ended')
 
     def count_awake(self, now):
         """Adds the time the loop ran since its last turn; the safeties of a suspend in flight."""

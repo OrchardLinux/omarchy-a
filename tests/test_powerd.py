@@ -142,6 +142,32 @@ class Scenarios(unittest.TestCase):
         self.assertEqual(machine.handle('suspend-refused'), ['take-inhibitor', 'arm-retry'])
         self.assertIn('light', machine.handle('power'))
 
+    def test_a_board_whose_suspend_keeps_aborting_backs_off_dark_and_locked(self):
+        machine = asleep()
+        for _ in range(powerd.ABORTS_BEFORE_DARK - 1):
+            self.assertEqual(machine.handle('sleep-aborted'), ['take-inhibitor', 'arm-settle'])
+            self.assertEqual(machine.handle('settle'), ['suspend'])
+        # The third: dark and locked, asked for again only after the backoff.
+        self.assertEqual(machine.handle('sleep-aborted'), ['take-inhibitor', 'arm-backoff'])
+        self.assertEqual((machine.state, machine.inflight), (SETTLING, False))
+        # The backoff's end asks once more; another abort backs off again at once.
+        self.assertEqual(machine.handle('settle'), ['suspend'])
+        self.assertEqual(machine.handle('sleep-aborted'), ['take-inhibitor', 'arm-backoff'])
+        # Playback ending meanwhile does not shorten it.
+        run(machine, 'playing')
+        self.assertEqual(machine.handle('not-playing'), ['arm-backoff'])
+        # A press lights as usual and starts the count again.
+        self.assertIn('light', machine.handle('home'))
+        self.assertEqual(machine.aborts, 0)
+        self.assertEqual(run(machine, 'power', 'lock-ok', 'settle'), ['suspend'])
+
+    def test_a_sleep_that_happened_ends_the_backoff(self):
+        machine = asleep()
+        for _ in range(powerd.ABORTS_BEFORE_DARK):
+            run(machine, 'sleep-aborted', 'settle')
+        self.assertEqual(machine.handle('sleep-ended'), ['take-inhibitor', 'arm-settle'])
+        self.assertEqual(machine.aborts, 0)
+
     def test_a_cancelled_suspend_cannot_swallow_presses_for_ever(self):
         machine = asleep()
         machine.handle('power')
@@ -661,7 +687,7 @@ class SleepAccounting(unittest.TestCase):
         self.daemon.sleep_began('kernel')
         (self.stats / 'fail').write_text('1\n')
         self.turns(int((powerd.SLEEP_END_AWAKE_SECONDS + 1) / powerd.TICK_SECONDS), powerd.TICK_SECONDS)
-        self.assertEqual(self.fed, ['sleep-ended'])
+        self.assertEqual(self.fed, ['sleep-aborted'])
         self.assertTrue(any(line.startswith('sleep-ended result=aborted ') and 'end=none' in line
                             for line in self.logs), self.logs)
 
