@@ -83,25 +83,28 @@ class Repositories(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('bash'), 'bash is required')
 class Installation(unittest.TestCase):
-    def install(self, architecture, planned=None, consistent=True, owner='mesa', ours='omarchy-a-build'):
+    def install(self, architecture, planned=None, consistent=True, owner='mesa', ours='omarchy-a-build', built=()):
         """The package installation with a pacman that records its calls.
 
-        PLANNED: what pacman says the transaction takes from [orchard]; OURS: the repository omarchy-a comes from.
+        PLANNED: what pacman says the transaction takes from [orchard]; OURS: the repository omarchy-a comes from;
+        BUILT: the Orchard packages built from a packages checkout, which pacman takes from OURS.
         """
         planned = ORCHARD[architecture] if planned is None else planned
         block = section('for name in "${orchard_packages[@]}"; do\n  [[ " ${requested[*]} "', 'useradd --root')
         block = block.replace('"$project/system/pacman-download"', 'pacman download').replace(
             'repositories "$root/etc/pacman.conf" "$root/etc/pacman.conf"', 'echo repositories >> "$LOG"')
-        packages = section('orchard_packages=(wlroots0.20', '# Install signed packages into a clean target')
+        packages = section('mapfile -t orchard_packages', '# Install signed packages into a clean target')
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / 'calls'
             script = ('pacman() { echo "$*" >> "$LOG"; case " $* " in\n'
-                      '  *" --print "*) printf "core/base\\n$OURS/omarchy-a\\n"; for name in $PLANNED; do echo "orchard/$name"; done;;\n'
+                      '  *" --print "*) printf "core/base\\n$OURS/omarchy-a\\n"; for name in $PLANNED; do\n'
+                      '    if [[ " $BUILT " == *" $name "* ]]; then echo "$OURS/$name"; else echo "orchard/$name"; fi; done;;\n'
                       '  *" -Qoq "*) echo "$OWNER"; echo "$OWNER";;\n'
                       '  *" -Dk "*) [[ -n $CONSISTENT ]];; esac; }\n'
-                      'config=c root=/r gpgdir=g desktop=/d requested=(base labwc)\n' + packages + block)
+                      'config=c root=/r gpgdir=g desktop=/d requested=(base labwc) local_names=($BUILT)\n'
+                      + packages + block)
             result = bash(script, LOG=str(log), architecture=architecture, PLANNED=' '.join(planned), OWNER=owner,
-                          CONSISTENT='1' if consistent else '', OURS=ours)
+                          CONSISTENT='1' if consistent else '', OURS=ours, BUILT=' '.join(built), project=str(PROJECT))
             calls = [re.sub(r'^(download )?(--(config|root|gpgdir) \S+ )+', r'\1', line)
                      for line in log.read_text().splitlines()]
             return result.returncode, calls, result.stderr
@@ -136,6 +139,27 @@ class Installation(unittest.TestCase):
                 self.assertNotEqual(code, 0)
                 self.assertIn('Expected from [orchard] exactly', error)
                 self.assertEqual(len(calls), 2)
+
+    def test_packages_built_from_a_packages_checkout_come_from_the_build_repository(self):
+        code, calls, error = self.install('aarch64', built=('labwc', 'wlroots0.20'))
+        self.assertEqual(code, 0, error)
+        self.assertEqual(calls[3:5], ['repositories', '-Dk'])
+        # Built here but taken from [orchard] anyway (another repository listed first) is refused.
+        code, calls, error = self.install('aarch64', ours='orchard', built=('labwc',))
+        self.assertNotEqual(code, 0)
+        self.assertIn('Expected from [orchard] exactly', error)
+
+    def test_the_build_lists_the_checkouts_packages_with_omarchy_a(self):
+        text = ASSEMBLE.read_text()
+        self.assertIn('cp "$file" "$build_pacman/omarchy-a-build/"', text)
+        self.assertIn('repo-add -q "$build_pacman/omarchy-a-build/omarchy-a-build.db.tar.gz" '
+                      '"$build_pacman/omarchy-a-build/"*.pkg.tar.zst', text)
+
+    def test_the_package_list_is_per_architecture(self):
+        for architecture, names in ORCHARD.items():
+            result = bash(section('mapfile -t orchard_packages', '# Install signed packages into a clean target')
+                          + 'echo "${orchard_packages[*]}"', architecture=architecture, project=str(PROJECT))
+            self.assertEqual(result.stdout.split(), names, result.stderr)
 
     def test_omarchy_a_from_anywhere_but_this_checkout_is_refused(self):
         # [orchard]'s omarchy-a is the last release, not this checkout; nor is anyone else's.

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-root= output= package= release= architecture=aarch64
+root= output= package= release= architecture=aarch64 local_packages=
 while (($#)); do
   case "$1" in
     --root) root=$2; shift 2;;
+    --local-packages) local_packages=$2; shift 2;;
     --output) output=$2; shift 2;;
     --package) package=$2; shift 2;;
     --release) release=$2; shift 2;;
@@ -33,21 +34,10 @@ package_file=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))[
   { echo "No omarchy-a package for $architecture in $package" >&2; exit 1; }
 [[ ${#requested[@]} -gt 0 ]] || exit 1
 printf '%s\n' "${requested[@]}" | grep -Eq '^linux(-aarch64|-armv7|-rpi)?$' && { echo 'Generic kernel is not an input' >&2; exit 1; }
-# From the Orchard package repository (OrchardLinux/packages), built there for
-# every Orchard distribution and installed here like any other package:
-# wlroots with fast rotated software compositing, Labwc with the tablet
-# patches, Omafox, Omactivity (the touch task manager) and Files, upstream
-# Omarchy's file manager (Folio) with the touch mode OrchardLinux/folio adds.
-orchard_packages=(wlroots0.20 labwc omafox omactivity folio-touch)
-if [[ $architecture == aarch64 ]]; then
-  # 64-bit boards: Mesa from OrchardLinux's fork in the place of Arch's (OpenGL through Zink or in
-  # software, the GPU's Vulkan driver, the login's GPU probe), and the VA-API bridge to the hardware
-  # video decoders. The GPU parts and the bridge sit unused on a board without that hardware.
-  orchard_packages+=(mesa libva-v4l2-request)
-else
-  # Omacalc: upstream Omarchy publishes it for aarch64 only; the Orchard repository has ARMv7's.
-  orchard_packages+=(omacalc)
-fi
+# From the Orchard package repository: system/orchard-packages.txt, this architecture's.
+mapfile -t orchard_packages < <(awk -v arch="$architecture" \
+  '!/^[[:space:]]*(#|$)/ && (NF == 1 || index(" " $0 " ", " " arch " ")) { print $1 }' "$project/system/orchard-packages.txt")
+[[ ${#orchard_packages[@]} -gt 0 ]] || { echo "No Orchard packages for $architecture" >&2; exit 1; }
 
 # Install signed packages into a clean target; no mounts or VM root are needed.
 # The caller's umask 077 would make pacman's own state (/var/lib/pacman,
@@ -102,7 +92,20 @@ repositories /etc/pacman.conf "$config"
 # update takes omarchy-a from [orchard] once a release is newer.
 mkdir "$build_pacman/omarchy-a-build"
 cp "$package/$package_file" "$build_pacman/omarchy-a-build/"
-repo-add -q "$build_pacman/omarchy-a-build/omarchy-a-build.db.tar.gz" "$build_pacman/omarchy-a-build/$package_file"
+# With a packages checkout (--local-packages: tools/build.py built them from it),
+# the Orchard packages whose recipe there is not the published one join it, so
+# the image has what that checkout says; the image's pacman.conf again names
+# only [orchard], which updates them once it publishes newer ones.
+local_names=()
+if [[ -n $local_packages ]]; then
+  for file in "$local_packages"/*.pkg.tar.zst; do
+    [[ -f $file ]] || continue
+    cp "$file" "$build_pacman/omarchy-a-build/"
+    local_names+=("$(bsdtar -xOf "$file" .PKGINFO | sed -n 's/^pkgname = //p')")
+  done
+  echo "Built from the packages checkout: ${local_names[*]:-none}"
+fi
+repo-add -q "$build_pacman/omarchy-a-build/omarchy-a-build.db.tar.gz" "$build_pacman/omarchy-a-build/"*.pkg.tar.zst
 awk -v server="file://$build_pacman/omarchy-a-build" '
   $0 == "[orchard]" && !done { print "[omarchy-a-build]"; print "SigLevel = Optional TrustAll"; print "Server = " server; print ""; done = 1 }
   { print }' "$config" > "$config.new" && mv "$config.new" "$config"
@@ -123,10 +126,15 @@ requested+=(omarchy-a)
 "$project/system/pacman-download" --config "$config" --root "$root" --gpgdir "$gpgdir" -Sy --noconfirm "${requested[@]}"
 # One transaction for everything: our Mesa is the `mesa` the other packages
 # depend on, so Arch's never arrives and nothing has to be replaced.
-# Before it runs: each of our packages comes from [orchard], and nothing else does.
+# Before it runs: each of our packages comes from [orchard] (or, built from the
+# packages checkout, from the build's own repository), and nothing else does.
 planned=$(pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --print --print-format '%r/%n' "${requested[@]}")
-[[ $(grep '^orchard/' <<< "$planned" | sort) == "$(printf 'orchard/%s\n' "${orchard_packages[@]}" | sort)" ]] ||
-  { echo "Expected from [orchard] exactly: ${orchard_packages[*]}; pacman plans:" >&2; grep '^orchard/' <<< "$planned" >&2; exit 1; }
+expected=$(for name in "${orchard_packages[@]}"; do
+  if [[ " ${local_names[*]:-} " == *" $name "* ]]; then echo "omarchy-a-build/$name"; else echo "orchard/$name"; fi
+done | sort)
+[[ $(grep -E '^(orchard|omarchy-a-build)/' <<< "$planned" | grep -vx 'omarchy-a-build/omarchy-a' | sort) == "$expected" ]] ||
+  { echo "Expected from [orchard] exactly: ${orchard_packages[*]} (built from the packages checkout: ${local_names[*]:-none}); pacman plans:" >&2
+    grep -E '^(orchard|omarchy-a-build)/' <<< "$planned" >&2; exit 1; }
 grep -qx 'omarchy-a-build/omarchy-a' <<< "$planned" ||
   { echo 'Expected omarchy-a built from this checkout' >&2; exit 1; }
 pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --noconfirm "${requested[@]}"

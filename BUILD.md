@@ -37,7 +37,14 @@ builds a release into `out/releases/VERSION` (default `dev-DATE-TIME`) through
 change; the release is assembled and audited every time. `orchard run` starts
 the selected kernel on the attached device and `orchard install` installs the
 release. `orchard build --platform apple-armv7` builds the 32-bit (armv7h)
-release instead. The rest of this page describes the producer steps.
+release instead. With a checkout of the Orchard package repository
+(`orchard build --packages DIR`, `packages` in `orchard.local.toml`, or
+`ORCHARD_PACKAGES` / `tools/build.py --packages DIR` without orchard), the image's
+packages from `system/orchard-packages.txt` whose recipe there is not the published one
+are built with that checkout's own container build (`ci/build-package`, as its CI),
+kept in `out/components/orchard-NAME/KEY/` by recipe, and installed ahead of
+`[orchard]` during the build only; the image's `pacman.conf` is unchanged. The rest
+of this page describes the producer steps.
 
 ## Local setup
 

@@ -38,7 +38,8 @@ def entries(root, paths):
 
 
 def component(root, name, inputs, produce, *, artifact, extra=(), keep=2):
-    """ROOT/out/components/NAME/KEY/ARTIFACT for INPUTS (paths under ROOT) and EXTRA strings.
+    """ROOT/out/components/NAME/KEY/ARTIFACT for INPUTS (paths under ROOT; none for a product of
+    another checkout, which EXTRA then identifies) and EXTRA strings.
 
     The same inputs reuse the earlier result; otherwise PRODUCE(path, work)
     makes ARTIFACT at path, which does not exist yet; work is kept between
@@ -49,7 +50,7 @@ def component(root, name, inputs, produce, *, artifact, extra=(), keep=2):
     if not NAME.fullmatch(name) or '/' in artifact or artifact in ('', '.', '..'):
         raise ValueError('Invalid component name or artifact')
     found = entries(root, inputs)
-    if not found:
+    if inputs and not found:
         raise ValueError(f'{name}: no input files under {", ".join(inputs)}')
     key = hashlib.sha256(json.dumps({'inputs': found, 'extra': list(extra)}, sort_keys=True).encode()).hexdigest()
     directory = root / 'out/components' / name
