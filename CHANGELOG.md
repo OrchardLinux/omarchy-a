@@ -13,10 +13,28 @@ is missing or empty.
 
 ## Unreleased
 
+## [0.3.2] - 2026-11-19
+
+Built on orchard 0.3.2.
+
 ### Desktop
 
-- Updates without reinstalling: Omarchy A's desktop and system settings are now a package, so `omarchy-update` (or Update > Omarchy) brings each release to an installed tablet; your own settings stay yours.
-- Desktop follows upstream Omarchy's latest: app icons drawn in your theme's colors (Papercraft, Arcade or the apps' own, under Appearance > Icons), a Display panel showing the screen's resolution and density with a text size slider, and the captive-portal Sign in button and Learn links open Firefox.
+- Updates without reinstalling: Omarchy A's desktop and system settings are
+  now a package, so `omarchy-update` (or Update > Omarchy) brings each release
+  to an installed tablet; your own settings stay yours.
+- Desktop follows upstream Omarchy's latest: app icons drawn in your theme's
+  colors (Papercraft, Arcade or the apps' own, under Appearance > Icons), a
+  Display panel showing the screen's resolution and density with a text size
+  slider, and the captive-portal Sign in button and Learn links open Firefox.
+- On-screen keyboard: it opens when you tap a text field and closes when you
+  tap outside, in every app. It steps aside while you type on a physical
+  keyboard.
+- Windows open maximized.
+- The Power and Home keys of physical keyboards work like the iPad's.
+- If going to sleep fails, the iPad retries later instead of staying awake in
+  the dark.
+- GNOME Web starts on the GPU desktop, and Omactivity's panel no longer slides
+  across the screen at start.
 
 ## [0.3.1] - 2026-11-15
 
