@@ -79,10 +79,13 @@ class MenuShutdownTests(unittest.TestCase):
         result, calls = self.run_action(menu_action('logout'))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--setenv=LABWC_PID', calls[0])
-        self.assertEqual(calls[1:], ['omarchy-osd -i logout -m system.loggingOut -d 5000',
-                                     'timeout 2s omarchy-hyprland-window-close-all --wait',
-                                     'omarchy-hyprland-window-close-all --wait',
-                                     'labwc --exit'])
+        # Upstream shows the OSD only once the exit has taken 2 s, from a
+        # background job, so it lands anywhere among the other calls.
+        self.assertIn('omarchy-osd -i logout -m system.loggingOut -d 0', calls)
+        self.assertEqual([call for call in calls[1:] if not call.startswith('omarchy-osd ')],
+                         ['timeout 2s omarchy-hyprland-window-close-all --wait',
+                          'omarchy-hyprland-window-close-all --wait',
+                          'labwc --exit'])
 
     def test_reboot_requests_normal_system_reboot(self):
         result, calls = self.run_action(menu_action('reboot'))
@@ -112,7 +115,7 @@ class MenuShutdownTests(unittest.TestCase):
     def test_failure_messages_are_in_the_catalog(self):
         catalog = json.loads((PROJECT / 'desktop/shell/default/i18n/en/cli.json').read_text())
         used = set(re.findall(r'omarchy-i18n (system\.\w+)', (BIN / 'omarchy-system').read_text()))
-        self.assertEqual(len(used), 9)
+        self.assertEqual(len(used), 12)
         self.assertLessEqual(used, set(catalog))
 
     def test_the_real_i18n_command_reads_the_shipped_catalog(self):

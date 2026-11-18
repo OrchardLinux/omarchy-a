@@ -334,11 +334,14 @@ Item {
   }
   onThemeModeChanged: if (themeMode) introPrepareTimer.restart()
 
+  // Orchard: labwc has no theme intro videos (nor omarchy-theme-bg-boot-intro).
+  readonly property bool themeIntros: false
+
   Timer {
     id: introPrepareTimer
     interval: 75
     onTriggered: {
-      if (root.opened && root.themeMode && !introPrepare.running) {
+      if (root.themeIntros && root.opened && root.themeMode && !introPrepare.running) {
         introPrepare.theme = root.nameForPath(root.currentPath())
         introPrepare.command = ["omarchy-theme-bg-boot-intro", "--prepare-theme", root.nameForPath(root.currentPath())]
         introPrepare.running = true

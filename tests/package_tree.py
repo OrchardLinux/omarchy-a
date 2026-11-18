@@ -35,8 +35,9 @@ def inputs(base):
     for name in ('wvkbd-mobintl', 'wtype'):
         (build / name).write_bytes(elf())
     (build / 'wtype.LICENSE').write_text('MIT\n')
-    (upstream / 'themes/osaka-jade/backgrounds').mkdir(parents=True)
-    (upstream / 'themes/osaka-jade/colors.toml').write_text('foreground = "#ffffff"\n')
+    (upstream / 'themes/jade-horse/backgrounds').mkdir(parents=True)
+    (upstream / 'themes/jade-horse/backgrounds/01-mountain-horses.webp').write_bytes(b'RIFF\0\0\0\0WEBP')
+    (upstream / 'themes/jade-horse/colors.toml').write_text('foreground = "#d4e0d0"\n')
     (upstream / 'themes/tokyo-night').mkdir(parents=True)
     (upstream / 'themes/tokyo-night/colors.toml').write_text('foreground = "#c0caf5"\n')
     outside = base / 'outside-theme'

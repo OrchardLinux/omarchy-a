@@ -20,7 +20,7 @@ project=$(dirname "$here")
 shell=$here/shell config=$here/configuration
 omarchy=$root/usr/share/omarchy
 for input in "$build/wvkbd-mobintl" "$build/wtype" "$build/wtype.LICENSE" "$upstream/themes" \
-    "$upstream/applications/foot.desktop" "$dbus_next/dbus_next/__init__.py"; do
+    "$upstream/themes/jade-horse/colors.toml" "$upstream/applications/foot.desktop" "$dbus_next/dbus_next/__init__.py"; do
   [[ -e $input ]] || { echo "Missing input: $input" >&2; exit 1; }
 done
 umask 022
@@ -47,17 +47,15 @@ greeter=$root/usr/share/omarchy-greeter
 mkdir -p "$greeter"
 cp -R "$here/greeter/." "$greeter/"
 cp -R "$shell/shell/Commons" "$shell/shell/Ui" "$greeter/"
-for name in LockView.qml LockFeedSurface.qml; do
+for name in LockView.qml; do
   put "$shell/shell/plugins/lock/$name" "$greeter/plugins/lock/$name"
 done
 chmod 755 "$greeter/labwc/autostart"
 put "$here/greeter/greeter-session" "$root/usr/libexec/omarchy-greeter-session" 755
 
-# Upstream's themes at the pin, with this repository's Jade Horse in place of Osaka Jade.
+# Upstream's themes at the pin. Jade Horse, upstream's default, is the tablet's
+# first theme and the greeter's fallback.
 cp -RP "$upstream/themes" "$omarchy/themes"
-rm -rf "$omarchy/themes/osaka-jade"
-mkdir -p "$omarchy/themes/jade-horse"
-cp -R "$here/themes/jade-horse/." "$omarchy/themes/jade-horse/"
 theme=$omarchy/themes/jade-horse
 put "$theme/colors.toml" "$greeter/default-theme/colors.toml"
 [[ ! -f $theme/shell.toml ]] || put "$theme/shell.toml" "$greeter/default-theme/shell.toml"

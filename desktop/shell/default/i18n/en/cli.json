@@ -1,11 +1,15 @@
 {
+  "system.firmwareFailed": "Reboot to BIOS failed",
+  "system.firmwareRetry": "Could not reboot into the firmware setup. This machine may not support it.",
   "system.loggingOut": "Logging out",
   "system.logoutFailed": "Logout failed",
   "system.logoutRetry": "Could not complete logout. Please try again.",
   "system.rebootFailed": "Reboot failed",
   "system.rebootRetry": "Could not complete reboot. Please try again.",
   "system.rebooting": "Rebooting",
+  "system.rebootingToFirmware": "Rebooting to BIOS",
   "system.shutdownFailed": "Shutdown failed",
   "system.shutdownRetry": "Could not complete shutdown. Please try again.",
-  "system.shuttingDown": "Shutting down"
+  "system.shuttingDown": "Shutting down",
+  "theme.noBackground": "No background was found for theme"
 }

@@ -17,10 +17,31 @@ if [[ ! -f $BACKGROUND ]]; then
   exit 1
 fi
 
-# Create symlink to the new background media
-ln -nsf "$BACKGROUND" "$CURRENT_BACKGROUND_LINK"
+# A theme switch repoints the background too, so the two take turns.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/omarchy-theme-set.lock"
+flock 9
 
-# Update the live shell background when it is running. Nothing watches the
-# symlink, so this is how the shell learns of the new background.
-omarchy-shell -q background set "$BACKGROUND"
-if command -v omarchy-greeter-theme-publish >/dev/null; then omarchy-greeter-theme-publish || true; fi
+# Orchard: upstream finds the background's intro video here; the tablet has
+# no intros (and no omarchy-theme-bg-boot-intro), so the switch has none.
+INTRO=""
+if command -v omarchy-theme-bg-boot-intro >/dev/null; then
+  INTRO=$(omarchy-theme-bg-boot-intro --resolve-enabled "$BACKGROUND")
+fi
+
+# The shell sequences the change, with the intro or the ordinary transition,
+# and repoints the link itself once nothing on screen can flash.
+if [[ $(omarchy-shell shell switchBackground "$BACKGROUND" "$INTRO" 2>/dev/null) != "ok" ]]; then
+  ln -nsf "$BACKGROUND" "$CURRENT_BACKGROUND_LINK"
+  omarchy-shell -q background set "$BACKGROUND"
+fi
+
+# Orchard: the greeter shows the same background. The shell repoints the link
+# once its transition is done, so publish after that (bounded: a stuck shell
+# still publishes).
+if command -v omarchy-greeter-theme-publish >/dev/null; then
+  for _ in {1..100}; do
+    [[ $(readlink "$CURRENT_BACKGROUND_LINK") != "$BACKGROUND" ]] || break
+    sleep 0.1
+  done
+  omarchy-greeter-theme-publish || true
+fi

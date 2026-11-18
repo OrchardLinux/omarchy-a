@@ -49,14 +49,13 @@ class GreeterStagingTests(unittest.TestCase):
         self.assertEqual((greeter / 'plugins/lock/LockView.qml').read_bytes(),
                          (HERE / 'shell/shell/plugins/lock/LockView.qml').read_bytes())
         self.assertTrue((greeter / 'Commons/Color.qml').is_file())
-        jade = HERE / 'themes/jade-horse'
+        # Upstream's Jade Horse is the default theme and the greeter's fallback.
+        themes = omarchy / 'themes'
+        jade = themes / 'jade-horse'
         self.assertEqual((greeter / 'default-theme/background').read_bytes(),
                          (jade / 'backgrounds/01-mountain-horses.webp').read_bytes())
         self.assertEqual((greeter / 'default-theme/colors.toml').read_bytes(), (jade / 'colors.toml').read_bytes())
-        themes = omarchy / 'themes'
-        self.assertFalse((themes / 'osaka-jade').exists())
         self.assertTrue((themes / 'tokyo-night/colors.toml').is_file())
-        self.assertEqual((themes / 'jade-horse/icons.theme').read_text().strip(), 'Yaru-sage')
         first_theme = (target / 'usr/libexec/arch-ipad-first-theme').read_text()
         self.assertIn('themes/jade-horse', first_theme)
         self.assertIn("'jade-horse' >", first_theme)
