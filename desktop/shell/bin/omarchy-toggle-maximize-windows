@@ -1,25 +1,49 @@
 #!/bin/bash
 
 # omarchy:summary=Open new windows maximized, or not
-# The rule lives in a labwc config that the session merges (labwc -m) before
-# ~/.config/labwc/rc.xml, so updates that replace rc.xml keep it. Off by default.
+# On by default: a tablet's windows fill its screen. Turned off, the
+# maximize-windows-off flag says so. The rule lives in a labwc config that the
+# session merges (labwc -m) before ~/.config/labwc/rc.xml, so updates that
+# replace rc.xml keep it; login writes it for the current choice (--apply).
+# About (org.omarchy.about) and Omacalc keep their own size, which fits what
+# they show.
+#
+#   omarchy-toggle-maximize-windows           switch it, and reload labwc
+#   omarchy-toggle-maximize-windows --apply   write the rule for the current choice
 set -euo pipefail
-flag=$HOME/.local/state/omarchy/toggles/maximize-windows
+toggles=$HOME/.local/state/omarchy/toggles
+off=$toggles/maximize-windows-off
 rules=$HOME/.local/state/omarchy/xdg-config/labwc/rc.xml
-mkdir -p "${flag%/*}" "${rules%/*}"
-if [[ -e $flag ]]; then
-  rm -f "$flag" "$rules"
-else
+
+apply() {
+  # The flag for "on" from when it was off by default.
+  rm -f "$toggles/maximize-windows"
+  if [[ -e $off ]]; then
+    rm -f "$rules"
+    return
+  fi
+  mkdir -p "${rules%/*}"
   cat >"$rules.tmp" <<'XML'
 <?xml version="1.0"?>
 <labwc_config>
   <windowRules>
     <windowRule identifier="*"><action name="Maximize" /></windowRule>
+    <windowRule identifier="org.omarchy.about"><action name="UnMaximize" /></windowRule>
+    <windowRule identifier="omacalc"><action name="UnMaximize" /></windowRule>
   </windowRules>
 </labwc_config>
 XML
   mv "$rules.tmp" "$rules"
-  : >"$flag"
-fi
+}
+
+case ${1:-} in
+  --apply) apply; exit 0 ;;
+  '') ;;
+  *) echo 'Usage: omarchy-toggle-maximize-windows [--apply]' >&2; exit 2 ;;
+esac
+
+mkdir -p "$toggles"
+if [[ -e $off ]]; then rm -f "$off"; else : >"$off"; fi
+apply
 labwc=${LABWC_PID:-$(pgrep -u "$(id -u)" -x labwc | head -1 || true)}
 [[ -z $labwc ]] || kill -HUP "$labwc"
