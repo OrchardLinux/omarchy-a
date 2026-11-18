@@ -117,12 +117,13 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 | `lock-ok`, `lock-failed` | the shell's answer to the lock request |
 | `playing`, `not-playing` | playback check, once a second while dark |
 | `sleep-signal` | logind `PrepareForSleep(true)`, someone else's suspend |
-| `sleep-ended` | `systemd-suspend.service` finished, or `PrepareForSleep(false)` |
+| `sleep-ended` | logind's `PrepareForSleep(false)`, or `systemd-suspend.service` finished; the kernel's `suspend_stats` say how it went |
 | `sleep-aborted` | as `sleep-ended`, but `suspend_stats` counted only failed kernel attempts |
-| `suspend-refused` | `CanSuspend` is not yes: this board cannot sleep |
+| `suspend-refused` | `CanSuspend` is not yes, `na` or `no`: not now, asked again after `RETRY_SECONDS` (60 s) |
+| `suspend-unavailable` | `CanSuspend` is `na` or `no`: this board cannot sleep |
 | `suspend-blocked` | a block inhibitor appeared just before asking |
 | `suspend-busy` | a wakeup event was in progress at the `wakeup_count` handshake, or the request failed |
-| `timeout` | the suspend never happened (30 s of running time) |
+| `timeout` | the suspend never began: no `PrepareForSleep(true)`, no kernel attempt, in 30 s awake |
 
 **Playing** means: logind reports a **block** inhibitor for `sleep`
 (`BlockInhibited`; also what a package update or a test takes), or PipeWire
@@ -155,7 +156,8 @@ restart the settle timer. Explicit locking is never undone by grace.
 | `SUSPENDING` | `power`, `home`, `wake` | `ON` | light at once; the sleep ends or aborts by itself |
 | `SUSPENDING` | `sleep-ended` | `SETTLING` | stay dark, arm settle: no button woke it (charger, alarm, abort) |
 | `SUSPENDING` | `sleep-aborted` | `SETTLING` | as `sleep-ended`; from the third in a row, arm the 10 min backoff instead of settle |
-| `SUSPENDING` | `suspend-refused` | `DARK` | until a press |
+| `SUSPENDING` | `suspend-refused` | `SETTLING` | retry in 60 s, dark and locked |
+| `SUSPENDING` | `suspend-unavailable` | `DARK` | until a press; no retry |
 | `SUSPENDING` | `suspend-blocked` | `DARK` | as playing; `not-playing` settles again |
 | `SUSPENDING` | `suspend-busy` | `SETTLING` | try again after the settle time |
 | `SUSPENDING` | `timeout` | `SETTLING` | try again after the settle time |
@@ -194,7 +196,8 @@ instant, and sleep only follows 10 s after the last one left it dark.
 | Lock screen idle → dark | 30 s | the lock's blank timer, sent as `idle` |
 | Greeter idle → dark | 30 s | `IdleMonitor` in the greeter's `shell.qml` |
 | Playback check | 1 s, only while dark | `SETTLING` is longer, so it is seen first |
-| Suspend timeout | 30 s of running time | counted in loop ticks |
+| Suspend never began | 30 s awake | time the loop ran: a gap between two turns counts at most 1 s; once logind or the kernel began the sleep, only its end ends it (last resort: 120 s awake) |
+| Retry of a refused sleep | 60 s | `RETRY_SECONDS`; not when `CanSuspend` says the board cannot sleep |
 | Backoff after aborted sleeps | 10 min | from the third kernel abort in a row with nothing pressed |
 
 `CLOCK_MONOTONIC` stops in a sleep, and so do kernel and journal times; the log's
@@ -202,8 +205,17 @@ instant, and sleep only follows 10 s after the last one left it dark.
 are both taken after the clock runs again, so `press_to_lit_ms` holds.
 
 If logind starts again it may have forgotten the delay inhibitor, so the daemon
-takes a new one when it sees logind take its name. The end of a sleep does not
-depend on logind: it is the end of `systemd-suspend`.
+takes a new one when it sees logind take its name. The end of a sleep is logind's
+`PrepareForSleep(false)` or the end of `systemd-suspend`, whichever is seen first
+(the unit's inactive state counts only once it ran or the kernel attempted the
+sleep). logind refuses a delay inhibitor until its `PrepareForSleep(false)`
+("The operation inhibition has been requested for is already running"), so the
+inhibitor is taken after that, or 5 s after the end of `systemd-suspend` if logind's
+end is never seen.
+
+Every write to the backlight is a kernel uevent (`backlight_generate_event`) on the
+socket the daemon watches for chargers, so a fade writes once a frame; writing on
+every turn of the loop made each write wake the loop for the next one.
 
 Later: long press for a power menu. Until then a long press is a press.
 
@@ -215,13 +227,15 @@ event's own time (the kernel's for keys):
 ```
 t=245.310114 power: SUSPENDING -> ON cancel-suspend light woke
 wake from=ASLEEP-or-entering press=245.310114 lit=245.318402 press_to_lit_ms=8.3
-sleep-ended result=slept seconds=46.012 wakeup_irq=78
+sleep-ended result=slept seconds=46.012 wakeup_irq=78 end=logind awake=2.4
 ```
 
 `wake from=SETTLING` (or `DARK`) means it never slept: instant by design.
 `from=ASLEEP-or-entering` followed by `result=slept` was a real sleep of that
 length; `result=aborted` means the press came while it was entering sleep.
-`press_to_lit_ms` runs from the wake press, so it includes the kernel's resume,
+`end=` names what ended it (`logind`, `unit`, or `none` for the 120 s last resort)
+and `awake=` the time the daemon ran since the sleep began. `suspend did not happen`
+means it never began. `press_to_lit_ms` runs from the wake press, so it includes the kernel's resume,
 and ends at the start of the brightness transition. Full target brightness is
 reached over 240 ms; the loop continues to service wake inputs throughout.
 What the panel shows is the last frame; the lock screen's own update follows
