@@ -25,7 +25,8 @@ Every change carries a comment at the place it differs (`// Orchard:`,
 `bin/omarchy` (only `version`, `update`, `migrate`, `hook install`),
 `omarchy-theme-set` (theme switch backend), `omarchy-launch-about`,
 `omarchy-capture-screenshot` (grim), `omarchy-brightness-display`,
-`omarchy-hyprland-monitor-scaling` and `-persist` (wlr-randr),
+`omarchy-monitor-state`, `omarchy-hyprland-monitor-scaling` and `-persist`
+(wlr-randr),
 `omarchy-hyprland-window-close-all` and `omarchy-launch-or-focus` (the shell
 over wlr-foreign-toplevel), `omarchy-system` (logout ends labwc),
 `omarchy-system-lock` and `-wake` (omarchy-powerd owns the screen),
@@ -39,9 +40,15 @@ gum), `omarchy-dev-add-migration`, `omarchy-toggle-bar`,
 apps need Chromium).
 
 **Changed for touch and the tablet in the shell.**
-The Display panel (`panels/monitor/Panel.qml`: brightness, auto-brightness,
-scale, rotation lock, Stay Awake) and the Power panel (`panels/power/`: the
-iPad's charging, which a UPower state alone misreports) are our own. Smaller
+The Display panel is upstream's with three more rows (auto-brightness,
+rotation lock, Stay Awake); its commands run on labwc (`omarchy-monitor-state`
+reads wlr-randr, `omarchy-brightness-display` takes upstream's `--monitor`),
+the iPad's `Unknown-1` connector counts as the built-in display, and the
+rotate menu stays shut (the screen turns with the iPad), as do the resolution
+and refresh rows (no labwc command; an iPad's panel has one mode). Upstream's text size
+slider ships unchanged. The Power panel is upstream's reading the iPad's
+battery as it is: charging from the battery's own state, the charger from
+sysfs, no rotating phrases, scrolling on short screens. Smaller
 changes: the bar (narrow-bar pages, a hidden bar unmaps because labwc never
 brings back a parked layer surface, no drag-reorder by finger, and its surface
 is only the strip: upstream spans the screen so Hyprland cannot pull a dragged

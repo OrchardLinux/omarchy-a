@@ -310,9 +310,15 @@ function sameLayout(a, b) {
 // What to call a display: the built-in panel by what it is, since laptops
 // report a panel code as its model, and any other by its model, else its make,
 // else its connector.
+// The built-in panel, by its connector. Orchard: an iPad's panel is
+// "Unknown-1", since its display driver reports no connector type.
+function isBuiltIn(name) {
+  return /^(eDP|LVDS|DSI|Unknown)-/.test(String(name || ""))
+}
+
 function displayTitle(display, builtInLabel) {
   var name = String((display && display.name) || "")
-  if (/^(eDP|LVDS|DSI)-/.test(name)) return builtInLabel || "Built-in Display"
+  if (isBuiltIn(name)) return builtInLabel || "Built-in Display"
   var model = String(display.model || "").trim()
   if (model && !/^(0x)?[0-9a-f]+$/i.test(model)) return model
   return String(display.make || "").trim() || name
@@ -376,6 +382,7 @@ function parseDisplays(raw) {
 if (typeof module !== "undefined") {
   module.exports = {
     clampBrightness: clampBrightness,
+    isBuiltIn: isBuiltIn,
     normalizeScale: normalizeScale,
     cleanScale: cleanScale,
     matchingScaleIndex: matchingScaleIndex,

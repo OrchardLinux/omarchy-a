@@ -1,4 +1,5 @@
 {
+  "display.restartFootForFontSize": "Restart Foot to apply the new terminal font size",
   "system.firmwareFailed": "Reboot to BIOS failed",
   "system.firmwareRetry": "Could not reboot into the firmware setup. This machine may not support it.",
   "system.loggingOut": "Logging out",

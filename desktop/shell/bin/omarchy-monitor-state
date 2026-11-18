@@ -1,0 +1,49 @@
+#!/bin/bash
+
+# omarchy:summary=Print monitor panel state for the shell
+# omarchy:group=monitor
+
+# Labwc port of upstream Omarchy's command: the same lines for the Display
+# panel, read from `wlr-randr --json` instead of `hyprctl monitors`. Labwc has
+# no focused output, so the first enabled one stands in (a tablet has one), and
+# nothing mirrors (the mirror lines stay empty). The one backlight is the
+# built-in panel's (omarchy-brightness-display).
+
+set -o pipefail
+
+monitors_json=$(wlr-randr --json 2>/dev/null | jq '
+  def transform: {"normal":0,"90":1,"180":2,"270":3,"flipped":4,"flipped-90":5,"flipped-180":6,"flipped-270":7}[. // "normal"] // 0;
+  [.[] | ((.modes // []) | map(select(.current)) | .[0]) as $mode
+   | {name, make: (.make // ""), model: (.model // ""), disabled: (.enabled != true),
+      width: ($mode.width // 0), height: ($mode.height // 0),
+      physicalWidth: (.physical_size.width // 0), physicalHeight: (.physical_size.height // 0),
+      refreshRate: ($mode.refresh // 0), scale: (.scale // 1),
+      x: (.position.x // 0), y: (.position.y // 0), transform: (.transform | transform),
+      mirrorOf: "none",
+      availableModes: [(.modes // [])[] | "\(.width)x\(.height)@\(.refresh * 100 | round / 100)Hz"]}]
+  | (map(select(.disabled != true))[0].name // "") as $focused
+  | map(.focused = (.name == $focused))
+') || monitors_json='[]'
+focused_monitor=$(jq -r '[.[] | select(.focused)][0].name // ""' <<<"$monitors_json")
+
+brightness=$(omarchy-brightness-display 2>/dev/null | head -n 1)
+echo "$brightness"
+
+jq -r '
+  def internal: test("^(eDP|LVDS|DSI|Unknown)-");
+  ([.[] | select(.name | internal)][0].name // ""),
+  ([.[] | select((.name | internal) | not)][0].name // ""),
+  ([.[] | select((.name | internal) and .disabled != true)][0].name // ""),
+  ""
+' <<<"$monitors_json"
+
+printf '%s\n' "$focused_monitor"
+"${0%/*}/omarchy-hyprland-monitor-scaling" 2>/dev/null || echo
+
+jq -c --arg focused "$focused_monitor" --arg brightness "$brightness" '
+  [.[] | {name, make, model, enabled: (.disabled != true), focused, width, height, physicalWidth, physicalHeight,
+          refreshRate, scale, x, y, transform, mirrorOf, availableModes,
+          brightness: (if .name == $focused and ($brightness | test("^[0-9]+$")) then ($brightness | tonumber) else null end)}]
+' <<<"$monitors_json"
+
+echo
