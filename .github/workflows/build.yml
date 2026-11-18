@@ -235,10 +235,17 @@ jobs:
         if: inputs.reuse_run_id == ''
         env:
           ORCHARD_CHECKOUT: ${{ github.workspace }}/.orchard
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # The version is the last release tag; the checkout brings the
-          # history but not necessarily its tags (fetch-tags: false).
-          git fetch --quiet --force --tags origin
+          # The package's version: this tag, or between releases the last
+          # release's (what release.package reads from git where it has one).
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            OMARCHY_A_VERSION=${GITHUB_REF_NAME#v}
+          else
+            OMARCHY_A_VERSION=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+            OMARCHY_A_VERSION=${OMARCHY_A_VERSION#v}
+          fi
+          export OMARCHY_A_VERSION
           python -m release.package --output out/package --architecture aarch64
       - name: Build the signed Arch root filesystem
         if: inputs.reuse_run_id == ''
