@@ -2856,7 +2856,10 @@ Item {
     // moment its poof starts, though its entry stays in the layout until
     // the poof has played.
     readonly property bool removalPending: root.isPendingRemoval(widgetKey)
-    readonly property bool panelOpen: root.activePopout === slot.activeItem
+    // Orchard: only an open panel counts. While a slot's widget is still
+    // loading both sides are null, which lit every open-panel mark for a
+    // moment each time the bar was built (on labwc, each time it is shown).
+    readonly property bool panelOpen: !!root.activePopout && root.activePopout === slot.activeItem
     // Modules bigger than the mark they want (a text label in a padded slot,
     // a multi-line stack on a vertical bar) can say how long the open-panel
     // dot should be along the bar, so it tracks what the module paints
