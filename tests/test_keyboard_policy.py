@@ -101,6 +101,17 @@ class KeyboardPolicyTests(unittest.TestCase):
         self.facts('press', TAP, 'field on 1')
         self.assertEqual(self.calls, ['show'])
 
+    def test_a_window_opened_to_read_after_a_tap_does_not_open_it(self):
+        # About: the menu tap starts a terminal whose text input comes on at once.
+        self.facts('press', TAP)
+        self.policy.person('quiet')
+        self.facts('field on 1')
+        self.assertEqual(self.calls, [])
+        # A tap in that window still opens it.
+        self.wait(1)
+        self.facts('press', TAP)
+        self.assertEqual(self.calls, ['show'])
+
     def test_a_tap_that_moves_focus_off_a_version_1_field_does_not(self):
         self.facts('field on 1', 'press', 'field off', TAP)
         self.wait(1)
