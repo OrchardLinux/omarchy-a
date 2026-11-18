@@ -83,10 +83,10 @@ class KeyboardPolicyTests(unittest.TestCase):
         self.facts('press', TAP, 'show', 'field on 2')  # Folio: the path label becomes a field
         self.assertEqual(self.calls, ['show'])
 
-    def test_a_request_long_before_its_field_is_not(self):
-        self.facts('press', TAP, 'show')
+    def test_a_request_long_after_a_tap_is_not(self):
+        self.facts('press', TAP)
         self.wait(1)
-        self.facts('field on 2')
+        self.facts('show', 'field on 2')          # an app asking by itself later
         self.assertEqual(self.calls, [])
 
     def test_a_tap_in_a_version_1_field_opens_it(self):
@@ -142,17 +142,46 @@ class KeyboardPolicyTests(unittest.TestCase):
         # Qt is not told of the swipe; the field asks hide-then-show to be heard.
         self.facts('field on 2', 'press', 'show')
         self.policy.person('hide')
+        self.shown = False  # the swipe put it away
         self.calls.clear()
         self.wait(1)
         self.facts('press', 'hide', 'show')
         self.wait(1)
         self.assertEqual(self.calls, ['show'])
 
+    def test_tapping_the_same_field_again_after_it_closed_on_its_own_opens_it(self):
+        # Qt with the focus fix: tapping outside turns the field off; Qt still
+        # thinks the keyboard is up and asks nothing on the next tap.
+        self.facts('press', 'field on 2', TAP, 'show')
+        self.facts('press', 'field off', TAP)
+        self.wait(1)
+        self.facts('press', 'field on 2', TAP)
+        self.wait(1)
+        self.assertEqual(self.calls, ['show', 'hide', 'show'])
+
+    def test_a_request_after_a_tap_opens_it_before_qt_enables_its_field(self):
+        # Qt 6.12 on a field tapped again: show at once, the enable only with
+        # the next press, and disabled again right after.
+        self.facts('press', 'field on 2', TAP, 'show')
+        self.facts('press', 'field off', TAP)
+        self.wait(1)
+        self.facts('press', TAP, 'show')
+        self.wait(1)
+        self.assertEqual(self.calls, ['show', 'hide', 'show'])
+        self.facts('press', 'field on 2', 'field off', TAP)
+        self.wait(1)
+        self.assertEqual(self.calls, ['show', 'hide', 'show', 'hide'])
+
+    def test_a_field_focused_after_the_finger_lifts_does_not_open_it(self):
+        self.facts('press', TAP, 'field on 2')     # a click handler focusing a field
+        self.wait(1)
+        self.assertEqual(self.calls, [])
+
     def test_hide_then_show_at_once_does_not_blink_an_open_keyboard(self):
         self.facts('field on 2', 'press', 'show')
         self.facts('press', 'hide', 'show')
         self.wait(1)
-        self.assertEqual(self.calls, ['show', 'show'])
+        self.assertEqual(self.calls, ['show'])  # still up, not shown twice
 
     def test_one_the_person_opened_stays_when_the_field_goes(self):
         self.facts('field on 2')
@@ -165,6 +194,7 @@ class KeyboardPolicyTests(unittest.TestCase):
     def test_one_the_person_put_away_stays_away_until_the_next_tap(self):
         self.facts('field on 2', 'press', 'show')
         self.policy.person('hide')
+        self.shown = False  # the swipe put it away
         self.wait(1)
         self.facts('show', 'field off', 'field on 2')
         self.wait(1)

@@ -114,6 +114,7 @@ class Policy:
         self.asked_until = 0.0    # an app asked before its field came on
         self.hide_at = None
         self.hide_asked = False   # the app asked to hide; held back like a field going off
+        self.pressing = False     # a finger is down on the focused surface
         self.opened_here = False
         self.hardware = False     # typing on a physical keyboard
         self.keyboards = 0
@@ -124,7 +125,8 @@ class Policy:
         if self.hardware:
             return
         self.opened_here = True
-        self._show()
+        if not self._visible():  # a field taking focus and the app asking are one tap
+            self._show()
 
     def _close(self):
         self.hide_at, self.hide_asked = None, False
@@ -137,18 +139,23 @@ class Policy:
         words = line.split()
         if words[:2] == ["field", "on"] and len(words) == 3 and words[2].isdigit():
             self.field, self.hide_at = int(words[2]), None
-            if now < self.asked_until or (self.field < 2 and now < self.tapped_until):
+            # A field that takes focus while the finger is down was tapped,
+            # whatever version: Qt does not ask again for a keyboard it
+            # thinks is still up, after one that closed on its own.
+            if now < self.asked_until or (self.pressing and now < self.touched_until) \
+                    or (self.field < 2 and now < self.tapped_until):
                 self._open()
         elif words == ["field", "off"]:
             self.field = 0
             if self.opened_here:
                 self.hide_at = now + self.HIDE_DELAY
         elif words == ["show"]:
+            # Asked for right after a touch: Qt asks only for a text item it
+            # focused, and may enable its text input only at the next input
+            # event (a field tapped again after focus went elsewhere), so the
+            # request is enough. The keyboard types through key presses.
             if now < self.touched_until:
-                if self.field:
-                    self._open()
-                else:
-                    self.asked_until = now + self.SHOW_WAIT
+                self._open()
         elif words == ["hide"]:
             # Held back a moment: an app that asks to hide and show again at
             # once (to be heard after the person put the keyboard away) must
@@ -157,7 +164,9 @@ class Policy:
                 self.hide_at, self.hide_asked = now + self.HIDE_DELAY, True
         elif words == ["press"]:
             self.touched_until = now + self.TOUCH_WINDOW
+            self.pressing = True
         elif words[:1] == ["release"] and len(words) == 3 and words[1].isdigit() and words[2].isdigit():
+            self.pressing = False
             if int(words[1]) <= self.TAP_MS and int(words[2]) <= self.TAP_PX:
                 self.touched_until = self.tapped_until = now + self.TOUCH_WINDOW
                 if 0 < self.field < 2:
