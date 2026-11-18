@@ -292,7 +292,8 @@
   "install.style": {"icon":"","label":"Style"},
   "install.style.theme": {"icon":"󰸌","label":"Theme","action":"omarchy-launch-floating-terminal-with-presentation omarchy-theme-install"},
   "install.style.background": {"icon":"","label":"Background","action":"omarchy-theme-bg-install"},
-  "install.style.icons": {"icon":"󰠱","label":"Icons","action":"omarchy-launch-floating-terminal-with-presentation omarchy-icons-install"},
+  // Orchard: installing and removing icon sets need gum and git helpers the tablet lacks.
+  "install.style.icons": {"icon":"󰠱","label":"Icons","action":"omarchy-launch-floating-terminal-with-presentation omarchy-icons-install","when":"omarchy-cmd-present omarchy-icons-install"},
   "install.style.font": {"icon":"","label":"Font"},
   "install.style.font.cascadia": {"icon":"","label":"Cascadia Mono","action":"omarchy-install-font 'Cascadia Mono' ttf-cascadia-mono-nerd 'CaskaydiaMono Nerd Font'"},
   "install.style.font.meslo": {"icon":"","label":"Meslo LG Mono","action":"omarchy-install-font 'Meslo LG Mono' ttf-meslo-nerd 'MesloLGL Nerd Font'"},
@@ -388,7 +389,8 @@
   "remove.service": {"icon":"","label":"Services","title":"Remove"},
   "remove.development": {"icon":"󰵮","label":"Development","title":"Remove"},
   "remove.theme": {"icon":"󰸌","label":"Theme","action":"omarchy-theme-remove"},
-  "remove.icons": {"icon":"󰠱","label":"Icons","action":"omarchy-icons-remove"},
+  // Orchard: installing and removing icon sets need gum and git helpers the tablet lacks.
+  "remove.icons": {"icon":"󰠱","label":"Icons","action":"omarchy-icons-remove","when":"omarchy-cmd-present omarchy-icons-remove"},
   "remove.gaming": {"icon":"","label":"Gaming","title":"Remove"},
   "remove.browser": {"icon":"","label":"Browser","title":"Remove"},
   "remove.webapp": {"icon":"","label":"Web App","when":"grep -qE '^Exec=.*(omarchy-launch-webapp|omarchy-webapp-handler)' $HOME/.local/share/applications/*.desktop","action":"omarchy-webapp-remove"},

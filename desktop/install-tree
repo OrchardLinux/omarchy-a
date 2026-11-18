@@ -20,7 +20,7 @@ project=$(dirname "$here")
 shell=$here/shell config=$here/configuration
 omarchy=$root/usr/share/omarchy
 for input in "$build/wvkbd-mobintl" "$build/wtype" "$build/wtype.LICENSE" "$upstream/themes" \
-    "$upstream/themes/jade-horse/colors.toml" "$upstream/applications/foot.desktop" "$dbus_next/dbus_next/__init__.py"; do
+    "$upstream/themes/jade-horse/colors.toml" "$upstream/icons/papercraft" "$upstream/applications/foot.desktop" "$dbus_next/dbus_next/__init__.py"; do
   [[ -e $input ]] || { echo "Missing input: $input" >&2; exit 1; }
 done
 umask 022
@@ -56,6 +56,16 @@ put "$here/greeter/greeter-session" "$root/usr/libexec/omarchy-greeter-session" 
 # Upstream's themes at the pin. Jade Horse, upstream's default, is the tablet's
 # first theme and the greeter's fallback.
 cp -RP "$upstream/themes" "$omarchy/themes"
+# Upstream's app icon sets (Papercraft, the default; Arcade; Original).
+cp -RP "$upstream/icons" "$omarchy/icons"
+# Our drawings for the tablet's own apps, in upstream's sets: Firefox, the
+# default browser, which upstream's sets do not draw.
+cp -R "$here/icons/." "$omarchy/icons/"
+# Omactivity, the task manager, takes the drawing of the role it fills in
+# upstream's launcher: Activity (btop).
+for set in "$omarchy"/icons/*/; do
+  if [[ -f $set/btop.svg.tpl && ! -e $set/omactivity.svg.tpl ]]; then ln -s btop.svg.tpl "$set/omactivity.svg.tpl"; fi
+done
 theme=$omarchy/themes/jade-horse
 put "$theme/colors.toml" "$greeter/default-theme/colors.toml"
 [[ ! -f $theme/shell.toml ]] || put "$theme/shell.toml" "$greeter/default-theme/shell.toml"

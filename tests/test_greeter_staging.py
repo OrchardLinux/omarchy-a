@@ -56,6 +56,13 @@ class GreeterStagingTests(unittest.TestCase):
                          (jade / 'backgrounds/01-mountain-horses.webp').read_bytes())
         self.assertEqual((greeter / 'default-theme/colors.toml').read_bytes(), (jade / 'colors.toml').read_bytes())
         self.assertTrue((themes / 'tokyo-night/colors.toml').is_file())
+        # Upstream's app icon sets, drawn in the theme's colors at login and on every switch.
+        self.assertTrue((omarchy / 'icons/papercraft/folio.svg.tpl').is_file())
+        for name in ('papercraft', 'arcade'):
+            self.assertEqual((omarchy / 'icons' / name / 'firefox.svg.tpl').read_bytes(),
+                             (HERE / 'icons' / name / 'firefox.svg.tpl').read_bytes())
+        self.assertEqual(os.readlink(omarchy / 'icons/papercraft/omactivity.svg.tpl'), 'btop.svg.tpl')
+        self.assertIn('omarchy-theme-set-icons', (target / 'usr/libexec/arch-ipad-first-theme').read_text())
         first_theme = (target / 'usr/libexec/arch-ipad-first-theme').read_text()
         self.assertIn('themes/jade-horse', first_theme)
         self.assertIn("'jade-horse' >", first_theme)

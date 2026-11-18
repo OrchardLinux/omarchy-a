@@ -9,8 +9,11 @@ means moving both pins together.
 ## What comes from upstream, and how
 
 - **At build time, unchanged:** `themes/` (Jade Horse is the tablet's first
-  theme and the greeter's fallback) and `applications/foot.desktop`, taken from
-  the pinned tarball by `desktop/install-tree`.
+  theme and the greeter's fallback), `icons/` (the app icon sets) and
+  `applications/foot.desktop`, taken from the pinned tarball by
+  `desktop/install-tree`. Our own drawings in `desktop/icons/` join upstream's sets
+  (Firefox, which they do not draw), and Omactivity takes upstream's Activity
+  drawing.
 - **Copied into this repository:** `desktop/shell/` holds upstream's whole
   `shell/` tree and the parts of `bin/`, `default/` and `config/` the tablet
   uses, at the same paths as upstream. Most files are upstream's unchanged; the

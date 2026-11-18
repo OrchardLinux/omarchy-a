@@ -35,6 +35,10 @@ fi
 if [[ -s "$state/theme/kdeglobals.colors" ]]; then
   "$OMARCHY_PATH/bin/omarchy-theme-set-kde" || echo 'Warning: could not update KDE colors' >&2
 fi
+# Upstream's app icon set in the theme's colors, once: a theme switch redraws it.
+if [[ ! -e "$state/icons.revision" ]]; then
+  omarchy-theme-set-icons || echo 'Warning: could not draw the app icons' >&2
+fi
 # Apply the same GTK light/dark and icon settings as upstream Omarchy.
 omarchy-theme-set-gnome || echo 'Warning: could not update GTK theme settings' >&2
 if command -v omarchy-greeter-theme-publish >/dev/null; then omarchy-greeter-theme-publish || true; fi
