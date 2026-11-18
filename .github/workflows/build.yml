@@ -53,9 +53,17 @@ jobs:
           sparse-checkout: ci/nightly
           sparse-checkout-cone-mode: false
       - id: resolve
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          CHOSEN: ${{ inputs.hardware_tag }}
         run: |
           tag="$HARDWARE_TAG"
-          if [[ "$tag" == nightly ]]; then
+          # A release is built on orchard's newest release, never on a nightly:
+          # orchard removes nightlies after 14 days, and the release links its files.
+          if [[ "$REF_TYPE" == tag && -z "$CHOSEN" ]]; then
+            tag=$(curl -fsSL --retry 3 https://api.github.com/repos/OrchardLinux/orchard/releases/latest |
+              python3 -c 'import json, sys; print(json.load(sys.stdin)["tag_name"])')
+          elif [[ "$tag" == nightly ]]; then
             tag=$(curl -fsSL --retry 3 https://github.com/OrchardLinux/orchard/releases/download/nightly/latest.json |
               python3 -c 'import json, sys; print(json.load(sys.stdin)["name"])')
           fi
