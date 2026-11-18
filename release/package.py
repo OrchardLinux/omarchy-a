@@ -158,6 +158,9 @@ if [[ $(id -u) == 0 ]]; then
   # Native CI runs as root, which makepkg refuses.
   id omarchy-a-builder >/dev/null 2>&1 || useradd --system --no-create-home omarchy-a-builder
   chown -R omarchy-a-builder "$ORCHARD_WORK" "$ORCHARD_TMP"
+  # The scratch directory around ORCHARD_TMP is root's and private: the
+  # builder must be able to get through it to its own directories.
+  chown omarchy-a-builder "$(dirname "$ORCHARD_TMP")"
   runuser -u omarchy-a-builder -- makepkg --nodeps --noconfirm
 else
   makepkg --nodeps --noconfirm
