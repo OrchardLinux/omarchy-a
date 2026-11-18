@@ -226,7 +226,11 @@ jobs:
         if: inputs.reuse_run_id == ''
         env:
           ORCHARD_CHECKOUT: ${{ github.workspace }}/.orchard
-        run: python -m release.package --output out/package --architecture aarch64
+        run: |
+          # The version is the last release tag; the checkout brings the
+          # history but not necessarily its tags (fetch-tags: false).
+          git fetch --quiet --force --tags origin
+          python -m release.package --output out/package --architecture aarch64
       - name: Build the signed Arch root filesystem
         if: inputs.reuse_run_id == ''
         env:
