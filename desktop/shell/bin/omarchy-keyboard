@@ -2,6 +2,7 @@
 """Session controller for the theme-matched Wayland keyboard, and its policy.
 
     omarchy-keyboard show|hide|toggle   what the person asks for (swipe up, bar button)
+    omarchy-keyboard quiet              the window opening next was not asked for by a tap
     omarchy-keyboard listen             the policy: reads the compositor's facts on stdin
     omarchy-keyboard restart|run        (re)start the keyboard process itself
 
@@ -187,6 +188,12 @@ class Policy:
 
     def person(self, action):
         """The person opened or closed it (swipe up, bar button)."""
+        if action == "quiet":
+            # A launcher opening a window to read, not to type in (About's
+            # terminal): the tap that started it does not count for the field
+            # its window brings. A tap in the window still opens the keyboard.
+            self.touched_until = self.tapped_until = self.asked_until = 0.0
+            return
         self.opened_here = False
         self.hide_at = None
         if action == "show":
@@ -274,6 +281,8 @@ def main(mode):
     elif mode == "hide":
         hide()
         tell_policy("hide")
+    elif mode == "quiet":
+        tell_policy("quiet")
     elif mode == "listen":
         listen()
     elif mode == "restart":
@@ -289,7 +298,7 @@ def main(mode):
     elif mode == "run":
         run()
     else:
-        raise SystemExit("Usage: omarchy-keyboard [show|hide|toggle|listen|restart|run]")
+        raise SystemExit("Usage: omarchy-keyboard [show|hide|toggle|quiet|listen|restart|run]")
 
 
 if __name__ == "__main__":

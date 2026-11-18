@@ -3,5 +3,8 @@
 # Foot grid is 89x34; keep the real fastfetch readout open at that width.
 set -euo pipefail
 export LC_ALL=${LC_ALL:-C.UTF-8}
+# About is read, not typed in: the tap on its menu entry must not bring up the
+# on-screen keyboard over the details as the terminal's text input comes on.
+omarchy-keyboard quiet 2>/dev/null || true
 exec foot --app-id=org.omarchy.about -W 89x34 -e bash -lc \
   'fastfetch --config "$HOME/.config/fastfetch/config.jsonc"; exec bash -i'
