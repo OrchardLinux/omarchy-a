@@ -12,6 +12,9 @@ labwc
 omafox
 omactivity
 folio-touch
+# Arch's qt6-base with Qt's text-input focus fix (QTBUG-146211), so the on-screen
+# keyboard closes when focus leaves a text field in a Qt app; until Arch ships it.
+qt6-base
 # 64-bit boards: Mesa from OrchardLinux's fork in the place of Arch's (OpenGL through Zink or in
 # software, the GPU's Vulkan driver, the login's GPU probe), and the VA-API bridge to the hardware
 # video decoders. The GPU parts and the bridge sit unused on a board without that hardware.
