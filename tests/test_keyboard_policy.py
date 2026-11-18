@@ -83,10 +83,10 @@ class KeyboardPolicyTests(unittest.TestCase):
         self.facts('press', TAP, 'show', 'field on 2')  # Folio: the path label becomes a field
         self.assertEqual(self.calls, ['show'])
 
-    def test_a_request_long_before_its_field_is_not(self):
-        self.facts('press', TAP, 'show')
+    def test_a_request_long_after_a_tap_is_not(self):
+        self.facts('press', TAP)
         self.wait(1)
-        self.facts('field on 2')
+        self.facts('show', 'field on 2')          # an app asking by itself later
         self.assertEqual(self.calls, [])
 
     def test_a_tap_in_a_version_1_field_opens_it(self):
@@ -158,6 +158,19 @@ class KeyboardPolicyTests(unittest.TestCase):
         self.facts('press', 'field on 2', TAP)
         self.wait(1)
         self.assertEqual(self.calls, ['show', 'hide', 'show'])
+
+    def test_a_request_after_a_tap_opens_it_before_qt_enables_its_field(self):
+        # Qt 6.12 on a field tapped again: show at once, the enable only with
+        # the next press, and disabled again right after.
+        self.facts('press', 'field on 2', TAP, 'show')
+        self.facts('press', 'field off', TAP)
+        self.wait(1)
+        self.facts('press', TAP, 'show')
+        self.wait(1)
+        self.assertEqual(self.calls, ['show', 'hide', 'show'])
+        self.facts('press', 'field on 2', 'field off', TAP)
+        self.wait(1)
+        self.assertEqual(self.calls, ['show', 'hide', 'show', 'hide'])
 
     def test_a_field_focused_after_the_finger_lifts_does_not_open_it(self):
         self.facts('press', TAP, 'field on 2')     # a click handler focusing a field
