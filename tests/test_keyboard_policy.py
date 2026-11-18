@@ -135,7 +135,24 @@ class KeyboardPolicyTests(unittest.TestCase):
 
     def test_the_app_can_close_it(self):
         self.facts('field on 2', 'press', 'show', 'hide')
+        self.wait(0.3)
         self.assertEqual(self.calls, ['show', 'hide'])
+
+    def test_a_tap_after_the_person_put_it_away_opens_it_again(self):
+        # Qt is not told of the swipe; the field asks hide-then-show to be heard.
+        self.facts('field on 2', 'press', 'show')
+        self.policy.person('hide')
+        self.calls.clear()
+        self.wait(1)
+        self.facts('press', 'hide', 'show')
+        self.wait(1)
+        self.assertEqual(self.calls, ['show'])
+
+    def test_hide_then_show_at_once_does_not_blink_an_open_keyboard(self):
+        self.facts('field on 2', 'press', 'show')
+        self.facts('press', 'hide', 'show')
+        self.wait(1)
+        self.assertEqual(self.calls, ['show', 'show'])
 
     def test_one_the_person_opened_stays_when_the_field_goes(self):
         self.facts('field on 2')

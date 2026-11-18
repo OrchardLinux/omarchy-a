@@ -113,20 +113,21 @@ class Policy:
         self.tapped_until = 0.0   # a tap just ended
         self.asked_until = 0.0    # an app asked before its field came on
         self.hide_at = None
+        self.hide_asked = False   # the app asked to hide; held back like a field going off
         self.opened_here = False
         self.hardware = False     # typing on a physical keyboard
         self.keyboards = 0
 
     def _open(self):
         self.touched_until = self.tapped_until = self.asked_until = 0.0
-        self.hide_at = None
+        self.hide_at, self.hide_asked = None, False
         if self.hardware:
             return
         self.opened_here = True
         self._show()
 
     def _close(self):
-        self.hide_at = None
+        self.hide_at, self.hide_asked = None, False
         if self.opened_here:
             self.opened_here = False
             self._hide()
@@ -149,7 +150,11 @@ class Policy:
                 else:
                     self.asked_until = now + self.SHOW_WAIT
         elif words == ["hide"]:
-            self._close()
+            # Held back a moment: an app that asks to hide and show again at
+            # once (to be heard after the person put the keyboard away) must
+            # not make an open keyboard blink.
+            if self.opened_here:
+                self.hide_at, self.hide_asked = now + self.HIDE_DELAY, True
         elif words == ["press"]:
             self.touched_until = now + self.TOUCH_WINDOW
         elif words[:1] == ["release"] and len(words) == 3 and words[1].isdigit() and words[2].isdigit():
@@ -183,9 +188,9 @@ class Policy:
 
     def tick(self):
         if self.hide_at is not None and self.now() >= self.hide_at:
-            if not self.field:
+            if self.hide_asked or not self.field:
                 self._close()
-            self.hide_at = None
+            self.hide_at, self.hide_asked = None, False
 
 
 def tell_policy(action):

@@ -19,6 +19,10 @@ TextInput {
   TapHandler {
     onTapped: {
       root.forceActiveFocus()
+      // Qt asks only when it thinks the keyboard is hidden, and it is not told
+      // when the person swipes it away: hide first, so show asks again. The
+      // policy holds a hide back a moment, so an open keyboard does not blink.
+      Qt.inputMethod.hide()
       Qt.inputMethod.show()
     }
   }
