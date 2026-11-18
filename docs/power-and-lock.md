@@ -119,7 +119,8 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 | `sleep-signal` | logind `PrepareForSleep(true)`, someone else's suspend |
 | `sleep-ended` | logind's `PrepareForSleep(false)`, or `systemd-suspend.service` finished; the kernel's `suspend_stats` say how it went |
 | `sleep-aborted` | as `sleep-ended`, but `suspend_stats` counted only failed kernel attempts |
-| `suspend-refused` | `CanSuspend` is not yes: not now, asked again after `RETRY_SECONDS` (60 s) |
+| `suspend-refused` | `CanSuspend` is not yes, `na` or `no`: not now, asked again after `RETRY_SECONDS` (60 s) |
+| `suspend-unavailable` | `CanSuspend` is `na` or `no`: this board cannot sleep |
 | `suspend-blocked` | a block inhibitor appeared just before asking |
 | `suspend-busy` | a wakeup event was in progress at the `wakeup_count` handshake, or the request failed |
 | `timeout` | the suspend never began: no `PrepareForSleep(true)`, no kernel attempt, in 30 s awake |
@@ -156,6 +157,7 @@ restart the settle timer. Explicit locking is never undone by grace.
 | `SUSPENDING` | `sleep-ended` | `SETTLING` | stay dark, arm settle: no button woke it (charger, alarm, abort) |
 | `SUSPENDING` | `sleep-aborted` | `SETTLING` | as `sleep-ended`; from the third in a row, arm the 10 min backoff instead of settle |
 | `SUSPENDING` | `suspend-refused` | `SETTLING` | retry in 60 s, dark and locked |
+| `SUSPENDING` | `suspend-unavailable` | `DARK` | until a press; no retry |
 | `SUSPENDING` | `suspend-blocked` | `DARK` | as playing; `not-playing` settles again |
 | `SUSPENDING` | `suspend-busy` | `SETTLING` | try again after the settle time |
 | `SUSPENDING` | `timeout` | `SETTLING` | try again after the settle time |
@@ -195,6 +197,7 @@ instant, and sleep only follows 10 s after the last one left it dark.
 | Greeter idle → dark | 30 s | `IdleMonitor` in the greeter's `shell.qml` |
 | Playback check | 1 s, only while dark | `SETTLING` is longer, so it is seen first |
 | Suspend never began | 30 s awake | time the loop ran: a gap between two turns counts at most 1 s; once logind or the kernel began the sleep, only its end ends it (last resort: 120 s awake) |
+| Retry of a refused sleep | 60 s | `RETRY_SECONDS`; not when `CanSuspend` says the board cannot sleep |
 | Backoff after aborted sleeps | 10 min | from the third kernel abort in a row with nothing pressed |
 
 `CLOCK_MONOTONIC` stops in a sleep, and so do kernel and journal times; the log's

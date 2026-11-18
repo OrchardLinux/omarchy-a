@@ -142,6 +142,16 @@ class Scenarios(unittest.TestCase):
         self.assertEqual(machine.handle('suspend-refused'), ['take-inhibitor', 'arm-retry'])
         self.assertIn('light', machine.handle('power'))
 
+    def test_a_board_that_cannot_sleep_stays_dark_until_pressed_without_asking_again(self):
+        machine = asleep()
+        self.assertEqual(machine.handle('suspend-unavailable'), ['take-inhibitor'])
+        self.assertEqual((machine.state, machine.inflight, machine.no_suspend), (DARK, False, True))
+        self.assertEqual(run(machine, 'settle', 'playing', 'not-playing'), [])
+        self.assertEqual(machine.state, DARK)
+        self.assertIn('light', machine.handle('power'))
+        # The next lock asks again: it costs one question, not a freeze.
+        self.assertEqual(run(machine, 'power', 'lock-ok', 'settle'), ['suspend'])
+
     def test_a_board_whose_suspend_keeps_aborting_backs_off_dark_and_locked(self):
         machine = asleep()
         for _ in range(powerd.ABORTS_BEFORE_DARK - 1):
@@ -705,6 +715,18 @@ class SleepAccounting(unittest.TestCase):
         os.write(write, b'er": "x"}\n')
         self.daemon.read_monitor()
         self.assertEqual(seen[-1], '{"member": "x"}')
+
+
+class SuspendRequest(unittest.TestCase):
+    def test_only_a_board_that_cannot_sleep_is_told_from_a_refusal_for_now(self):
+        for answer, event in (('s "na"', 'suspend-unavailable'), ('s "no"', 'suspend-unavailable'),
+                              ('s "challenge"', 'suspend-refused'), ('', 'suspend-refused')):
+            daemon, posted = powerd.Daemon(), []
+            daemon.post = posted.append
+            reply = subprocess.CompletedProcess([], 0, answer + '\n', '')
+            with patch.object(powerd, 'command', return_value=reply), patch.object(powerd, 'log'):
+                daemon.request_suspend()
+            self.assertEqual(posted, [event], answer)
 
 
 class LogindSleep(unittest.TestCase):

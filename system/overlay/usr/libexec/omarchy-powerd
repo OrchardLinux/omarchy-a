@@ -24,12 +24,13 @@ import time
 ON, GRACE, SETTLING, DARK, SUSPENDING = 'ON', 'GRACE', 'SETTLING', 'DARK', 'SUSPENDING'
 STATES = (ON, GRACE, SETTLING, DARK, SUSPENDING)
 EVENTS = ('power', 'home', 'wake', 'idle', 'settle', 'lock-ok', 'lock-failed', 'playing', 'not-playing',
-          'suspend-refused', 'suspend-blocked', 'suspend-busy', 'sleep-signal', 'sleep-ended', 'sleep-aborted', 'timeout',
-          'grace-ended', 'lock')
+          'suspend-refused', 'suspend-unavailable', 'suspend-blocked', 'suspend-busy', 'sleep-signal', 'sleep-ended',
+          'sleep-aborted', 'timeout', 'grace-ended', 'lock')
 IDLE_GRACE_SECONDS = 8.0
 FADE_SECONDS = 0.24
 SETTLE_SECONDS = 10.0
-# A refused sleep is asked for again after this, dark and locked meanwhile.
+# A sleep refused for now is asked for again after this, dark and locked meanwhile.
+# (A board that cannot sleep at all stays DARK until pressed instead.)
 RETRY_SECONDS = 60.0
 # Kernel attempts that aborted in a row, nothing pressed, before it stops asking for a while:
 # a board whose suspend never completes would otherwise freeze for every attempt, every settle.
@@ -123,8 +124,8 @@ class Machine:
         if event == 'sleep-ended':
             self.aborts = 0
         # A suspend ending or failing is bookkeeping unless it is what SUSPENDING waits for.
-        if event in ('sleep-ended', 'sleep-aborted', 'suspend-refused', 'suspend-blocked', 'suspend-busy', 'timeout') \
-                and self.state != SUSPENDING:
+        if event in ('sleep-ended', 'sleep-aborted', 'suspend-refused', 'suspend-unavailable', 'suspend-blocked',
+                     'suspend-busy', 'timeout') and self.state != SUSPENDING:
             if self.inflight:
                 self.inflight = False
                 # Pressed dark again while the last sleep was finishing, and settled since.
@@ -220,6 +221,10 @@ class Machine:
             # for good. Stay dark and locked, and ask again later.
             self.inflight, self.state, self.settle_due = False, SETTLING, False
             return ['take-inhibitor', 'arm-retry']
+        if event == 'suspend-unavailable':
+            # This board cannot sleep: asking again changes nothing. Dark until pressed.
+            self.inflight, self.no_suspend, self.state = False, True, DARK
+            return ['take-inhibitor']
         if event == 'suspend-blocked':
             self.inflight, self.playing, self.state = False, True, DARK
             return ['take-inhibitor']
@@ -832,8 +837,11 @@ class Daemon:
         try:
             answer = command('busctl', 'call', 'org.freedesktop.login1', '/org/freedesktop/login1',
                              'org.freedesktop.login1.Manager', 'CanSuspend').stdout.strip()
-            if answer != 's "yes"':
-                log(f'no suspend: CanSuspend {answer}')
+            if answer in ('s "na"', 's "no"'):
+                log(f'no suspend on this board: CanSuspend {answer}')
+                self.post('suspend-unavailable')
+            elif answer != 's "yes"':
+                log(f'suspend refused for now: CanSuspend {answer}')
                 self.post('suspend-refused')
             elif self.block_inhibited():
                 self.post('suspend-blocked')
