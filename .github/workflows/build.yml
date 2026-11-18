@@ -56,13 +56,14 @@ jobs:
         env:
           REF_TYPE: ${{ github.ref_type }}
           CHOSEN: ${{ inputs.hardware_tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           tag="$HARDWARE_TAG"
           # A release is built on orchard's newest release, never on a nightly:
           # orchard removes nightlies after 14 days, and the release links its files.
           if [[ "$REF_TYPE" == tag && -z "$CHOSEN" ]]; then
-            tag=$(curl -fsSL --retry 3 https://api.github.com/repos/OrchardLinux/orchard/releases/latest |
-              python3 -c 'import json, sys; print(json.load(sys.stdin)["tag_name"])')
+            # With the job's token: the anonymous API is rate-limited on runners.
+            tag=$(gh api repos/OrchardLinux/orchard/releases/latest --jq .tag_name)
           elif [[ "$tag" == nightly ]]; then
             tag=$(curl -fsSL --retry 3 https://github.com/OrchardLinux/orchard/releases/download/nightly/latest.json |
               python3 -c 'import json, sys; print(json.load(sys.stdin)["name"])')
