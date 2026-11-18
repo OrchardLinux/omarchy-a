@@ -51,7 +51,7 @@ class LocalPackages(unittest.TestCase):
         rows = [('mesa', 'm', False, []), ('wlroots0.20', 'w', True, ['mesa']), ('labwc', 'l', True, ['wlroots0.20'])]
         built, asked = self.run_build(rows)
         self.assertEqual(asked[2:], ['local', '--arch', 'aarch64', 'wlroots0.20', 'labwc', 'omafox', 'omactivity',
-                                     'folio-touch', 'mesa', 'libva-v4l2-request'])
+                                     'folio-touch', 'qt6-base', 'mesa', 'libva-v4l2-request'])
         self.assertEqual(list(built), ['wlroots0.20', 'labwc'])
         # labwc builds against the wlroots just built, which its build takes ahead of [orchard]'s.
         self.assertEqual(self.builds, [('wlroots0.20', []), ('labwc', ['wlroots0.20-1.1-1-aarch64.pkg.tar.zst'])])
