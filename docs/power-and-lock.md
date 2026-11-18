@@ -92,7 +92,10 @@ with `inflight`), because the press lights the panel without waiting for it.
 **A dark screen never silently means running indefinitely.** Power enters
 `SETTLING` immediately. Idle first enters `GRACE`, then `SETTLING` if no input
 arrives within eight seconds. Only the reasons listed for `DARK` hold it there. A
-suspend that did not happen is tried again after the settle time.
+suspend that did not happen is tried again after the settle time. After three
+attempts in a row that the kernel aborted with nothing pressed, this boot stops
+asking and stays `DARK` until a press, as on a board without suspend: every
+aborted attempt freezes the tablet for seconds and drops USB.
 
 `ASLEEP` is not a state of the daemon: frozen, it cannot be in one. It is the
 part of `SUSPENDING` it does not run in; the log tells them apart (below).
@@ -113,6 +116,7 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 | `playing`, `not-playing` | playback check, once a second while dark |
 | `sleep-signal` | logind `PrepareForSleep(true)`, someone else's suspend |
 | `sleep-ended` | `systemd-suspend.service` finished, or `PrepareForSleep(false)` |
+| `sleep-aborted` | as `sleep-ended`, but `suspend_stats` counted only failed kernel attempts |
 | `suspend-refused` | `CanSuspend` is not yes: this board cannot sleep |
 | `suspend-blocked` | a block inhibitor appeared just before asking |
 | `suspend-busy` | a wakeup event was in progress at the `wakeup_count` handshake, or the request failed |
@@ -148,6 +152,7 @@ restart the settle timer. Explicit locking is never undone by grace.
 | `DARK` | `lock-failed` | `ON` | light; notify |
 | `SUSPENDING` | `power`, `home`, `wake` | `ON` | light at once; the sleep ends or aborts by itself |
 | `SUSPENDING` | `sleep-ended` | `SETTLING` | stay dark, arm settle: no button woke it (charger, alarm, abort) |
+| `SUSPENDING` | `sleep-aborted` | `SETTLING` | as `sleep-ended`; the third in a row makes every later settle `DARK` instead |
 | `SUSPENDING` | `suspend-refused` | `DARK` | until a press |
 | `SUSPENDING` | `suspend-blocked` | `DARK` | as playing; `not-playing` settles again |
 | `SUSPENDING` | `suspend-busy` | `SETTLING` | try again after the settle time |
