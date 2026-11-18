@@ -69,7 +69,7 @@ and the plugins it turns off).
 **Menu.** `default/omarchy/omarchy-menu.jsonc`: Reboot says it leaves Linux,
 Activity opens Omactivity, Setup > Monitors opens the Display panel, Maximize
 Windows toggles, the Agent section shows only once the agent commands are
-installed. `desktop/install-tree` also points Suspend at the kernel's
+installed, and Screensaver only where a screensaver is. `desktop/install-tree` also points Suspend at the kernel's
 charger PM readiness.
 
 **Translations.** `default/i18n/en/cli.json` holds only the keys of the commands

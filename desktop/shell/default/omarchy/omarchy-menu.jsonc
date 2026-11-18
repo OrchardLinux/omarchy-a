@@ -67,7 +67,8 @@
 
   // System
   "system.about": {"icon":"","label":"About","aliases":["about"],"action":"omarchy-launch-about"},
-  "system.screensaver": {"icon":"󱄄","label":"Screensaver","action":"omarchy-launch-screensaver force"},
+  // Orchard: the tablet has no screensaver (omarchy-launch-screensaver); the entry shows where one is installed.
+  "system.screensaver": {"icon":"󱄄","label":"Screensaver","action":"omarchy-launch-screensaver force","when":"omarchy-cmd-present omarchy-launch-screensaver"},
   "system.lock": {"icon":"","label":"Lock","action":"omarchy-system-lock"},
   "system.suspend": {"icon":"󰒲","label":"Suspend","when":"! omarchy-toggle-enabled suspend-off && ! omarchy-sleep-disabled","action":"systemctl suspend"},
   "system.hibernate": {"icon":"󰤁","label":"Hibernate","when":"omarchy-hibernation-available && ! omarchy-sleep-disabled","action":"systemctl hibernate"},
