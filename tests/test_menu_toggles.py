@@ -32,24 +32,52 @@ class MenuToggleTests(unittest.TestCase):
         self.assertEqual(self.toggle_enabled('bar-off'), 0)
         self.assertEqual(self.toggle_enabled('../x'), 2)
 
-    def test_maximize_windows_round_trip_reloads_labwc(self):
-        flag = self.home / '.local/state/omarchy/toggles/maximize-windows'
+    def assert_maximizes(self, rules):
+        tree = ET.fromstring(rules.read_bytes())
+        found = tree.findall("./windowRules/windowRule[@identifier='*']/action[@name='Maximize']")
+        self.assertEqual(len(found), 1)
+        # About and Omacalc keep the size that fits what they show; their rules come after the one for all.
+        identifiers = [rule.get('identifier') for rule in tree.findall('./windowRules/windowRule')]
+        self.assertEqual(identifiers, ['*', 'org.omarchy.about', 'omacalc'])
+        for app in identifiers[1:]:
+            kept = tree.findall("./windowRules/windowRule[@identifier='%s']/action[@name='UnMaximize']" % app)
+            self.assertEqual(len(kept), 1, app)
+
+    def test_maximize_windows_is_on_until_turned_off(self):
+        off = self.home / '.local/state/omarchy/toggles/maximize-windows-off'
         rules = self.home / '.local/state/omarchy/xdg-config/labwc/rc.xml'
-        for expect_on in (True, False):
+        # Login writes the rule for a person who never chose.
+        result = self.run_bin('omarchy-toggle-maximize-windows', '--apply')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_maximizes(rules)
+        for expect_on in (False, True):
             # Stand-in for labwc: SIGHUP ends a sleep, proving the reload signal.
             labwc = subprocess.Popen(['sleep', '30'])
             self.addCleanup(labwc.kill)
             result = self.run_bin('omarchy-toggle-maximize-windows', LABWC_PID=str(labwc.pid))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(labwc.wait(5), -1)  # SIGHUP
-            self.assertEqual(flag.exists(), expect_on)
-            self.assertEqual(self.toggle_enabled('maximize-windows'), 0 if expect_on else 1)
+            self.assertEqual(off.exists(), not expect_on)
+            self.assertEqual(self.toggle_enabled('maximize-windows-off'), 1 if expect_on else 0)
             self.assertEqual(rules.exists(), expect_on)
             if expect_on:
-                tree = ET.fromstring(rules.read_bytes())
-                found = tree.findall("./windowRules/windowRule[@identifier='*']/action[@name='Maximize']")
-                self.assertEqual(len(found), 1)
+                self.assert_maximizes(rules)
+        # Turned off, a login keeps it off.
+        self.run_bin('omarchy-toggle-maximize-windows')
+        self.run_bin('omarchy-toggle-maximize-windows', '--apply')
+        self.assertFalse(rules.exists())
         self.assertFalse((self.home / '.config').exists())
+
+    def test_the_on_flag_from_before_the_default_goes(self):
+        legacy = self.home / '.local/state/omarchy/toggles/maximize-windows'
+        legacy.parent.mkdir(parents=True)
+        legacy.touch()
+        self.run_bin('omarchy-toggle-maximize-windows', '--apply')
+        self.assertFalse(legacy.exists())
+
+    def test_login_writes_the_maximize_rule_before_labwc_starts(self):
+        session = (PROJECT / 'desktop/configuration/login-session').read_text()
+        self.assertLess(session.index('omarchy-toggle-maximize-windows --apply'), session.index('exec /usr/bin/labwc -m'))
 
     def test_session_merges_the_toggle_config_into_labwc(self):
         # Releases replace ~/.config/labwc/rc.xml, so toggle rules must come from the

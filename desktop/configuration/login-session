@@ -100,6 +100,8 @@ OMARCHY_MIGRATE_LOCK_WAIT=0 timeout 120 omarchy-migrate 2>&1 | logger -t omarchy
 systemctl --user import-environment DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE XDG_CURRENT_DESKTOP
 if [[ -n ${QT_QPA_PLATFORMTHEME:-} ]]; then systemctl --user import-environment QT_QPA_PLATFORMTHEME; fi
 /usr/libexec/arch-ipad-first-theme
+# Windows open maximized unless the person turned that off (Trigger > Toggle).
+omarchy-toggle-maximize-windows --apply || true
 # labwc -m reads labwc/rc.xml from each XDG config dir, then ~/.config/labwc/rc.xml.
 # Menu toggles keep their rules under ~/.local/state, which a release never replaces.
 # Touch follows the panel when it rotates: map the touchscreens to it for this session.
