@@ -141,6 +141,10 @@ fi
 # The home starts as /etc/skel, which the omarchy-a package filled: the tablet
 # user's defaults, and the record that every migration it ships is done.
 useradd --root "$root" --create-home --uid 1000 --user-group --shell /bin/bash tablet
+# useradd --root left the home with only part of /etc/skel in this build
+# container; copy the template whole, owned by the new user.
+cp -a "$root/etc/skel/." "$root/home/tablet/"
+chown -R --no-dereference "$(awk -F: '$1 == "tablet" {print $3 ":" $4}' "$root/etc/passwd")" "$root/home/tablet"
 # Native login needs seatd's socket and DRM/input device access (render: the
 # GPU, video: the hardware video decoder, also over SSH); wheel
 # makes the account polkit's admin, so prompts take its password.
