@@ -11,5 +11,10 @@
   "system.shutdownFailed": "Shutdown failed",
   "system.shutdownRetry": "Could not complete shutdown. Please try again.",
   "system.shuttingDown": "Shutting down",
+  "tailscale.exitNodePaused": "Tailscale exit node paused",
+  "tailscale.exitNodePausedForSignIn": "It comes back once you're signed in",
+  "tailscale.exitNodeRestoreFailed": "Couldn't restore the Tailscale exit node",
+  "tailscale.exitNodeRestoreHint": "Turn it back on with Tailscale",
+  "tailscale.exitNodeRestored": "Tailscale exit node restored",
   "theme.noBackground": "No background was found for theme"
 }

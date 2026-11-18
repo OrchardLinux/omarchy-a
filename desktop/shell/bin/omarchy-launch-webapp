@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# omarchy:summary=Launch a URL as a web app in the default supported browser
+# omarchy:args=<url>
+
+# Labwc port, under upstream's name. Upstream opens the URL as a Chromium app
+# window; the tablet has Firefox only, so it opens in a window of its own there.
+
+exec omarchy-launch-browser --new-window "$1"

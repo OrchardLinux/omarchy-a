@@ -34,7 +34,9 @@ over wlr-foreign-toplevel), `omarchy-system` (logout ends labwc),
 one pacman upgrade of the omarchy-a package, no snapshots, AUR, mise or boot
 verification), `omarchy-launch-floating-terminal-with-presentation` (foot, no
 gum), `omarchy-dev-add-migration`, `omarchy-toggle-bar`,
-`omarchy-toggle-enabled`, `omarchy-menu-images`, `omarchy-bluetooth-device`.
+`omarchy-toggle-enabled`, `omarchy-menu-images`, `omarchy-bluetooth-device`,
+`omarchy-launch-browser` and `omarchy-launch-webapp` (Firefox; upstream's web
+apps need Chromium).
 
 **Changed for touch and the tablet in the shell.**
 The Display panel (`panels/monitor/Panel.qml`: brightness, auto-brightness,
@@ -56,7 +58,8 @@ and the plugins it turns off).
 
 **Menu.** `default/omarchy/omarchy-menu.jsonc`: Reboot says it leaves Linux,
 Activity opens Omactivity, Setup > Monitors opens the Display panel, Maximize
-Windows toggles. `desktop/install-tree` also points Suspend at the kernel's
+Windows toggles, the Agent section shows only once the agent commands are
+installed. `desktop/install-tree` also points Suspend at the kernel's
 charger PM readiness.
 
 **Translations.** `default/i18n/en/cli.json` holds only the keys of the commands

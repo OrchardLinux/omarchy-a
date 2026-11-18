@@ -22,7 +22,8 @@
 
   // Root Menu
   "apps": {"icon":"󰀻","label":"Apps","aliases":["app","applications"],"provider":"apps","action":"omarchy-shell omarchy.dock apps"},
-  "agent": {"icon":"󰚩","label":"Agent"},
+  // Orchard: the agent commands are not part of the tablet; the section shows once they are.
+  "agent": {"icon":"󰚩","label":"Agent","when":"omarchy-cmd-present omarchy-agent"},
   "appearance": {"icon":"󰏘","label":"Appearance","aliases":["style"]},
   "trigger": {"icon":"󱓞","label":"Trigger"},
   "setup": {"icon":"","label":"Setup","aliases":["settings"]},
