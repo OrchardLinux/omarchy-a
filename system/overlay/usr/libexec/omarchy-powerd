@@ -29,9 +29,11 @@ EVENTS = ('power', 'home', 'wake', 'idle', 'settle', 'lock-ok', 'lock-failed', '
 IDLE_GRACE_SECONDS = 8.0
 FADE_SECONDS = 0.24
 SETTLE_SECONDS = 10.0
-# Kernel attempts that aborted in a row before this boot stops asking: a board whose
-# suspend never completes would otherwise freeze for every attempt, every settle.
+# Kernel attempts that aborted in a row, nothing pressed, before it stops asking for a while:
+# a board whose suspend never completes would otherwise freeze for every attempt, every settle.
 ABORTS_BEFORE_DARK = 3
+# How long it then stays dark and locked before it asks again; a press or a real sleep ends it.
+BACKOFF_SECONDS = 600.0
 TICK_SECONDS = 0.05
 # Ticks of this loop: they count the time it ran, on a kernel whatever its clocks do in sleep.
 SUSPEND_TICKS = int(30 / TICK_SECONDS)
@@ -63,19 +65,16 @@ class Machine:
         return ['dark', 'lock', 'arm-settle']
 
     def _light(self, *first):
-        self.state = ON
+        self.state, self.aborts = ON, 0
         self.playing = self.settle_due = False
         return [*first, 'light', 'woke']
 
     def _settle_again(self):
         self.state, self.settle_due = SETTLING, False
-        return ['arm-settle']
+        # Suspend keeps aborting here: ask again, but not before the backoff.
+        return ['arm-backoff' if self.aborts >= ABORTS_BEFORE_DARK else 'arm-settle']
 
     def _begin_suspend(self):
-        if self.aborts >= ABORTS_BEFORE_DARK:
-            # Suspend never completes here: dark until pressed, as on a board without it.
-            self.state, self.no_suspend = DARK, True
-            return []
         self.state, self.inflight = SUSPENDING, True
         return ['suspend']
 
@@ -691,6 +690,10 @@ class Daemon:
     def do_arm_settle(self, _):
         self.settle_at = time.monotonic() + SETTLE_SECONDS
 
+    def do_arm_backoff(self, _):
+        log(f'{ABORTS_BEFORE_DARK} sleeps in a row aborted: asking again in {BACKOFF_SECONDS:.0f} s')
+        self.settle_at = time.monotonic() + BACKOFF_SECONDS
+
     def do_cancel_settle(self, _):
         self.settle_at = None
 
@@ -928,8 +931,6 @@ class Daemon:
             irq = 'none'
         log(f'sleep-ended result={result} seconds={time.clock_gettime(SLEEP_CLOCK) - self.sleep_started:.3f} wakeup_irq={irq}')
         self.feed('sleep-aborted' if result == 'aborted' else 'sleep-ended')
-        if self.machine.aborts == ABORTS_BEFORE_DARK:
-            log(f'{ABORTS_BEFORE_DARK} sleeps in a row aborted: dark without suspend until restart')
 
     def run(self):
         if not os.path.exists(SOCKET):  # /run: gone only at boot, kept by a restart

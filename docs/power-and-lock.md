@@ -93,9 +93,11 @@ with `inflight`), because the press lights the panel without waiting for it.
 `SETTLING` immediately. Idle first enters `GRACE`, then `SETTLING` if no input
 arrives within eight seconds. Only the reasons listed for `DARK` hold it there. A
 suspend that did not happen is tried again after the settle time. After three
-attempts in a row that the kernel aborted with nothing pressed, this boot stops
-asking and stays `DARK` until a press, as on a board without suspend: every
-aborted attempt freezes the tablet for seconds and drops USB.
+attempts in a row that the kernel aborted with nothing pressed, it backs off:
+dark and locked in `SETTLING`, it asks again only after ten minutes
+(`BACKOFF_SECONDS`), because every aborted attempt freezes the tablet for seconds
+and drops USB. A press lights as usual; a press or a sleep that happened starts
+the count again.
 
 `ASLEEP` is not a state of the daemon: frozen, it cannot be in one. It is the
 part of `SUSPENDING` it does not run in; the log tells them apart (below).
@@ -152,7 +154,7 @@ restart the settle timer. Explicit locking is never undone by grace.
 | `DARK` | `lock-failed` | `ON` | light; notify |
 | `SUSPENDING` | `power`, `home`, `wake` | `ON` | light at once; the sleep ends or aborts by itself |
 | `SUSPENDING` | `sleep-ended` | `SETTLING` | stay dark, arm settle: no button woke it (charger, alarm, abort) |
-| `SUSPENDING` | `sleep-aborted` | `SETTLING` | as `sleep-ended`; the third in a row makes every later settle `DARK` instead |
+| `SUSPENDING` | `sleep-aborted` | `SETTLING` | as `sleep-ended`; from the third in a row, arm the 10 min backoff instead of settle |
 | `SUSPENDING` | `suspend-refused` | `DARK` | until a press |
 | `SUSPENDING` | `suspend-blocked` | `DARK` | as playing; `not-playing` settles again |
 | `SUSPENDING` | `suspend-busy` | `SETTLING` | try again after the settle time |
@@ -193,6 +195,7 @@ instant, and sleep only follows 10 s after the last one left it dark.
 | Greeter idle → dark | 30 s | `IdleMonitor` in the greeter's `shell.qml` |
 | Playback check | 1 s, only while dark | `SETTLING` is longer, so it is seen first |
 | Suspend timeout | 30 s of running time | counted in loop ticks |
+| Backoff after aborted sleeps | 10 min | from the third kernel abort in a row with nothing pressed |
 
 `CLOCK_MONOTONIC` stops in a sleep, and so do kernel and journal times; the log's
 `seconds=` comes from `CLOCK_BOOTTIME`. Key timestamps and the time the panel lit

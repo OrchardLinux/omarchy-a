@@ -142,28 +142,30 @@ class Scenarios(unittest.TestCase):
         self.assertEqual(machine.state, DARK)
         self.assertIn('light', machine.handle('power'))
 
-    def test_a_board_whose_suspend_always_aborts_stops_asking_and_stays_dark(self):
+    def test_a_board_whose_suspend_keeps_aborting_backs_off_dark_and_locked(self):
         machine = asleep()
         for _ in range(powerd.ABORTS_BEFORE_DARK - 1):
             self.assertEqual(machine.handle('sleep-aborted'), ['take-inhibitor', 'arm-settle'])
             self.assertEqual(machine.handle('settle'), ['suspend'])
-        self.assertEqual(machine.handle('sleep-aborted'), ['take-inhibitor', 'arm-settle'])
-        self.assertEqual(machine.handle('settle'), [])
-        self.assertEqual((machine.state, machine.inflight), (DARK, False))
+        # The third: dark and locked, asked for again only after the backoff.
+        self.assertEqual(machine.handle('sleep-aborted'), ['take-inhibitor', 'arm-backoff'])
+        self.assertEqual((machine.state, machine.inflight), (SETTLING, False))
+        # The backoff's end asks once more; another abort backs off again at once.
+        self.assertEqual(machine.handle('settle'), ['suspend'])
+        self.assertEqual(machine.handle('sleep-aborted'), ['take-inhibitor', 'arm-backoff'])
+        # Playback ending meanwhile does not shorten it.
+        run(machine, 'playing')
+        self.assertEqual(machine.handle('not-playing'), ['arm-backoff'])
+        # A press lights as usual and starts the count again.
         self.assertIn('light', machine.handle('home'))
-        # Later locks of this boot go dark without asking again.
-        self.assertEqual(run(machine, 'power', 'lock-ok', 'settle'), [])
-        self.assertEqual(machine.state, DARK)
-
-    def test_an_abort_from_a_press_or_a_sleep_that_happened_does_not_count(self):
-        machine = asleep()
-        machine.handle('sleep-aborted')
-        machine.handle('settle')
-        machine.handle('sleep-ended')  # slept: suspend works here
         self.assertEqual(machine.aborts, 0)
-        machine.handle('settle')
-        machine.handle('home')  # the press aborts the attempt
-        machine.handle('sleep-aborted')
+        self.assertEqual(run(machine, 'power', 'lock-ok', 'settle'), ['suspend'])
+
+    def test_a_sleep_that_happened_ends_the_backoff(self):
+        machine = asleep()
+        for _ in range(powerd.ABORTS_BEFORE_DARK):
+            run(machine, 'sleep-aborted', 'settle')
+        self.assertEqual(machine.handle('sleep-ended'), ['take-inhibitor', 'arm-settle'])
         self.assertEqual(machine.aborts, 0)
 
     def test_a_cancelled_suspend_cannot_swallow_presses_for_ever(self):
