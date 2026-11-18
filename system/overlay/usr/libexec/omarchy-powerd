@@ -32,8 +32,21 @@ SETTLE_SECONDS = 10.0
 # A refused sleep is asked for again after this, dark and locked meanwhile.
 RETRY_SECONDS = 60.0
 TICK_SECONDS = 0.05
-# Ticks of this loop: they count the time it ran, on a kernel whatever its clocks do in sleep.
-SUSPEND_TICKS = int(30 / TICK_SECONDS)
+# A suspend asked for and not seen to begin (no PrepareForSleep, no kernel attempt) in this
+# much time awake did not happen. Once it began, only its end ends it: logind's
+# PrepareForSleep(false) or systemd-suspend finishing, and the kernel's counters say how.
+SUSPEND_AWAKE_SECONDS = 30.0
+# A sleep that began and whose end was never seen, as a last resort.
+SLEEP_END_AWAKE_SECONDS = 120.0
+# Time awake is what the loop ran: a gap between two of its turns longer than this was a
+# freeze or a sleep, and counts as this much, whatever a kernel's clocks do in sleep.
+AWAKE_STEP_MAX = 1.0
+# Every backlight write is a kernel uevent (backlight_generate_event) on the socket this
+# loop watches: a fade writes once a frame, else each write wakes the loop for the next.
+FRAME_SECONDS = 1 / 60
+# logind refuses a delay inhibitor until its sleep is over (PrepareForSleep(false)); if
+# that is never seen, it is asked anyway this long after the end of systemd-suspend.
+LOGIND_END_WAIT_SECONDS = 5.0
 # CLOCK_MONOTONIC stops in a sleep. (getattr: the tests also run where there is no boot time.)
 SLEEP_CLOCK = getattr(time, 'CLOCK_BOOTTIME', time.CLOCK_MONOTONIC)
 LOGIND = 'org.freedesktop.login1'
@@ -447,7 +460,14 @@ class Daemon:
         self.counters = None
         self.sleep_started = None
         self.buttons = Buttons()
-        self.ticks = 0
+        self.sleep_record = 0       # which sleep the unit watcher's end belongs to
+        self.sleep_begun = False    # logind or the kernel is on it: only its end ends it
+        self.kernel_attempted = False
+        self.awake = 0.0            # seconds this loop ran since the sleep was asked for (or began)
+        self.last_turn = time.monotonic()
+        self.logind_asleep = False  # PrepareForSleep(true) seen, (false) not yet
+        self.logind_busy_until = float('inf')
+        self.monitor_buffer = b''
         self.cancel = threading.Event()
         self.dim_saved = None
         self.dim_level = None
@@ -527,18 +547,25 @@ class Daemon:
             self.keys[fd] = path
             log(f'keys: {path}')
 
+    def logind_busy(self):
+        """logind is still in its sleep: it refuses delay inhibitors ("already running")."""
+        return self.logind_asleep and time.monotonic() < self.logind_busy_until
+
     def take_inhibitor(self):
-        """logind refuses while it is still finishing a sleep: keep_inhibitor() tries again."""
+        """Not while logind is still in a sleep: keep_inhibitor() takes it once it is over, or again if refused."""
         self.want_inhibitor = True
+        if self.logind_busy():
+            return
         if self.inhibitor is None or self.inhibitor.poll() is not None:
             self.inhibitor = subprocess.Popen(['systemd-inhibit', '--what=sleep', '--mode=delay',
                                                '--who=omarchy-powerd', '--why=Lock and darken first',
                                                'sleep', 'infinity'])
 
     def keep_inhibitor(self):
-        # logind refuses during a sleep and just after it: not until it ended, then slowly.
-        if (self.want_inhibitor and not self.machine.inflight and self.inhibitor is not None
-                and self.inhibitor.poll() is not None and time.monotonic() >= self.next_inhibitor):
+        # Not during a sleep: after it ended, then slowly if logind still refused.
+        if (self.want_inhibitor and not self.machine.inflight and not self.logind_busy()
+                and (self.inhibitor is None or self.inhibitor.poll() is not None)
+                and time.monotonic() >= self.next_inhibitor):
             self.next_inhibitor = time.monotonic() + 2
             self.take_inhibitor()
 
@@ -556,11 +583,46 @@ class Daemon:
             self.take_inhibitor()
 
     def start_monitor(self):
+        # Unbuffered bytes: read_monitor() takes every line a read brings. A buffered
+        # readline() left the later lines of a read behind, unseen by select().
+        self.monitor_buffer = b''
         self.monitor = subprocess.Popen(
             ['busctl', '--json=short', 'monitor', LOGIND,
              "--match=type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'",
              f"--match=type='signal',sender='org.freedesktop.DBus',member='NameOwnerChanged',arg0='{LOGIND}'"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+
+    def read_monitor(self):
+        chunk = os.read(self.monitor.stdout.fileno(), 65536)
+        if not chunk:
+            self.monitor.wait()
+            self.start_monitor()
+            return
+        *lines, self.monitor_buffer = (self.monitor_buffer + chunk).split(b'\n')
+        for line in lines:
+            self.monitor_line(line.decode(errors='replace'))
+
+    def monitor_line(self, line):
+        if parse_logind_started(line):
+            log('logind started')
+            self.logind_asleep = False  # a new logind is in no sleep
+            self.renew_inhibitor()
+            return
+        sleeping = parse_sleep_signal(line)
+        if sleeping is None:
+            return
+        self.logind_asleep, self.logind_busy_until = sleeping, float('inf')
+        if sleeping and self.machine.inflight:
+            self.sleep_began('logind')  # ours: logind is on it
+        elif sleeping:
+            # Someone else's suspend: a press must end it just the same.
+            self.lit_at = None
+            self.begin_sleep_record()
+            self.arm_wakeup()
+            self.feed('sleep-signal')
+            self.sleep_began('logind')
+        else:
+            self.sleep_finished('logind')
 
     def sleep_counters(self):
         return tuple(int((STATS / name).read_text()) for name in ('success', 'fail'))
@@ -602,17 +664,25 @@ class Daemon:
             self.fade = None
             (panel / 'brightness').write_text(f'{target}\n')
             return
-        self.fade = (panel, current, target, time.monotonic())
+        # (panel, from, to, began, last write): the first frame is written at once.
+        self.fade = (panel, current, target, time.monotonic(), float('-inf'))
+
+    def next_frame(self):
+        """Seconds until the fade's next write is due (0 without a fade written yet)."""
+        return max(0.0, self.fade[4] + FRAME_SECONDS - time.monotonic())
 
     def tick_fade(self):
         if self.fade is None:
             return
-        panel, start, target, began = self.fade
-        t = min(1.0, max(0.0, (time.monotonic() - began) / FADE_SECONDS))
+        panel, start, target, began, written = self.fade
+        now = time.monotonic()
+        t = min(1.0, max(0.0, (now - began) / FADE_SECONDS))
+        # One write a frame: each write's uevent wakes this loop, which must not write again at once.
+        if t < 1.0 and now - written < FRAME_SECONDS:
+            return
         eased = t * t * (3.0 - 2.0 * t)
         (panel / 'brightness').write_text(f'{round(start + (target - start) * eased)}\n')
-        if t >= 1.0:
-            self.fade = None
+        self.fade = None if t >= 1.0 else (panel, start, target, began, now)
 
     def finish_dark_fade(self):
         # A suspend must never freeze halfway through a visual transition.
@@ -708,10 +778,21 @@ class Daemon:
             return False
 
     def begin_sleep_record(self):
-        self.ticks = 0
+        self.sleep_record += 1
+        self.sleep_begun = self.kernel_attempted = False
+        self.awake = 0.0
         self.sleep_started = time.clock_gettime(SLEEP_CLOCK)
         self.counters = self.seen_counters = self.sleep_counters()
         self.watching_unit = False
+
+    def sleep_began(self, how):
+        """logind announced it, or the kernel attempted it: from now on only its end ends it."""
+        if not self.sleep_begun:
+            self.sleep_begun, self.awake = True, 0.0
+            log(f'sleep began: {how}')
+        if not self.watching_unit:
+            self.watching_unit = True
+            threading.Thread(target=self.wait_for_unit, args=(self.sleep_record,), daemon=True).start()
 
     def do_suspend(self, _):
         self.finish_dark_fade()
@@ -877,7 +958,7 @@ class Daemon:
             self.next_scan = now + 5
         delay = TICK_SECONDS if self.machine.inflight else 1.0
         if self.fade is not None:
-            delay = min(delay, 1 / 60)
+            delay = min(delay, self.next_frame())
         for deadline in (self.settle_at, self.grace_at):
             if deadline is not None:
                 delay = min(delay, max(0.0, deadline - now))
@@ -901,24 +982,33 @@ class Daemon:
                 f'errno {last["last_failed_errno"]} step {last["last_failed_step"]}')
             self.arm_wakeup()  # the failed attempt used it up
         self.seen_counters = now
-        if not self.watching_unit:
-            self.watching_unit = True
-            threading.Thread(target=self.wait_for_unit, daemon=True).start()
+        self.kernel_attempted = True
+        self.sleep_began('kernel')
 
-    def wait_for_unit(self):
-        while not self.stopping:
+    def wait_for_unit(self, record):
+        """Posts the end of systemd-suspend for this sleep: once seen running, or the kernel attempted it.
+
+        Started when logind announces the sleep, systemd-suspend may not have started yet:
+        its inactive state then is not its end.
+        """
+        running = False
+        while not self.stopping and self.machine.inflight and self.sleep_record == record:
             try:
                 state = command('systemctl', 'show', '-p', 'ActiveState', '--value',
                                 'systemd-suspend.service').stdout.strip()
-                if state in ('inactive', 'failed'):
-                    self.post('sleep-over')
+                if state in ('inactive', 'failed') and (running or self.kernel_attempted):
+                    self.post(f'sleep-over {record}')
                     return
+                running = running or state in ('activating', 'active', 'deactivating')
             except (OSError, subprocess.SubprocessError) as error:
                 log(f'watching systemd-suspend: {error}')
             time.sleep(0.1)
 
-    def sleep_finished(self):
-        """systemd-suspend finished, or logind says so: every attempt of this sleep is over."""
+    def sleep_finished(self, how):
+        """systemd-suspend finished, or logind says so: every attempt of this sleep is over.
+
+        The verdict is the kernel's: suspend_stats now against before the sleep was asked for.
+        """
         if not self.machine.inflight:
             return
         now = self.sleep_counters()
@@ -927,8 +1017,25 @@ class Daemon:
             irq = Path('/sys/power/pm_wakeup_irq').read_text().strip()
         except OSError:
             irq = 'none'
-        log(f'sleep-ended result={result} seconds={time.clock_gettime(SLEEP_CLOCK) - self.sleep_started:.3f} wakeup_irq={irq}')
+        log(f'sleep-ended result={result} seconds={time.clock_gettime(SLEEP_CLOCK) - self.sleep_started:.3f} '
+            f'wakeup_irq={irq} end={how} awake={self.awake:.1f}')
+        if how != 'logind' and self.logind_asleep:
+            # logind's own end not seen (yet): its inhibitor waits for it, a while.
+            self.logind_busy_until = time.monotonic() + LOGIND_END_WAIT_SECONDS
         self.feed('sleep-ended')
+
+    def count_awake(self, now):
+        """Adds the time the loop ran since its last turn; the safeties of a suspend in flight."""
+        step, self.last_turn = now - self.last_turn, now
+        if not self.machine.inflight:
+            return
+        self.awake += min(max(step, 0.0), AWAKE_STEP_MAX)
+        if not self.sleep_begun and self.awake > SUSPEND_AWAKE_SECONDS:
+            log(f'suspend did not happen: not begun in {self.awake:.1f} s awake')
+            self.feed('timeout')
+        elif self.sleep_begun and self.awake > SLEEP_END_AWAKE_SECONDS:
+            log(f'no end of the sleep seen in {self.awake:.1f} s awake')
+            self.sleep_finished('none')
 
     def run(self):
         if not os.path.exists(SOCKET):  # /run: gone only at boot, kept by a restart
@@ -987,28 +1094,13 @@ class Daemon:
                 os.read(self.wake_read, 512)
                 while not self.events.empty():
                     event = self.events.get()
-                    if event == 'sleep-over':
-                        self.sleep_finished()
+                    if event.startswith('sleep-over '):
+                        if int(event.split()[1]) == self.sleep_record:
+                            self.sleep_finished('unit')
                     else:
                         self.feed(event)
             if self.monitor.stdout in readable:
-                line = self.monitor.stdout.readline()
-                if not line:
-                    self.monitor.wait()
-                    self.start_monitor()
-                elif parse_logind_started(line):
-                    log('logind started')
-                    self.renew_inhibitor()
-                else:
-                    signal = parse_sleep_signal(line)
-                    if signal and not self.machine.inflight:
-                        # Someone else's suspend: a press must end it just the same.
-                        self.lit_at = None
-                        self.begin_sleep_record()
-                        self.arm_wakeup()
-                        self.feed('sleep-signal')
-                    elif signal is False:
-                        self.sleep_finished()
+                self.read_monitor()
             if server in readable:
                 self.control(server)
             if self.uevents in readable:
@@ -1022,11 +1114,7 @@ class Daemon:
             if self.settle_at is not None and time.monotonic() >= self.settle_at:
                 self.settle_at = None
                 self.feed('settle')
-            if self.machine.inflight:
-                self.ticks += 1
-                if self.ticks > SUSPEND_TICKS:
-                    log('suspend did not happen')
-                    self.feed('timeout')
+            self.count_awake(time.monotonic())
 
 
 if __name__ == '__main__':

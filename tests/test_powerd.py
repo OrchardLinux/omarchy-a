@@ -556,6 +556,33 @@ class Brightness(unittest.TestCase):
         self.assertEqual(self.level(), 0)
         self.assertIsNone(self.daemon.fade)
 
+    def test_a_fade_writes_once_a_frame_however_often_the_loop_turns(self):
+        # Each backlight write is a kernel uevent that wakes the loop again at once.
+        writes = []
+        real_write = Path.write_text
+
+        def write_text(path, data, *args, **kwargs):
+            writes.append(data)
+            return real_write(path, data, *args, **kwargs)
+        (self.panel / 'brightness').write_text('1200\n')
+        with patch.object(powerd, 'FADE_SECONDS', .24), patch.object(Path, 'write_text', write_text):
+            with patch.object(powerd.time, 'monotonic', return_value=10):
+                self.daemon.do_dark(None)
+                self.daemon.tick_fade()
+            first = len(writes)
+            for i in range(1000):  # a busy loop within one frame
+                with patch.object(powerd.time, 'monotonic', return_value=10 + i * 1e-5):
+                    self.daemon.tick_fade()
+            self.assertEqual(len(writes), first)
+            with patch.object(powerd.time, 'monotonic', return_value=10 + powerd.FRAME_SECONDS + 1e-6):
+                self.assertEqual(self.daemon.next_frame(), 0)
+                self.daemon.tick_fade()
+            self.assertEqual(len(writes), first + 1)
+            with patch.object(powerd.time, 'monotonic', return_value=10.3):
+                self.daemon.tick_fade()  # the last frame is written whenever it is due
+        self.assertEqual(self.level(), 0)
+        self.assertIsNone(self.daemon.fade)
+
     def test_shutdown_keeps_a_changed_level_but_never_a_dark_panel(self):
         (self.panel / 'brightness').write_text('700\n')
         with self.assertRaises(SystemExit):
@@ -565,6 +592,124 @@ class Brightness(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.daemon.stop_brightness()
         self.assertEqual(self.remembered.read_text(), '700\n')
+
+
+class SleepAccounting(unittest.TestCase):
+    """How long a suspend in flight has been awake, and what that may conclude."""
+
+    def setUp(self):
+        work = tempfile.TemporaryDirectory()
+        self.addCleanup(work.cleanup)
+        self.stats = Path(work.name)
+        for name, value in (('success', 3), ('fail', 0)):
+            (self.stats / name).write_text(f'{value}\n')
+        self.logs = []
+        for target, value in (('STATS', self.stats), ('log', self.logs.append)):
+            patcher = patch.object(powerd, target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.daemon = powerd.Daemon()
+        self.fed = []
+
+        def feed(event):  # what the machine does with them: the suspend is no longer in flight
+            self.fed.append(event)
+            self.daemon.machine.inflight = False
+        self.daemon.feed = feed
+        self.daemon.machine.inflight = True
+        self.daemon.begin_sleep_record()
+        self.daemon.watching_unit = True  # no unit watcher thread here
+        self.daemon.last_turn = 1000.0
+
+    def turns(self, count, step, start=None):
+        now = self.daemon.last_turn if start is None else start
+        for _ in range(count):
+            now += step
+            self.daemon.count_awake(now)
+        return now
+
+    def test_a_busy_loop_is_not_time_awake(self):
+        self.turns(20000, 0.0005)  # 20000 turns in 10 s
+        self.assertAlmostEqual(self.daemon.awake, 10, delta=0.01)
+        self.assertEqual(self.fed, [])
+
+    def test_a_freeze_or_a_clock_that_runs_in_sleep_is_not_time_awake(self):
+        self.turns(1, 3600.0)  # frozen, or asleep on a kernel whose clock runs on
+        self.turns(1, -5.0)    # and never negative
+        self.assertLessEqual(self.daemon.awake, powerd.AWAKE_STEP_MAX)
+        self.assertEqual(self.fed, [])
+
+    def test_a_suspend_not_begun_in_30_s_awake_did_not_happen(self):
+        self.turns(int(29.9 / powerd.TICK_SECONDS), powerd.TICK_SECONDS)
+        self.assertEqual(self.fed, [])
+        self.turns(10, powerd.TICK_SECONDS)
+        self.assertEqual(self.fed, ['timeout'])
+        self.assertTrue(any('suspend did not happen' in line for line in self.logs))
+
+    def test_a_sleep_that_began_ends_only_by_its_end(self):
+        self.turns(200, powerd.TICK_SECONDS)
+        self.daemon.sleep_began('logind')
+        self.assertEqual(self.daemon.awake, 0)
+        self.turns(int(100 / powerd.TICK_SECONDS), powerd.TICK_SECONDS)  # a wake press, a slow resume
+        self.assertEqual(self.fed, [])
+        (self.stats / 'success').write_text('4\n')
+        self.daemon.sleep_finished('logind')
+        self.assertEqual(self.fed, ['sleep-ended'])
+        self.assertTrue(any(line.startswith('sleep-ended result=slept ') and 'end=logind' in line
+                            for line in self.logs), self.logs)
+
+    def test_an_end_never_seen_is_concluded_from_the_counters_at_last(self):
+        self.daemon.sleep_began('kernel')
+        (self.stats / 'fail').write_text('1\n')
+        self.turns(int((powerd.SLEEP_END_AWAKE_SECONDS + 1) / powerd.TICK_SECONDS), powerd.TICK_SECONDS)
+        self.assertEqual(self.fed, ['sleep-ended'])
+        self.assertTrue(any(line.startswith('sleep-ended result=aborted ') and 'end=none' in line
+                            for line in self.logs), self.logs)
+
+    def test_every_line_of_a_read_from_the_monitor_is_seen(self):
+        read, write = os.pipe()
+        self.addCleanup(os.close, read)
+        self.addCleanup(os.close, write)
+        self.daemon.monitor = type('Monitor', (), {'stdout': open(read, 'rb', buffering=0, closefd=False)})
+        seen = []
+        self.daemon.monitor_line = seen.append
+        prepare = json.dumps({'member': 'PrepareForSleep', 'payload': {'data': [False]}})
+        os.write(write, ('{"member": "NameOwnerChanged"}\n' + prepare + '\n{"memb').encode())
+        self.daemon.read_monitor()
+        self.assertEqual(seen, ['{"member": "NameOwnerChanged"}', prepare])
+        os.write(write, b'er": "x"}\n')
+        self.daemon.read_monitor()
+        self.assertEqual(seen[-1], '{"member": "x"}')
+
+
+class LogindSleep(unittest.TestCase):
+    """logind refuses a delay inhibitor while its sleep runs ("already running")."""
+
+    def setUp(self):
+        self.daemon = powerd.Daemon()
+        self.started = []
+        alive = type('Alive', (), {'poll': lambda self: None, 'terminate': lambda self: None,
+                                   'wait': lambda self: 0})
+        patcher = patch.object(powerd.subprocess, 'Popen', side_effect=lambda *_: self.started.append(1) or alive())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_the_inhibitor_waits_for_loginds_end_of_the_sleep(self):
+        daemon = self.daemon
+        daemon.logind_asleep = True
+        daemon.take_inhibitor()
+        daemon.keep_inhibitor()
+        self.assertEqual(self.started, [])
+        daemon.logind_asleep = False  # PrepareForSleep(false)
+        daemon.keep_inhibitor()
+        self.assertEqual(len(self.started), 1)
+
+    def test_without_loginds_end_it_is_asked_a_while_after_systemd_suspend_ended(self):
+        daemon = self.daemon
+        daemon.logind_asleep = True
+        daemon.take_inhibitor()
+        daemon.logind_busy_until = time.monotonic() - 1  # set by sleep_finished('unit'), now past
+        daemon.keep_inhibitor()
+        self.assertEqual(len(self.started), 1)
 
 
 class EventLoop(unittest.TestCase):
@@ -612,11 +757,14 @@ class EventLoop(unittest.TestCase):
                 return real_open()
         self.daemon.open_socket = open_socket
         loop = threading.Thread(target=self.daemon.run, daemon=True)
-        def stop():
+        def stop_loop():
             self.daemon.stopping = True
             os.write(self.daemon.wake_write, b'.')
             loop.join(3)
             self.assertFalse(loop.is_alive())
+        self.stop_loop = stop_loop
+        def stop():
+            stop_loop()
             monitor.close()
             os.close(self.monitor_write)
         self.addCleanup(stop)
@@ -771,6 +919,75 @@ class EventLoop(unittest.TestCase):
         time.sleep(0.25)  # past the settle time: cancelled
         self.assertNotIn(('systemctl', 'suspend'), self.requests)
         self.assertEqual(self.daemon.machine.state, ON)
+
+    def test_the_wake_fade_while_the_sleep_finishes_neither_spins_nor_ends_it(self):
+        # The kernel sends a uevent for every backlight write (backlight_generate_event) to the
+        # socket this loop watches: counted in loop turns, the 30 s ran out within the wake's fade.
+        logs, turns = [], []
+        ours, kernel = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self.addCleanup(kernel.close)
+        self.addCleanup(ours.close)
+        self.addCleanup(self.stop_loop)  # runs first: the loop must not watch a closed socket
+        ours.setblocking(False)
+        kernel.setblocking(False)
+        brightness = self.panel / 'brightness'
+        real_write = Path.write_text
+
+        def write_text(path, data, *args, **kwargs):
+            result = real_write(path, data, *args, **kwargs)
+            if path == brightness:
+                try:
+                    kernel.send(b'change@/devices/backlight/panel\0ACTION=change\0SUBSYSTEM=backlight\0SOURCE=sysfs\0')
+                except BlockingIOError:
+                    pass
+            return result
+        real_watch = self.daemon.watch_kernel
+
+        def watch_kernel():  # once a turn of the loop
+            turns.append(1)
+            real_watch()
+        with patch.object(Path, 'write_text', write_text), patch.object(powerd, 'FADE_SECONDS', 0.24), \
+                patch.object(powerd, 'log', logs.append):
+            self.daemon.uevents = ours
+            self.daemon.watch_kernel = watch_kernel
+            self.press()
+            self.wait(lambda: ('systemctl', 'suspend') in self.requests)
+            self.set_stats(4, 0)  # it slept and resumed; systemd-suspend still runs
+            before = len(turns)
+            self.press()  # the wake
+            self.wait(lambda: self.brightness() == '1563')
+            time.sleep(0.1)
+            self.assertLess(len(turns) - before, 200)
+            self.unit_state = 'inactive'
+            self.wait(lambda: not self.daemon.machine.inflight)
+        self.assertTrue(any(line.startswith('sleep-ended result=slept ') for line in logs), logs)
+        self.assertFalse(any('did not happen' in line for line in logs), logs)
+
+    def test_a_sleep_logind_announced_ends_with_loginds_end_also_after_a_wake_press(self):
+        logs = []
+
+        def prepare_for_sleep(sleeping):
+            os.write(self.monitor_write, (json.dumps({'member': 'PrepareForSleep',
+                                                      'payload': {'data': [sleeping]}}) + '\n').encode())
+        with patch.object(powerd, 'log', logs.append):
+            self.unit_state = 'inactive'  # systemd-suspend has not started yet: that is not its end
+            self.press()
+            self.wait(lambda: ('systemctl', 'suspend') in self.requests)
+            prepare_for_sleep(True)
+            self.wait(lambda: self.daemon.sleep_begun and self.daemon.logind_asleep)
+            time.sleep(0.3)
+            self.assertTrue(self.daemon.machine.inflight)
+            self.unit_state = 'activating'
+            self.set_stats(4, 0)
+            self.press()  # the wake: lit at once, the sleep still finishing
+            self.wait(lambda: self.brightness() == '1563')
+            self.assertEqual((self.daemon.machine.state, self.daemon.machine.inflight), (ON, True))
+            prepare_for_sleep(False)
+            self.wait(lambda: not self.daemon.machine.inflight)
+        self.assertFalse(self.daemon.logind_asleep)
+        self.assertTrue(any(line.startswith('sleep-ended result=slept ') and 'end=logind' in line
+                            for line in logs), logs)
+        self.assertFalse(any('did not happen' in line for line in logs), logs)
 
 
 if __name__ == '__main__':
