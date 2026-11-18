@@ -4,10 +4,11 @@ umask 077
 
 here=$(cd "$(dirname "$0")" && pwd)
 project=$(cd "$here/.." && pwd)
-output='' package='' release='' architecture=aarch64 builder_image=''
+output='' package='' release='' architecture=aarch64 builder_image='' local_packages=''
 while (($#)); do
   case "$1" in
     --output) output=$2; shift 2;;
+    --local-packages) local_packages=$2; shift 2;;
     --package) package=$2; shift 2;;
     --release) release=$2; shift 2;;
     --architecture) architecture=$2; shift 2;;
@@ -16,7 +17,7 @@ while (($#)); do
   esac
 done
 if [[ -z "$output" || -z "$release" || ! -f "$package/package.json" || -e "$output" ]]; then
-  echo 'Usage: ./system/build-rootfs --output DIRECTORY --package DIRECTORY --release NAME [--architecture aarch64|armv7h] [--builder-image IMAGE]' >&2
+  echo 'Usage: ./system/build-rootfs --output DIRECTORY --package DIRECTORY --release NAME [--architecture aarch64|armv7h] [--builder-image IMAGE] [--local-packages DIRECTORY]' >&2
   exit 2
 fi
 case "$architecture" in
@@ -34,6 +35,12 @@ fi
 absolute() { python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).expanduser().resolve())' "$1"; }
 output=$(absolute "$output")
 package=$(absolute "$package")
+# Orchard packages built from a packages checkout (tools/build.py), installed ahead of [orchard]'s.
+local_mount=()
+if [[ -n "$local_packages" ]]; then
+  local_packages=$(absolute "$local_packages")
+  local_mount=(-v "$local_packages:/inputs/local:ro")
+fi
 (cd "$project" && python3 -m release.package --verify "$package" --architecture "$architecture")
 
 mkdir -p "$here/.work/rootfs"
@@ -51,7 +58,8 @@ trap cleanup EXIT
 if [[ ${ORCHARD_BUILD_NATIVE:-0} == 1 ]]; then
   native_work=$(mktemp -d "$here/.work/rootfs/native.XXXXXX")
   "$here/assemble-rootfs" --root "$native_work/root" \
-    --output "$native_work/rootfs.tar.gz" --package "$package" --release "$release" --architecture "$architecture"
+    --output "$native_work/rootfs.tar.gz" --package "$package" --release "$release" --architecture "$architecture" \
+    ${local_packages:+--local-packages "$local_packages"}
   cp "$native_work/rootfs.tar.gz" "$native_work/rootfs.tar.gz.json" "$native_work/packages.lock" "$stage/"
 else
   if [[ -z "$builder_image" ]]; then
@@ -64,11 +72,12 @@ else
   volume=$volume_name
   "$podman" run --rm "${container_args[@]}" \
     -v "$volume:/work:rw" \
-    -v "$project:/repo:ro" -v "$package:/inputs/package:ro" \
+    -v "$project:/repo:ro" -v "$package:/inputs/package:ro" "${local_mount[@]}" \
     "$builder_image" \
     /repo/system/assemble-rootfs \
       --root /work/root --output /work/rootfs.tar.gz \
-      --package /inputs/package --release "$release" --architecture "$architecture"
+      --package /inputs/package --release "$release" --architecture "$architecture" \
+      ${local_packages:+--local-packages /inputs/local}
   # Drain the export through EOF, including tar's trailing zero padding.
   "$podman" run --rm "${container_args[@]}" --network none -v "$volume:/work:ro" \
     "$builder_image" \

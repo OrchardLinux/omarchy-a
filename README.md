@@ -13,11 +13,18 @@ once (see its [README](https://github.com/OrchardLinux/orchard#develop)). Here,
 `orchard` runs orchard's newest nightly, whose kernels, m1n1, Pongo and tools this
 build then takes as they are. To work against your own orchard checkout, e.g. a
 branch with a driver you need, run that checkout's launcher instead
-(`../orchard-installer/bin/orchard build`). A gitignored `orchard.local.toml` may
-hold your board:
+(`../orchard-installer/bin/orchard build`). To test package changes (Labwc,
+wlroots, Mesa, …) before they are published, keep a checkout of
+[OrchardLinux/packages](https://github.com/OrchardLinux/packages) beside this one
+(`../packages`): `orchard build` then builds every package of the image whose
+recipe there differs from the published one, caches it by recipe, installs it in
+place of `[orchard]`'s, and prints which packages it built. A checkout elsewhere
+is `--packages DIR`. A gitignored `orchard.local.toml` may hold your board and
+that choice:
 
 ```toml
 device = "j71b"
+# packages = "../somewhere/packages"   # another checkout; false: published packages only
 ```
 
 `orchard.toml` (its `[release]` table) makes this checkout an orchard distribution:

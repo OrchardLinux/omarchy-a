@@ -1,0 +1,21 @@
+# What the image takes from the Orchard package repository (OrchardLinux/packages),
+# built there for every Orchard distribution and installed here like any other
+# package: wlroots with fast rotated software compositing, Labwc with the tablet
+# patches, Omafox, Omactivity (the touch task manager) and Files, upstream
+# Omarchy's file manager (Folio) with the touch mode OrchardLinux/folio adds.
+# With a packages checkout (orchard build --packages), tools/build.py builds those
+# of them whose recipe there is not the published one.
+#
+# NAME [ARCHITECTURE...]: a name followed by architectures is only theirs.
+wlroots0.20
+labwc
+omafox
+omactivity
+folio-touch
+# 64-bit boards: Mesa from OrchardLinux's fork in the place of Arch's (OpenGL through Zink or in
+# software, the GPU's Vulkan driver, the login's GPU probe), and the VA-API bridge to the hardware
+# video decoders. The GPU parts and the bridge sit unused on a board without that hardware.
+mesa aarch64
+libva-v4l2-request aarch64
+# Omacalc: upstream Omarchy publishes it for aarch64 only; the Orchard repository has ARMv7's.
+omacalc armv7h
