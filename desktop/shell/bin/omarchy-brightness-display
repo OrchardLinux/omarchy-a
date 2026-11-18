@@ -16,6 +16,17 @@ done
 read -r max < "$device/max_brightness"
 [[ $max =~ ^[0-9]+$ && $max -gt 0 ]] || { echo unavailable; exit 1; }
 
+# Upstream names the display (--monitor NAME); the tablet's one backlight is
+# the built-in panel's, so the name only has to be there.
+args=()
+while (( $# )); do
+  case $1 in
+    --monitor) (( $# >= 2 )) || { echo 'Usage: omarchy-brightness-display [--no-osd] [--monitor NAME] [1..100%|+5%|-5%]' >&2; exit 2; }; shift 2 ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+set -- "${args[@]}"
+
 if (( $# == 0 )); then
   value_file=$device/actual_brightness
   [[ -r $value_file ]] || value_file=$device/brightness
@@ -26,7 +37,7 @@ if (( $# == 0 )); then
 fi
 
 [[ ${1:-} == --no-osd ]] && shift
-[[ $# == 1 && $1 =~ ^([+-]?)([0-9]{1,3})%$ ]] || { echo 'Usage: omarchy-brightness-display [--no-osd] [1..100%|+5%|-5%]' >&2; exit 2; }
+[[ $# == 1 && $1 =~ ^([+-]?)([0-9]{1,3})%$ ]] || { echo 'Usage: omarchy-brightness-display [--no-osd] [--monitor NAME] [1..100%|+5%|-5%]' >&2; exit 2; }
 sign=${BASH_REMATCH[1]}
 percent=$((10#${BASH_REMATCH[2]}))
 if [[ -n $sign ]]; then

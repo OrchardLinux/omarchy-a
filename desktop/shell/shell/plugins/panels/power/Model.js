@@ -78,7 +78,7 @@ function batteryIcon(device, onBattery, states, externalPower) {
   return defaultIcons[index]
 }
 
-function modeLabel(device, onBattery, states, tr) {
+function modeLabel(device, onBattery, states, tr, rateFresh) {
   var t = typeof tr === "function" ? tr : function(key, english) { return english }
   var d = device || {}
   if (!d.isPresent) return ""

@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# omarchy:summary=Launch the default browser as determined by xdg-settings.
+# omarchy:args=[url]
+
+# Labwc port, under upstream's name and arguments. The tablet's browser is
+# Firefox (with the Omafox extension), so this starts it rather than reading
+# xdg-settings' default, in the app's own scope as every launcher entry is
+# (uwsm-app). --private is Firefox's --private-window. Upstream then focuses the
+# window through Hyprland; Firefox raises its own window for a new URL.
+
+exec uwsm-app -a firefox -- firefox "${@/--private/--private-window}"

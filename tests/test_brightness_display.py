@@ -50,3 +50,10 @@ class BrightnessDisplayTests(unittest.TestCase):
         self.set_raw(0)
         self.assertEqual(self.run_script('--no-osd', '50%').stdout, '50\n')
         self.assertEqual(self.raw(), 1024)
+
+    def test_the_monitor_name_upstream_passes_is_accepted(self):
+        # Upstream's Display panel names the display; the tablet has one backlight.
+        self.assertEqual(self.run_script('--monitor', 'Unknown-1').stdout, '36\n')
+        self.assertEqual(self.run_script('--no-osd', '--monitor', 'Unknown-1', '50%').stdout, '50\n')
+        self.assertEqual(self.raw(), 1024)
+

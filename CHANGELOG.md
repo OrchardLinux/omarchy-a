@@ -16,6 +16,7 @@ is missing or empty.
 ### Desktop
 
 - Updates without reinstalling: Omarchy A's desktop and system settings are now a package, so `omarchy-update` (or Update > Omarchy) brings each release to an installed tablet; your own settings stay yours.
+- Desktop follows upstream Omarchy's latest: app icons drawn in your theme's colors (Papercraft, Arcade or the apps' own, under Appearance > Icons), a Display panel showing the screen's resolution and density with a text size slider, and the captive-portal Sign in button and Learn links open Firefox.
 
 ## [0.3.1] - 2026-11-15
 

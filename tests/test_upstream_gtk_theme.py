@@ -28,7 +28,7 @@ class UpstreamGtkThemeTests(unittest.TestCase):
                 text = log.read_text()
                 self.assertIn(f'gtk-theme {gtk}\n', text)
                 self.assertIn(f'color-scheme {scheme}\n', text)
-                self.assertIn('icon-theme Yaru-blue\n', text)
+                self.assertIn('icon-theme Adwaita\n', text)
                 log.unlink()
 
     def test_without_dbus_does_not_modify_settings(self):

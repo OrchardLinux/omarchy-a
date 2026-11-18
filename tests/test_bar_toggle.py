@@ -46,4 +46,4 @@ class BarToggleTests(unittest.TestCase):
     def test_hidden_bar_is_unmapped_not_parked(self):
         # labwc never un-parks a layer surface whose margin returns to 0.
         bar = (PROJECT / 'desktop/shell/shell/plugins/bar/Bar.qml').read_text()
-        self.assertIn('visible: !root.barHidden && !remapGuard.remapping', bar)
+        self.assertIn('visible: !root.barHidden && (cutoutWaitOver || !cutoutPending)', bar)
