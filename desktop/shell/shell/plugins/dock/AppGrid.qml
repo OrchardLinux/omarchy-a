@@ -31,11 +31,13 @@ Item {
 
   readonly property int iconSize: Math.round(56 * Style.fontScale)
   readonly property int labelHeight: Math.ceil(labelMetrics.height) * 2
-  readonly property int versionHeight: Math.ceil(versionMetrics.height)
+  // Orchard: no version under the selected app (upstream shows the package's).
+  readonly property bool showVersions: false
+  readonly property int versionHeight: showVersions ? Style.spacing.xs + Math.ceil(versionMetrics.height) : 0
   readonly property int cellGutter: Style.spacing.sm
   readonly property int cellPadding: Style.spacing.lg
   readonly property int cellWidth: Math.round(iconSize * 2.2)
-  readonly property int cellHeight: cellPadding * 2 + iconSize + Style.spacing.md + labelHeight + Style.spacing.xs + versionHeight
+  readonly property int cellHeight: cellPadding * 2 + iconSize + Style.spacing.md + labelHeight + versionHeight
   readonly property int maxColumns: 7
   readonly property int visibleRows: 4
   readonly property int borderWidth: Math.max(1, Style.space(2))
@@ -56,7 +58,7 @@ Item {
     root.selectedIndex = 0
     if (root.appLibrary) {
       root.appLibrary.refreshIcons()
-      root.appLibrary.refreshVersions()
+      if (root.showVersions) root.appLibrary.refreshVersions()
     }
     // The cells from last time are reused when nothing changed, so the grid
     // opens with its icons already drawn.
@@ -407,7 +409,7 @@ Item {
                 anchors.topMargin: Style.spacing.xs * 2
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: label.width
-                visible: cell.selected
+                visible: root.showVersions && cell.selected
                 textFormat: Text.PlainText
                 text: root.appLibrary ? root.appLibrary.version(cell.modelData) : ""
                 color: Commons.Color.menu.text

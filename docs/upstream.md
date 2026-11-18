@@ -59,7 +59,7 @@ pointer off the bar, which costs a full-screen layer on every frame), indicators
 (no hover reveal on touch), the lock (6-digit PIN pad, a 30 s lit lock, wake
 only by Home and Power), the idle service (omarchy-powerd's idle), the keyboard
 panel, menu and overlays (below the on-screen keyboard), the app grid (a text
-field for the on-screen keyboard), network rows (long press for Forget and
+field for the on-screen keyboard, and no version under the selected app), network rows (long press for Forget and
 Change passphrase), Bluetooth pairing feedback, the background (no Hyprland
 boot cover or theme intro videos, software decode at panel size), the greeter's data-only theme
 snapshot (`Commons/Color.qml`) and wallpaper readiness (`LockView.qml`),
