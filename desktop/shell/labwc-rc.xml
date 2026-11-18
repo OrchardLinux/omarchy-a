@@ -31,6 +31,10 @@
   <overview swipe="yes"
     openCommand="omarchy-overview-changed opened"
     closeCommand="omarchy-overview-changed closed" />
+  <!-- The on-screen keyboard (labwc/0007): Labwc reports text fields, taps
+       and physical typing to omarchy-keyboard, which decides when the
+       keyboard opens and closes. -->
+  <onScreenKeyboard listener="omarchy-keyboard listen" />
   <keyboard>
     <default />
     <!-- Startup-only reserved chord; leave ordinary Alt+H to applications. -->

@@ -11,6 +11,17 @@ TextInput {
 
   focus: true
   clip: true
+  // Panels open with focus here, so typing filters at once. On a tablet
+  // that must not open the on-screen keyboard: Qt asks for it whenever a
+  // field that takes focus on press gets focus, so this one does not, and
+  // a tap on it asks instead (also after the keyboard was put away).
+  activeFocusOnPress: false
+  TapHandler {
+    onTapped: {
+      root.forceActiveFocus()
+      Qt.inputMethod.show()
+    }
+  }
   Keys.priority: Keys.BeforeItem
   Keys.forwardTo: keyHandler ? [keyHandler] : []
   // Alt and Super chords are shortcuts, never text.

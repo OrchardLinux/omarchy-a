@@ -1,19 +1,32 @@
 #!/usr/bin/env python3
-"""Small session controller for the theme-matched Wayland keyboard."""
+"""Session controller for the theme-matched Wayland keyboard, and its policy.
+
+    omarchy-keyboard show|hide|toggle   what the person asks for (swipe up, bar button)
+    omarchy-keyboard listen             the policy: reads the compositor's facts on stdin
+    omarchy-keyboard restart|run        (re)start the keyboard process itself
+
+When it opens or closes on its own is decided here and nowhere else. The
+compositor only reports facts, one line each on `listen`'s standard input
+(Labwc: <onScreenKeyboard listener="omarchy-keyboard listen" />, see its
+input/osk.h): text fields going on and off, apps asking for the keyboard,
+taps, keys typed on a physical keyboard, how many such keyboards there are.
+"""
 import os
 from pathlib import Path
+import selectors
 import signal
+import socket
 import subprocess
 import sys
 import time
-import tomllib
 
 root = Path(os.environ.get("OMARCHY_PATH", "/usr/share/omarchy"))
-runtime = Path(os.environ["XDG_RUNTIME_DIR"])
+runtime = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
 binary = root / "trials/wvkbd-mobintl-v0.20-font18-special15-state"
 pid_file = runtime / "omarchy-keyboard.pid"
 state_file = runtime / "omarchy-keyboard-visible"
 log_file = runtime / "omarchy-keyboard.log"
+policy_socket = runtime / "omarchy-keyboard.sock"
 
 
 def live_pid():
@@ -22,6 +35,13 @@ def live_pid():
         return pid if Path(f"/proc/{pid}/exe").resolve() == binary.resolve() else None
     except (OSError, ValueError):
         return None
+
+
+def visible():
+    try:
+        return state_file.read_text().strip() == "1"
+    except OSError:
+        return False
 
 
 def launch():
@@ -45,32 +65,173 @@ def wait_for_start():
     raise SystemExit("Keyboard did not start; see " + str(log_file))
 
 
-mode = sys.argv[1] if len(sys.argv) > 1 else "run"
-if mode == "toggle":
-    if pid := live_pid():
-        os.kill(pid, signal.SIGRTMIN)
-    else:
-        launch()
-        os.kill(wait_for_start(), signal.SIGUSR2)
-elif mode == "show":
+def show():
     if not (pid := live_pid()):
         launch()
         pid = wait_for_start()
     os.kill(pid, signal.SIGUSR2)
-elif mode == "hide":
+
+
+def hide():
     if pid := live_pid():
         os.kill(pid, signal.SIGUSR1)
-elif mode == "restart":
-    if pid := live_pid():
-        os.kill(pid, signal.SIGTERM)
-        for _ in range(40):
-            if not live_pid():
-                break
-            time.sleep(0.05)
-        if live_pid():
-            raise SystemExit("Prior keyboard did not stop")
-    launch()
-elif mode == "run":
+
+
+class Policy:
+    """When the keyboard opens and closes on its own.
+
+    It opens when the person taps a text field, never because a program moved
+    focus, and never for a press that becomes a drag or a long press (selecting
+    text). Apps on text-input version 2 ask for it themselves (`show`), and are
+    heard right after a touch only: Qt asks whenever a field gets focus, also
+    one an app focuses on start. A request that comes just before its field
+    reports itself (a tap that turns a label into a field) is kept a moment.
+    Version 1 apps cannot ask: for them a tap counts when a field is on at the
+    end of it, or comes on right after it (a tap that focused a field, a tap in
+    a terminal, which has text input whenever it is focused; a tap that moved
+    focus off a field turns it off before the tap ends).
+
+    It closes when the app asks, and shortly after no field is on any more, if
+    it opened on its own. One the person put away stays away until the next
+    tap on a field.
+
+    Typing on a physical keyboard closes it and stops taps from opening it,
+    until the person opens it (swipe up, bar button) or no physical keyboard is
+    left. Being connected alone changes nothing.
+    """
+
+    TAP_MS = 350        # longer is a long press
+    TAP_PX = 12         # further is a drag
+    TOUCH_WINDOW = 0.6  # a touch to an app's request, a tap to a field coming on
+    SHOW_WAIT = 0.5     # a request to its field coming on
+    HIDE_DELAY = 0.25   # focus moving from one field to the next
+
+    def __init__(self, show, hide, visible, now=time.monotonic):
+        self._show, self._hide, self._visible, self.now = show, hide, visible, now
+        self.field = 0            # the focused field's text-input version, 0 when none
+        self.touched_until = 0.0  # a press, or the release of a tap, just happened
+        self.tapped_until = 0.0   # a tap just ended
+        self.asked_until = 0.0    # an app asked before its field came on
+        self.hide_at = None
+        self.opened_here = False
+        self.hardware = False     # typing on a physical keyboard
+        self.keyboards = 0
+
+    def _open(self):
+        self.touched_until = self.tapped_until = self.asked_until = 0.0
+        self.hide_at = None
+        if self.hardware:
+            return
+        self.opened_here = True
+        self._show()
+
+    def _close(self):
+        self.hide_at = None
+        if self.opened_here:
+            self.opened_here = False
+            self._hide()
+
+    def fact(self, line):
+        now = self.now()
+        words = line.split()
+        if words[:2] == ["field", "on"] and len(words) == 3 and words[2].isdigit():
+            self.field, self.hide_at = int(words[2]), None
+            if now < self.asked_until or (self.field < 2 and now < self.tapped_until):
+                self._open()
+        elif words == ["field", "off"]:
+            self.field = 0
+            if self.opened_here:
+                self.hide_at = now + self.HIDE_DELAY
+        elif words == ["show"]:
+            if now < self.touched_until:
+                if self.field:
+                    self._open()
+                else:
+                    self.asked_until = now + self.SHOW_WAIT
+        elif words == ["hide"]:
+            self._close()
+        elif words == ["press"]:
+            self.touched_until = now + self.TOUCH_WINDOW
+        elif words[:1] == ["release"] and len(words) == 3 and words[1].isdigit() and words[2].isdigit():
+            if int(words[1]) <= self.TAP_MS and int(words[2]) <= self.TAP_PX:
+                self.touched_until = self.tapped_until = now + self.TOUCH_WINDOW
+                if 0 < self.field < 2:
+                    self._open()
+            else:
+                self.touched_until = self.tapped_until = 0.0
+        elif words == ["key"]:
+            if self.keyboards > 0:
+                self.hardware = True
+                self.touched_until = self.tapped_until = self.asked_until = 0.0
+                self.opened_here = False
+                if self._visible():
+                    self._hide()
+        elif words[:1] == ["keyboards"] and len(words) == 2 and words[1].isdigit():
+            self.keyboards = int(words[1])
+            if self.keyboards == 0:
+                self.hardware = False
+
+    def person(self, action):
+        """The person opened or closed it (swipe up, bar button)."""
+        self.opened_here = False
+        self.hide_at = None
+        if action == "show":
+            self.hardware = False
+
+    def deadline(self):
+        return self.hide_at
+
+    def tick(self):
+        if self.hide_at is not None and self.now() >= self.hide_at:
+            if not self.field:
+                self._close()
+            self.hide_at = None
+
+
+def tell_policy(action):
+    """Lets a running policy know what the person did; nothing when none runs."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+            s.sendto(action.encode(), str(policy_socket))
+    except OSError:
+        pass
+
+
+def listen():
+    policy = Policy(show, hide, visible)
+    try:
+        policy_socket.unlink()
+    except FileNotFoundError:
+        pass
+    person = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    person.bind(str(policy_socket))
+    os.set_blocking(sys.stdin.fileno(), False)
+    events = selectors.DefaultSelector()
+    events.register(sys.stdin.buffer, selectors.EVENT_READ, "facts")
+    events.register(person, selectors.EVENT_READ, "person")
+    pending = b""
+    while True:
+        deadline = policy.deadline()
+        timeout = None if deadline is None else max(0.0, deadline - policy.now())
+        for key, _ in events.select(timeout):
+            if key.data == "person":
+                policy.person(person.recv(64).decode(errors="replace").strip())
+                continue
+            chunk = os.read(sys.stdin.fileno(), 4096)
+            if not chunk:
+                return  # the compositor went away
+            pending += chunk
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                try:
+                    policy.fact(line.decode(errors="replace"))
+                except Exception as error:  # a bad line must not end the session's keyboard
+                    print("omarchy-keyboard: " + repr(error), file=sys.stderr)
+        policy.tick()
+
+
+def run():
+    import tomllib
     if (pid := live_pid()) and pid != os.getpid():
         raise SystemExit("Keyboard already running")
     colors = tomllib.loads((Path.home() / ".local/state/omarchy/current/theme/colors.toml").read_text())
@@ -88,5 +249,34 @@ elif mode == "run":
     pid_file.write_text(str(os.getpid()) + "\n")
     os.environ["WVKBD_STATE_FILE"] = str(state_file)
     os.execv(str(binary), args)
-else:
-    raise SystemExit("Usage: omarchy-keyboard [run|toggle|show|hide|restart]")
+
+
+def main(mode):
+    if mode == "toggle":
+        mode = "hide" if visible() else "show"
+    if mode == "show":
+        show()
+        tell_policy("show")
+    elif mode == "hide":
+        hide()
+        tell_policy("hide")
+    elif mode == "listen":
+        listen()
+    elif mode == "restart":
+        if pid := live_pid():
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(40):
+                if not live_pid():
+                    break
+                time.sleep(0.05)
+            if live_pid():
+                raise SystemExit("Prior keyboard did not stop")
+        launch()
+    elif mode == "run":
+        run()
+    else:
+        raise SystemExit("Usage: omarchy-keyboard [show|hide|toggle|listen|restart|run]")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1] if len(sys.argv) > 1 else "run")

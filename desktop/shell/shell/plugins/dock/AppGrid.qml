@@ -63,7 +63,7 @@ Item {
       grid.positionViewAtBeginning()
     }
     root.opened = true
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
   function close() {
@@ -100,7 +100,7 @@ Item {
 
   function cancelUninstall() {
     root.uninstallEntry = null
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
   function confirmUninstall() {
@@ -127,6 +127,8 @@ Item {
     root.selectedIndex = Math.max(0, Math.min(root.selectedIndex, root.apps.length - 1))
     grid.positionViewAtBeginning()
   }
+
+  onFilterTextChanged: if (searchField.text !== filterText) searchField.text = filterText
 
   function setFilter(text) {
     root.filterText = text
@@ -228,7 +230,9 @@ Item {
       Item {
         id: keyCatcher
         anchors.fill: parent
-        focus: true
+
+        // Focus is on searchField, which forwards every key here first;
+        // what this leaves unaccepted is typed into the search.
 
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
@@ -240,8 +244,6 @@ Item {
             if (root.menuEntry) root.menuEntry = null
             else if (root.filterText) root.setFilter("")
             else root.close()
-          } else if (Util.editsFilter(event, root.filterText)) {
-            root.setFilter(Util.editedFilter(event, root.filterText))
           } else if (Util.readingKey(event) === Qt.Key_Left) {
             root.select(-1)
           } else if (Util.readingKey(event) === Qt.Key_Right) {
@@ -252,8 +254,6 @@ Item {
             root.select(root.columns)
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             root.launch(root.selectedIndex)
-          } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
-            root.setFilter(root.filterText + event.text)
           } else {
             return
           }
@@ -277,18 +277,29 @@ Item {
           radius: Style.cornerRadius
           color: Util.alpha(Commons.Color.menu.text, 0.06)
 
-          Text {
+          // A text field, so the on-screen keyboard and input methods
+          // (fcitx5) see it; the placeholder shows while it is empty.
+          FilterInput {
+            id: searchField
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.leftMargin: Style.spacing.controlPaddingX
             anchors.rightMargin: Style.spacing.controlPaddingX
             anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: root.filterText || Commons.I18n.t("dock.searchApps")
+            keyHandler: keyCatcher
             color: Commons.Color.menu.text
-            opacity: root.filterText ? 1 : 0.58
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.heading
+            onTextChanged: if (text !== root.filterText) root.setFilter(text)
+          }
+          Text {
+            anchors.fill: searchField
+            visible: searchField.text === ""
+            textFormat: Text.PlainText
+            text: Commons.I18n.t("dock.searchApps")
+            color: Commons.Color.menu.text
+            opacity: 0.58
+            font: searchField.font
             elide: Text.ElideRight
           }
         }
