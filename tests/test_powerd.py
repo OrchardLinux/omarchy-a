@@ -368,6 +368,16 @@ class SmartCover(unittest.TestCase):
         self.assertFalse(powerd.reports_cover('0\n'))
         self.assertFalse(powerd.reports_cover(''))
 
+    def test_power_and_home_come_from_any_device_that_has_them(self):
+        # The iPad's buttons (gpio-keys: Power), the simulator's QEMU keyboard
+        # (every key), and devices without either: a touchscreen, a mouse.
+        self.assertTrue(powerd.reports_keys('10000000000000 0\n'))
+        self.assertTrue(powerd.reports_keys('ffffffffff ffffffffffffffff ffffffffffffffff fffffffffffffffe\n'))
+        self.assertTrue(powerd.reports_keys('100000000000 0 0\n'))  # KEY_HOMEPAGE alone (bit 172)
+        self.assertFalse(powerd.reports_keys('30400 1f0000 0 0 0 0\n'))
+        self.assertFalse(powerd.reports_keys('1f0000 0 0 0 0\n'))
+        self.assertFalse(powerd.reports_keys(''))
+
     def test_closing_locks_once_and_opening_wakes_once_across_both_sensors(self):
         cover = powerd.Cover()
         self.assertEqual(cover.change('a', True), 'lock')

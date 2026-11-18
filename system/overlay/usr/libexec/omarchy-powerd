@@ -343,6 +343,17 @@ def reports_cover(capabilities_sw):
     return bool(bits >> SW_MACHINE_COVER & 1)
 
 
+def reports_keys(capabilities_key):
+    """Whether an input device's sysfs capabilities/key bitmap has KEY_POWER or KEY_HOMEPAGE."""
+    words = capabilities_key.split()
+    # Hex words of the kernel's long, most significant first.
+    width = struct.calcsize('L') * 8
+    bits = 0
+    for word in words:
+        bits = bits << width | int(word, 16)
+    return bool(bits >> KEY_POWER & 1 or bits >> KEY_HOMEPAGE & 1)
+
+
 class Cover:
     """The Smart Cover from its switches: closing locks, opening wakes.
 
@@ -538,8 +549,8 @@ class Daemon:
     def scan_keys(self):
         for device in Path('/sys/class/input').glob('event*'):
             try:
-                name = (device / 'device/name').read_text().strip()
                 sw = (device / 'device/capabilities/sw').read_text()
+                key = (device / 'device/capabilities/key').read_text()
             except OSError:
                 continue
             path = f'/dev/input/{device.name}'
@@ -553,7 +564,9 @@ class Daemon:
                 self.covers[fd] = path
                 log(f'cover: {path}')
                 continue
-            if name != 'gpio-keys' or path in self.keys.values():
+            # The iPad's buttons are gpio-keys; a keyboard's Power or Home key, or
+            # the simulator's buttons on QEMU's virtual keyboard, count the same.
+            if not reports_keys(key) or path in self.keys.values():
                 continue
             try:
                 fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
