@@ -31,8 +31,17 @@ Item {
   // A new deck lands on the focused output and stays there until it empties.
   property string deckDisplayName: ""
   readonly property var displayNames: Quickshell.screens.map(function(screen) { return screen.name })
+  // Orchard: Hyprland's answers only where Hyprland runs; on labwc the
+  // generic Wayland window list (ToplevelManager) stands in for them.
+  readonly property bool usingHyprland: !!Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE")
   readonly property string focusedDisplayName: {
-    var name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
+    var name = ""
+    if (usingHyprland) name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
+    else {
+      var active = ToplevelManager.activeToplevel
+      var on = active && active.screens && active.screens.length ? active.screens[0] : null
+      name = on ? String(on.name || "") : ""
+    }
     return displayNames.indexOf(name) >= 0 ? name : (displayNames[0] || "")
   }
   readonly property string targetDisplayName: displayNames.indexOf(deckDisplayName) >= 0 ? deckDisplayName : focusedDisplayName
@@ -99,6 +108,15 @@ Item {
   function fullscreenOn(name) {
     var revision = hyprRevision
     if (!name) return false
+    if (!usingHyprland) {
+      // labwc: the active window, fullscreen on that output.
+      var active = ToplevelManager.activeToplevel
+      if (!active || !active.fullscreen) return false
+      var screens = active.screens || []
+      for (var a = 0; a < screens.length; a++)
+        if (String(screens[a].name) === name) return true
+      return false
+    }
     var screen = null
     for (var s = 0; s < Quickshell.screens.length; s++)
       if (String(Quickshell.screens[s].name) === name) screen = Quickshell.screens[s]
@@ -116,7 +134,7 @@ Item {
   }
 
   Connections {
-    target: Hyprland
+    target: service.usingHyprland ? Hyprland : null
     function onRawEvent(event) {
       switch (event.name) {
       case "fullscreen": case "openwindow": case "closewindow": case "movewindowv2":
@@ -970,6 +988,19 @@ Item {
   }
 
   function openWindows() {
+    if (!usingHyprland) {
+      // labwc: the window list has no pid or focus history; the active
+      // window counts as the most recent, the rest after it.
+      var windows = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
+      var active = ToplevelManager.activeToplevel
+      var listed = []
+      for (var w = 0; w < windows.length; w++) {
+        var appId = String(windows[w].appId || "")
+        if (appId) listed.push({ wmClass: appId, title: String(windows[w].title || ""), address: "",
+                                 pid: 0, focusOrder: windows[w] === active ? 0 : 1 + w, toplevel: windows[w] })
+      }
+      return listed
+    }
     var list = Hyprland.toplevels ? Hyprland.toplevels.values : []
     var out = []
     for (var i = 0; i < list.length; i++) {
@@ -1083,6 +1114,7 @@ Item {
   // By address, because a class is not an identity.
   function focusWindow(win) {
     if (!win) return
+    if (win.toplevel) { win.toplevel.activate(); return }
     if (!/^0x[0-9a-f]+$/i.test(String(win.address || ""))) return
     Hyprland.dispatch('hl.dsp.focus({window = hl.get_window("address:' + win.address + '")})')
   }
@@ -1110,7 +1142,10 @@ Item {
       else if (Markup.hostname(row.source))
         Security.openExternalUrl("https://" + Markup.hostname(row.source) + "/")
       else if (String(row.link || "")) Security.openExternalUrl(String(row.link))
-      else if (String(row.app || "")) Util.execArgv(["omarchy-hyprland-focus-app", String(row.app)])
+      else if (String(row.app || "")) {
+        if (usingHyprland) Util.execArgv(["omarchy-hyprland-focus-app", String(row.app)])
+        else if (service.shell && service.shell.appLibrary) service.shell.appLibrary.focusToplevel(String(row.app))
+      }
     }
     closeToast(key, "activated", instant)
   }

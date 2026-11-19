@@ -22,7 +22,7 @@
   },
   "disabledPlugins": [
     "omarchy.dock", "omarchy.polkit",
-    "omarchy.notifications", "omarchy.media",
+    "omarchy.media",
     "omarchy.battery", "omarchy.nightlight", "omarchy.remote-session",
     "omarchy.reminders", "omarchy.emojis",
     "omarchy.clipboard"
