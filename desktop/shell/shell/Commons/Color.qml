@@ -23,6 +23,11 @@ QtObject {
   property color accent: "#cacccc"
   property color urgent: "#a55555"
   property color muted: "#707880"
+  // Orchard: palette roles for surfaces that tell groups apart by colour (the
+  // launcher's Actions). A theme's named colour, else its terminal slot.
+  property color cyan: accent
+  property color blue: accent
+  property color yellow: accent
 
   // Flat dictionary of "section.key" -> raw string from shell.toml.
   // Reassigning this whole property is what makes surface bindings below
@@ -129,6 +134,8 @@ QtObject {
     property color borderActive: root.composed("lock.border-active", "lock.border-alpha", root.accent, 1.0)
     property color borderError: root.composed("lock.border-error", "lock.border-alpha", root.urgent, 1.0)
     property color selection: root.composed("lock.selection", "lock.selection-alpha", root.accent, 0.45)
+    // Over the wallpaper, under the clock and keys.
+    property color scrim: root.composed("lock.scrim", "lock.scrim-alpha", root.background, 0.25)
   }
   // The image picker has no card surface or backdrop; per-slice dim
   // overlays / text outlines use the foundational `background` color directly.
@@ -148,6 +155,7 @@ QtObject {
     var color4Value = ""
     var color7Value = ""
     var color8Value = ""
+    var named = ({})
     for (var i = 0; i < lines.length; i++) {
       var match = lines[i].match(/^\s*([A-Za-z0-9_-]+)\s*=\s*["']?(#[0-9A-Fa-f]{6})/)
       if (!match) continue
@@ -163,11 +171,15 @@ QtObject {
       else if (match[1] === "color7") color7Value = match[2]
       else if (match[1] === "color8") color8Value = match[2]
       else if (match[1] === "red" || match[1] === "color1") urgent = match[2]
+      if (["cyan", "blue", "yellow", "color3", "color4", "color6"].indexOf(match[1]) >= 0) named[match[1]] = match[2]
     }
     if (!loadedBackground && color0Value.length > 0) background = color0Value
     if (!loadedForeground && color7Value.length > 0) foreground = color7Value
     if (!foundAccent && color4Value.length > 0) accent = color4Value
     if (!foundMuted) muted = color8Value.length > 0 ? color8Value : foreground
+    cyan = named.cyan || named.color6 || accent
+    blue = named.blue || named.color4 || accent
+    yellow = named.yellow || named.color3 || accent
   }
 
   // Last theme-supplied and user-supplied shell.toml dicts, kept separate so

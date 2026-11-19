@@ -374,6 +374,29 @@
   "emojis.noMatches": "No matches for “%1”",
   "emojis.search": "Search emojis…",
   "imagePicker.deleteTheme": "Do you want to delete %1?",
+  "launcher.actions": "Actions",
+  "launcher.addApps": "Add apps…",
+  "launcher.daysAgo": {
+    "one": "%1 day ago",
+    "other": "%1 days ago"
+  },
+  "launcher.hoursAgo": {
+    "one": "%1 h ago",
+    "other": "%1 h ago"
+  },
+  "launcher.justNow": "Just now",
+  "launcher.minutesAgo": {
+    "one": "%1 min ago",
+    "other": "%1 min ago"
+  },
+  "launcher.noResults": "Nothing matches “%1”",
+  "launcher.recentApps": "Recent apps",
+  "launcher.recentFiles": "Recent files",
+  "launcher.search": "Search apps, actions and settings",
+  "launcher.searchShort": "Search",
+  "launcher.session": "Session",
+  "launcher.settings": "Settings",
+  "launcher.tools": "Tools",
   "lock.authenticationFailed": "Authentication failed (%1)",
   "lock.checking": "Checking…",
   "lock.enterPassword": "Enter Password",

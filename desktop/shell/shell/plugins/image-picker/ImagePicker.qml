@@ -58,9 +58,16 @@ Item {
   // Keep the upstream dimensions on wide displays. On a portrait tablet,
   // reserve room for adjacent slices instead of filling the entire viewport
   // with the selected card (the source images and mask remain unchanged).
-  property int expandedWidth: Math.min(768, Math.max(320, Math.floor((panel.width - 32) * 0.60)))
+  // Orchard: on a phone-wide screen the selected card takes what is left
+  // after 16-point margins and a slim slice of each neighbour, so it shows
+  // whole and the carousel still reads as one.
+  readonly property bool narrow: panel.width > 0 && panel.width < 600
+  readonly property int narrowMargin: 16
+  property int expandedWidth: narrow
+    ? Math.max(160, panel.width - 2 * narrowMargin - 2 * (sliceWidth + sliceSpacing))
+    : Math.min(768, Math.max(320, Math.floor((panel.width - 32) * 0.60)))
   property int expandedHeight: Math.min(475, Math.round(expandedWidth * 475 / 768), Math.max(200, panel.height - 64 - bottomChromeHeight))
-  property int sliceWidth: Math.min(108, Math.max(72, Math.round(expandedWidth * 108 / 768)))
+  property int sliceWidth: narrow ? 44 : Math.min(108, Math.max(72, Math.round(expandedWidth * 108 / 768)))
   property int sliceHeight: Math.min(432, Math.round(expandedHeight * 432 / 475))
   property int sliceSpacing: -Math.round(sliceWidth * 0.28)
   property int skewOffset: 28
@@ -672,7 +679,7 @@ Item {
       id: card
       visible: root.opened && root.imagesLoaded && root.imageArray.length > 0
       opacity: root.layoutSettled ? 1 : 0
-      width: Math.min(parent.width - 80, root.expandedWidth + 13 * (root.sliceWidth + root.sliceSpacing) + 40)
+      width: Math.min(parent.width - (root.narrow ? 2 * root.narrowMargin : 80), root.expandedWidth + 13 * (root.sliceWidth + root.sliceSpacing) + 40)
       height: root.expandedHeight + Style.space(30) + root.bottomChromeHeight
       anchors.centerIn: parent
 

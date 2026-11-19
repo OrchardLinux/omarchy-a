@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# omarchy:summary=Write the launcher's background: the wallpaper as tinted frosted glass
+# omarchy:args=<wallpaper> <output.png> <width> <height> <red> <green> <blue> <tint>
+# omarchy:hidden=true
+
+# The launcher fades in over whatever the screen shows, so its background has
+# to be ready before it opens: nothing is computed during the fade. libvips
+# makes it once per wallpaper, screen size and theme colour.
+#
+# A tint this strong leaves the blurred wallpaper only a few levels of
+# brightness to span, which 8-bit colour draws as visible bands. So every step
+# runs in floating point, at the panel's own pixel size (the launcher shows it
+# 1:1), and the one rounding to 8 bits at the end is dithered.
+
+set -e
+wallpaper=$1 output=$2 width=$3 height=$4 red=$5 green=$6 blue=$7 tint=$8
+[[ -f $wallpaper && -n $output && $width -gt 0 && $height -gt 0 && -n $tint ]] || exit 1
+[[ -s $output ]] && exit 0
+
+work=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/omarchy-launcher-backdrop.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+export VIPS_WARNING=0
+calc() { awk "BEGIN { print $1 }"; }
+
+# Blurred hard at an eighth of the size and scaled back up smoothly, so only
+# soft fields of colour remain.
+vipsthumbnail "$wallpaper" --size "$(((width + 7) / 8))x$(((height + 7) / 8))" --crop -o "$work/thumb.v"
+# Any wallpaper as three sRGB bands: a greyscale one is made colour, a
+# transparent one laid on black, as the desktop shows it.
+vips colourspace "$work/thumb.v" "$work/srgb.v" srgb
+if (( $(vipsheader -f bands "$work/srgb.v") > 3 )); then
+  vips flatten "$work/srgb.v" "$work/flat.v"
+else
+  cp "$work/srgb.v" "$work/flat.v"
+fi
+vips extract_band "$work/flat.v" "$work/small.v" 0 --n 3
+vips cast "$work/small.v" "$work/small-float.v" float
+vips gaussblur "$work/small-float.v" "$work/blurred.v" 20 --precision float
+vips resize "$work/blurred.v" "$work/large.v" 8 --kernel cubic
+vips extract_area "$work/large.v" "$work/sized.v" 0 0 "$width" "$height"
+
+# Its colour a little stronger, then the theme's colour over it.
+vips colourspace "$work/sized.v" "$work/lch.v" lch --source-space srgb
+vips linear "$work/lch.v" "$work/vivid.v" "1 1.3 1" "0 0 0"
+vips colourspace "$work/vivid.v" "$work/rgb.v" srgb
+keep=$(calc "1 - $tint")
+vips linear "$work/rgb.v" "$work/tinted.v" "$keep $keep $keep" \
+  "$(calc "$red * $tint") $(calc "$green * $tint") $(calc "$blue * $tint")"
+
+# Dither: half a level of noise before rounding spreads each step into a
+# gradient the eye sees as smooth.
+vips gaussnoise "$work/noise.v" "$width" "$height" --sigma 0.5 --mean 0.5
+vips add "$work/tinted.v" "$work/noise.v" "$work/dithered.v"
+vips cast "$work/dithered.v" "$work/out.v" uchar
+vips copy "$work/out.v" "$work/out.png"
+mv -f "$work/out.png" "$output"

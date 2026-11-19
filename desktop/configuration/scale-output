@@ -1,5 +1,6 @@
 #!/bin/bash
-# Scale the single native panel, accepting both current/preferred flag lists.
+# Scale the single native panel (the iPads' and the iPhone 7's), accepting both
+# current/preferred flag lists.
 # Never change its timing or force the VM's Virtual-1 mode.
 # The scale is the one omarchy-hyprland-monitor-persist saved for this output
 # (upstream Omarchy's monitors/settings file, scale in the third field, the
@@ -8,7 +9,7 @@ set -euo pipefail
 state=$(wlr-randr)
 mapfile -t outputs < <(awk '/^[^[:space:]]/ {print $1}' <<< "$state")
 if (( ${#outputs[@]} != 1 )) || ! grep -q '  Enabled: yes' <<< "$state" ||
-   ! grep -Eq '^[[:space:]]+(1536x2048|2048x1536|1620x2160|2160x1620) px, .*current' <<< "$state"; then
+   ! grep -Eq '^[[:space:]]+(1536x2048|2048x1536|1620x2160|2160x1620|750x1334|1334x750) px, .*current' <<< "$state"; then
   echo 'Native single-panel mode not established; left scale unchanged' >&2
   exit 0
 fi

@@ -222,6 +222,9 @@ border-alpha     = 1.0
 # selection is the text-selection tint inside the input field.
 selection        = "{{ accent }}"
 selection-alpha  = 0.45
+# scrim lies over the wallpaper, under the clock and the PIN keys.
+scrim            = "{{ background }}"
+scrim-alpha      = 0.25
 
 [image-picker]
 # Carousel-style picker shown directly over the desktop, with no card

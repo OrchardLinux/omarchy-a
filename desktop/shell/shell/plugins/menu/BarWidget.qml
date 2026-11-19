@@ -17,7 +17,9 @@ BarWidget {
     onPressed: function(button) {
       if (!root.bar) return
       if (button === Qt.RightButton) root.bar.run("foot")
-      else root.bar.run("omarchy-shell shell toggle omarchy.menu '{\"menu\":\"root\"}'")
+      // Orchard: the logo opens the launcher, the dependable path on a phone
+      // without a Home button; Settings in it opens the menu.
+      else root.bar.run("omarchy-shell omarchy.dock apps")
     }
   }
 }

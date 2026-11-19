@@ -42,6 +42,8 @@ gum), `omarchy-dev-add-migration`, `omarchy-toggle-bar`,
 `omarchy-launch-browser` and `omarchy-launch-webapp` (Firefox; upstream's web
 apps need Chromium).
 
+**Taken unchanged** for the launcher's Uninstall: `omarchy-remove-launcher-entry`.
+
 **Changed for touch and the tablet in the shell.**
 The Display panel is upstream's with three more rows (auto-brightness,
 rotation lock, Stay Awake); its commands run on labwc (`omarchy-monitor-state`
@@ -56,26 +58,31 @@ changes: the bar (narrow-bar pages, a hidden bar unmaps because labwc never
 brings back a parked layer surface, no drag-reorder by finger, and its surface
 is only the strip: upstream spans the screen so Hyprland cannot pull a dragged
 pointer off the bar, which costs a full-screen layer on every frame), indicators
-(no hover reveal on touch), the lock (6-digit PIN pad, a 30 s lit lock, wake
+(no hover reveal on touch), the lock (clock above or beside six PIN slots and the
+shell's keypad, the wallpaper sharp under a `lock.scrim`, a wrong PIN in the theme's red; a 30 s lit lock, wake
 only by Home and Power), the idle service (omarchy-powerd's idle), the keyboard
 panel, menu and overlays (below the on-screen keyboard), the app grid (a text
-field for the on-screen keyboard, and no version under the selected app), network rows (long press for Forget and
+field for the on-screen keyboard, and no version under the selected app; the
+shell itself opens the launcher instead), the menu's bar logo (opens the
+launcher), the image picker (fits a phone's width), `Commons/Color.qml` (cyan, blue and yellow from the theme, `lock.scrim`), network rows (long press for Forget and
 Change passphrase), Bluetooth pairing feedback, the background (no Hyprland
 boot cover or theme intro videos, software decode at panel size), the greeter's data-only theme
 snapshot (`Commons/Color.qml`) and wallpaper readiness (`LockView.qml`),
 `Style.qml` (a larger bar target), `config/omarchy/shell.json` (the tablet's bar
 and the plugins it turns off).
 
-**Menu.** `default/omarchy/omarchy-menu.jsonc`: Reboot says it leaves Linux,
-Activity opens Omactivity, Setup > Monitors opens the Display panel, Maximize
+**Menu.** `default/omarchy/omarchy-menu.jsonc`: Activity opens Omactivity, Setup > Monitors opens the Display panel, Maximize
 Windows toggles, the Agent section shows only once the agent commands are
-installed, and Screensaver only where a screensaver is. `desktop/install-tree` also points Suspend at the kernel's
+installed, Screensaver only where a screensaver is, and each Setup > Defaults list only where its
+command is. `desktop/install-tree` also points Suspend at the kernel's
 charger PM readiness.
 
 **Translations.** `default/i18n/en/cli.json` holds only the keys of the commands
 shipped here; `shell.json` adds the auto-brightness and captive-portal keys.
 
-**Our own files** (no upstream counterpart): the labwc config, theme renderer
+**Our own files** (no upstream counterpart): the launcher
+(`shell/launcher/`, `bin/omarchy-launcher-recent-files`,
+`bin/omarchy-launcher-backdrop`), the labwc config, theme renderer
 and window buttons (`labwc-*`, `render-labwc-*.py`), the on-screen keyboard
 (`bin/omarchy-keyboard`, `shell/plugins/keyboard/`), the bar's Overflow widget,
 the screen flash, the Home button and overview, rotation lock, auto-brightness,
