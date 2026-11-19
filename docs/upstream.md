@@ -84,8 +84,8 @@ charger PM readiness.
 **Translations.** `default/i18n/en/cli.json` holds only the keys of the commands
 shipped here; `shell.json` adds the auto-brightness and captive-portal keys.
 
-**Our own files** (no upstream counterpart): the status cluster
-(`shell/plugins/status/`), the launcher
+**Our own files** (no upstream counterpart): the control center
+(`shell/controlcenter/`), the status cluster (`shell/plugins/status/`), the launcher
 (`shell/launcher/`, `bin/omarchy-launcher-recent-files`,
 `bin/omarchy-launcher-backdrop`), the labwc config, theme renderer
 and window buttons (`labwc-*`, `render-labwc-*.py`), the on-screen keyboard

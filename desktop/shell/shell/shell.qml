@@ -10,6 +10,7 @@ import qs.Commons as Commons
 
 import "plugins/bar"
 import "launcher"
+import "controlcenter"
 import "services"
 import "services/AuthServiceStore.js" as AuthServiceStore
 
@@ -28,6 +29,8 @@ ShellRoot {
   // (`omarchy-shell omarchy.dock apps`), so Home, Super, Super+Space and the
   // bar's logo open it, without mapping Hyprland's dock.
   Launcher { id: appGrid; shell: shell; appLibrary: shell.appLibrary }
+  // Orchard: the control center (`omarchy-shell omarchy.controlcenter toggle`).
+  ControlCenter { shell: shell }
   ShellIpc {
     target: "omarchy.dock"
     function apps(): void { appGrid.toggle() }

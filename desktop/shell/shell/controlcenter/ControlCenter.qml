@@ -1,0 +1,684 @@
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import Quickshell.Networking
+import Quickshell.Wayland
+import Quickshell.Services.Pipewire
+import qs.Commons
+import qs.Commons as Commons
+import qs.Ui
+import "../plugins/panels/network" as Network
+import "../plugins/panels/bluetooth" as BluetoothStatus
+import "../plugins/panels/power" as Power
+import "../plugins/panels/bluetooth/Model.js" as BluetoothModel
+import "../plugins/status" as StatusParts
+
+// The control center (SHELL-SPEC, step 2): the main view. States you flip
+// and the two sliders, over the same status objects the bar and the lock
+// read. On an iPad a panel below the bar at the right with the screen dimmed;
+// on a phone the whole screen. Until its module pages exist, a tile's chevron
+// and the battery line open the bar's panels.
+Item {
+  id: root
+
+  property var shell: null
+  property bool opened: false
+  property bool mapped: false
+  property real reveal: 0
+
+  readonly property bool gpu: Quickshell.env("QT_QUICK_BACKEND") !== "software"
+  readonly property real screenWidth: panel.width > 0 ? panel.width : 1024
+  readonly property real screenHeight: panel.height > 0 ? panel.height : 768
+  readonly property bool phone: Math.min(screenWidth, screenHeight) < 600
+  readonly property int barInset: Style.bar.sizeHorizontal
+  readonly property int touchMin: Style.space(44)
+  readonly property int gap: Style.space(8)
+  readonly property int pad: Style.space(12)
+  readonly property int cardWidth: phone ? screenWidth : Style.space(356)
+  readonly property color text: Commons.Color.popups.text
+  readonly property color onFill: Commons.Color.accent
+  readonly property color onText: Commons.Color.background
+
+  // ------------------------------------------------------------ state
+
+  Network.Status { id: network }
+  BluetoothStatus.Status { id: bluetooth }
+  Power.Status { id: battery }
+  StatusParts.RotationLock { id: rotation }
+
+  readonly property var idleService: shell ? shell.firstPartyServiceFor("omarchy.idle") : null
+  readonly property bool stayAwake: idleService ? idleService.stayAwake === true : false
+
+  readonly property var sink: Pipewire.defaultAudioSink
+  readonly property var source: Pipewire.defaultAudioSource
+  PwObjectTracker { objects: [root.sink, root.source].filter(function(n) { return !!n }) }
+  readonly property real volume: sink && sink.audio ? sink.audio.volume : 0
+  readonly property bool micMuted: UntypedInput.active
+    ? (!UntypedInput.known || UntypedInput.muted)
+    : !(source && source.audio) || source.audio.muted
+  readonly property bool micKnown: UntypedInput.active ? UntypedInput.known : !!(source && source.audio)
+
+  property int brightness: -1
+  property bool autoBrightness: false
+
+  readonly property string wifiSubtitle: {
+    if (!network.wifiEnabled) return Commons.I18n.t("controlCenter.off")
+    if (network.hasCaptivePortal) return Commons.I18n.t("controlCenter.signIn")
+    if (network.kind === "wifi" && network.ssid !== "") return network.ssid
+    if (network.kind === "ethernet") return Commons.I18n.t("controlCenter.wired")
+    return Commons.I18n.t("controlCenter.notConnected")
+  }
+  readonly property string bluetoothSubtitle: {
+    if (!bluetooth.enabled) return Commons.I18n.t("controlCenter.off")
+    var n = bluetooth.connectedDevices.length
+    if (n === 1) return BluetoothModel.deviceLabel(bluetooth.connectedDevices[0])
+    if (n > 1) return Commons.I18n.t("controlCenter.connectedCount").arg(Commons.I18n.formatNumber(n))
+    return Commons.I18n.t("controlCenter.notConnected")
+  }
+  readonly property string outputName: sink ? String(sink.nickname || sink.description || "") : ""
+  readonly property string batteryLine: {
+    if (battery.displayedPercentage === null) return ""
+    var line = Commons.I18n.formatNumber(battery.displayedPercentage) + "%"
+    var time = String(battery.batteryInfo.time || "")
+    return time !== "" && !battery.externalPower ? line + " · " + time : line
+  }
+
+  // ---------------------------------------------------------- actions
+
+  function run(argv) { Quickshell.execDetached(argv) }
+  function omarchy(name) { return (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/bin/" + name }
+
+  // Until the pages exist: the bar's panel for that module.
+  function openPage(module) {
+    root.close()
+    run(["omarchy-shell", "shell", "toggle", module])
+  }
+
+  function toggleWifi() { Networking.wifiEnabled = !Networking.wifiEnabled }
+  function toggleBluetooth() { if (bluetooth.adapter) bluetooth.adapter.enabled = !bluetooth.adapter.enabled }
+  function toggleMic() {
+    if (UntypedInput.active) { if (UntypedInput.known) UntypedInput.setMuted(!UntypedInput.muted) }
+    else if (source && source.audio) source.audio.muted = !source.audio.muted
+  }
+  function toggleRotation() { run([omarchy("omarchy-rotation-lock"), rotation.locked ? "off" : "on"]); rotation.locked = !rotation.locked }
+  function toggleAwake() { if (idleService) idleService.setIdleEnabled(root.stayAwake) }
+  function showKeyboard() { root.close(); run([omarchy("omarchy-keyboard"), "toggle"]) }
+  function sessionActions() {
+    root.close()
+    if (root.shell) root.shell.summon("omarchy.menu", JSON.stringify({ menu: "system" }))
+  }
+  function setVolume(value) {
+    if (sink && sink.audio) sink.audio.volume = Math.max(0, Math.min(1, value))
+  }
+  function setBrightness(percent) {
+    root.brightness = Math.max(1, Math.min(100, Math.round(percent)))
+    brightnessSet.restart()
+  }
+
+  Timer {
+    id: brightnessSet
+    interval: 60
+    onTriggered: root.run(["omarchy-brightness-display", "--no-osd", root.brightness + "%"])
+  }
+  Process {
+    id: brightnessRead
+    command: ["omarchy-brightness-display"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var value = parseInt(text, 10)
+        root.brightness = isNaN(value) ? -1 : value
+      }
+    }
+  }
+  Process {
+    id: autoRead
+    command: ["omarchy-auto-brightness", "status"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.autoBrightness = /auto-brightness: on/.test(text)
+    }
+  }
+
+  // ------------------------------------------------------------ cells
+  // Each focusable cell: kind (tile, slider, toggle, later), what it shows
+  // and does. The keyboard walks them in this order, arrows by position.
+
+  readonly property var toggles: [
+    { key: "mic", glyph: root.micMuted ? "󰍭" : "󰍬", label: Commons.I18n.t("controlCenter.mic"),
+      on: !root.micMuted, enabled: root.micKnown, act: root.toggleMic },
+    { key: "rotation", glyph: "󰌾", label: Commons.I18n.t("controlCenter.rotation"),
+      on: rotation.locked, enabled: true, act: root.toggleRotation },
+    { key: "awake", glyph: "", label: Commons.I18n.t("controlCenter.awake"),
+      on: root.stayAwake, enabled: !!root.idleService, act: root.toggleAwake },
+    { key: "keyboard", glyph: "󰌌", label: Commons.I18n.t("controlCenter.keyboard"),
+      on: false, enabled: true, act: root.showKeyboard }
+  ]
+  // Live once their backend exists (power profiles, Focus, Night Light, media).
+  readonly property var later: [
+    { glyph: "󰓅", label: Commons.I18n.t("controlCenter.balanced") },
+    { glyph: "󰖔", label: Commons.I18n.t("controlCenter.focus") },
+    { glyph: "󰽟", label: Commons.I18n.t("controlCenter.night") },
+    { glyph: "󰝚", label: Commons.I18n.t("controlCenter.media") }
+  ]
+
+  // Keyboard: the focused cell, or none until the keyboard is used.
+  property var focusables: []
+  property int focusIndex: -1
+  function registerCell(item) {
+    var list = root.focusables.slice()
+    if (list.indexOf(item) < 0) list.push(item)
+    root.focusables = list
+  }
+  function focusedCell() { return focusIndex >= 0 && focusIndex < focusables.length ? focusables[focusIndex] : null }
+  function visibleCells() { return focusables.filter(function(c) { return c && c.visible && c.focusable }) }
+  function moveFocus(dx, dy) {
+    var cells = visibleCells()
+    if (cells.length === 0) return
+    var current = focusedCell()
+    if (!current || cells.indexOf(current) < 0) { root.focusIndex = focusables.indexOf(cells[0]); return }
+    var a = current.mapToItem(card, current.width / 2, current.height / 2)
+    var best = null, bestScore = 1e9
+    for (var i = 0; i < cells.length; i++) {
+      var c = cells[i]
+      if (c === current) continue
+      var b = c.mapToItem(card, c.width / 2, c.height / 2)
+      var along = dx !== 0 ? (b.x - a.x) * dx : (b.y - a.y) * dy
+      if (along <= 1) continue
+      var across = dx !== 0 ? Math.abs(b.y - a.y) : Math.abs(b.x - a.x)
+      var score = along + across * 2
+      if (score < bestScore) { bestScore = score; best = c }
+    }
+    if (best) root.focusIndex = focusables.indexOf(best)
+  }
+  function stepFocus(delta) {
+    var cells = visibleCells()
+    if (cells.length === 0) return
+    var at = cells.indexOf(focusedCell())
+    var next = at < 0 ? (delta > 0 ? 0 : cells.length - 1) : (at + delta + cells.length) % cells.length
+    root.focusIndex = focusables.indexOf(cells[next])
+  }
+
+  // ----------------------------------------------------------- lifecycle
+
+  function open() {
+    if (!brightnessRead.running) brightnessRead.running = true
+    if (!autoRead.running) autoRead.running = true
+    root.focusIndex = -1
+    revealOut.stop()
+    root.opened = true
+    if (root.mapped && panel.contentRevealed) revealIn.restart()
+    root.mapped = true
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+  function close() {
+    if (!root.opened) return
+    root.opened = false
+    revealIn.stop()
+    revealOut.restart()
+  }
+  function toggle() { root.opened ? root.close() : root.open() }
+
+  NumberAnimation { id: revealIn; target: root; property: "reveal"; to: 1; duration: root.gpu ? Style.duration(160) : 0; easing.type: Easing.OutCubic }
+  NumberAnimation {
+    id: revealOut; target: root; property: "reveal"; to: 0
+    duration: root.gpu ? Style.duration(110) : 0; easing.type: Easing.InCubic
+    onFinished: if (!root.opened) root.mapped = false
+  }
+
+  ShellIpc {
+    target: "omarchy.controlcenter"
+    function toggle(): void { root.toggle() }
+    function open(): void { if (!root.opened) root.open() }
+    function close(): void { root.close() }
+  }
+
+  // ------------------------------------------------------------- window
+
+  OverlayWindow {
+    id: panel
+    shown: root.mapped
+    WlrLayershell.namespace: "omarchy-control-center"
+
+    onContentRevealedChanged: if (contentRevealed && root.opened) {
+      root.reveal = 0
+      revealIn.restart()
+      keyCatcher.forceActiveFocus()
+    }
+
+    // iPad: the rest of the screen dims, and a tap there closes. Phone: the
+    // control center is the screen.
+    Rectangle {
+      anchors.fill: parent
+      color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
+      opacity: root.reveal
+      MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onClicked: root.close()
+      }
+    }
+
+    Item {
+      id: keyCatcher
+      anchors.fill: parent
+      focus: true
+      Keys.onPressed: function(event) {
+        var cell = root.focusedCell()
+        switch (event.key) {
+        case Qt.Key_Escape: root.close(); break
+        case Qt.Key_Tab: root.stepFocus(1); break
+        case Qt.Key_Backtab: root.stepFocus(-1); break
+        case Qt.Key_Up: root.moveFocus(0, -1); break
+        case Qt.Key_Down: root.moveFocus(0, 1); break
+        case Qt.Key_Left:
+          if (cell && cell.adjust) cell.adjust(-0.05); else root.moveFocus(-1, 0); break
+        case Qt.Key_Right:
+          if (cell && cell.adjust) cell.adjust(0.05)
+          else if (cell && cell.page) root.openPage(cell.page)
+          else root.moveFocus(1, 0); break
+        case Qt.Key_Return: case Qt.Key_Enter: case Qt.Key_Space:
+          if (cell && cell.activate) cell.activate(); break
+        default: return
+        }
+        event.accepted = true
+      }
+    }
+
+    // A pointer clears the keyboard's highlight.
+    PointHandler {
+      onActiveChanged: if (active) root.focusIndex = -1
+    }
+
+    Rectangle {
+      id: card
+      x: root.phone ? 0 : parent.width - width - Style.gapsOut
+      y: root.phone ? root.barInset : root.barInset + Style.gapsOut
+      width: root.phone ? parent.width : root.cardWidth
+      height: root.phone ? parent.height - root.barInset : content.implicitHeight + root.pad * 2
+      color: root.phone ? "transparent" : Commons.Color.popups.background
+      border.width: root.phone ? 0 : Math.max(1, Style.space(1))
+      border.color: Commons.Color.popups.border
+      radius: Style.cornerRadius
+      opacity: root.reveal
+      transform: Translate { y: (1 - root.reveal) * -Style.space(8) }
+
+      MouseArea { anchors.fill: parent }  // taps inside never close
+
+      Column {
+        id: content
+        x: root.pad
+        y: root.pad + (root.phone ? Style.space(12) : 0)
+        width: parent.width - root.pad * 2
+        spacing: root.gap
+
+        // Wi-Fi and Bluetooth.
+        Row {
+          spacing: root.gap
+          Tile {
+            width: (content.width - root.gap) / 2
+            glyph: network.icon !== "" ? network.icon : "󰖪"
+            title: Commons.I18n.t("controlCenter.wifi")
+            subtitle: root.wifiSubtitle
+            on: network.wifiEnabled
+            page: "omarchy.network"
+            onActivated: root.toggleWifi()
+          }
+          Tile {
+            width: (content.width - root.gap) / 2
+            glyph: bluetooth.icon !== "" ? bluetooth.icon : "󰂲"
+            title: Commons.I18n.t("controlCenter.bluetooth")
+            subtitle: root.bluetoothSubtitle
+            on: bluetooth.enabled
+            available: !!bluetooth.adapter
+            page: "omarchy.bluetooth"
+            onActivated: root.toggleBluetooth()
+          }
+        }
+
+        // Brightness and volume: one row each on an iPad, side by side as
+        // tall squares on a phone.
+        Grid {
+          columns: root.phone ? 2 : 1
+          spacing: root.gap
+          Slider {
+            width: root.phone ? (content.width - root.gap) / 2 : content.width
+            height: root.phone ? Style.space(150) : Style.space(44)
+            vertical: root.phone
+            glyph: "󰃞"
+            value: root.brightness < 0 ? 0 : root.brightness / 100
+            available: root.brightness >= 0
+            note: root.autoBrightness ? Commons.I18n.t("controlCenter.auto") : ""
+            onMoved: function(v) { root.setBrightness(v * 100) }
+            onLongPressed: root.openPage("omarchy.monitor")
+          }
+          Slider {
+            width: root.phone ? (content.width - root.gap) / 2 : content.width
+            height: root.phone ? Style.space(150) : Style.space(44)
+            vertical: root.phone
+            glyph: root.volume <= 0 || (root.sink && root.sink.audio && root.sink.audio.muted) ? "󰝟" : "󰕾"
+            value: root.volume
+            available: !!(root.sink && root.sink.audio)
+            chip: root.outputName
+            onMoved: function(v) { root.setVolume(v) }
+            onChipClicked: root.openPage("omarchy.audio")
+            onLongPressed: root.openPage("omarchy.audio")
+          }
+        }
+
+        // The toggles, then the ones still to come.
+        Grid {
+          columns: 4
+          spacing: root.gap
+          Repeater {
+            model: root.toggles
+            Toggle {
+              required property var modelData
+              width: (content.width - root.gap * 3) / 4
+              height: root.phone ? width : Style.space(64)
+              glyph: modelData.glyph
+              label: modelData.label
+              on: modelData.on
+              available: modelData.enabled
+              onActivated: modelData.act()
+            }
+          }
+          Repeater {
+            model: root.later
+            Toggle {
+              required property var modelData
+              width: (content.width - root.gap * 3) / 4
+              height: root.phone ? width : Style.space(64)
+              glyph: modelData.glyph
+              label: modelData.label
+              available: false
+            }
+          }
+        }
+
+        // Battery line and the session actions (iPad: here; phone: at the foot).
+        Item {
+          id: footer
+          width: content.width
+          height: root.touchMin
+          visible: !root.phone
+          FooterParts { anchors.fill: parent }
+        }
+      }
+
+      Item {
+        visible: root.phone
+        x: root.pad
+        width: parent.width - root.pad * 2
+        height: root.touchMin
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Style.space(24)
+        FooterParts { anchors.fill: parent }
+      }
+    }
+  }
+
+  // ----------------------------------------------------------- components
+
+  component Cell: Rectangle {
+    id: cell
+    property bool on: false
+    property bool available: true
+    property string page: ""
+    property bool focusable: available
+    readonly property bool focused: root.focusables[root.focusIndex] === cell
+    property bool pressed: false
+    signal activated()
+    function activate() { if (cell.available) cell.activated() }
+    Component.onCompleted: root.registerCell(cell)
+    radius: Style.cornerRadius
+    color: !available ? "transparent"
+      : (pressed ? Style.pressedFillFor(root.text, Commons.Color.accent)
+      : (on ? root.onFill : Style.controlFill(false, false, root.text, Commons.Color.accent)))
+    border.width: Math.max(1, Style.space(1))
+    border.color: focused ? Commons.Color.accent : (on && available ? root.onFill : Style.normalBorderColor)
+    opacity: available ? 1 : 0.45
+  }
+
+  component Tile: Cell {
+    id: tile
+    property string glyph: ""
+    property string title: ""
+    property string subtitle: ""
+    height: root.phone ? Style.space(64) : Style.space(56)
+    readonly property color ink: on && available ? root.onText : root.text
+    Row {
+      x: Style.space(12)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(10)
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        text: tile.glyph
+        color: tile.ink
+        font.family: Style.font.family
+        font.pixelSize: Style.font.title
+      }
+      Column {
+        anchors.verticalCenter: parent.verticalCenter
+        width: tile.width - Style.space(12) * 2 - Style.space(10) - Style.font.title - (tile.page !== "" && !root.phone ? Style.space(20) : 0)
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: tile.title
+          color: tile.ink
+          font.family: Style.font.family
+          font.pixelSize: Style.font.subtitle
+          font.bold: true
+          elide: Text.ElideRight
+        }
+        Text {
+          width: parent.width
+          textFormat: Text.PlainText
+          text: tile.subtitle
+          color: tile.ink
+          opacity: 0.75
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+      }
+    }
+    // Tap toggles; the chevron, a long press or a right click opens the page.
+    MouseArea {
+      anchors.fill: parent
+      acceptedButtons: Qt.LeftButton | Qt.RightButton
+      onPressed: tile.pressed = true
+      onReleased: tile.pressed = false
+      onCanceled: tile.pressed = false
+      onPressAndHold: { tile.pressed = false; if (tile.page) root.openPage(tile.page) }
+      onClicked: function(mouse) {
+        if (mouse.button === Qt.RightButton) { if (tile.page) root.openPage(tile.page) }
+        else tile.activate()
+      }
+    }
+    Item {
+      visible: tile.page !== "" && !root.phone
+      anchors.right: parent.right
+      width: Style.space(32)
+      height: parent.height
+      Text {
+        anchors.centerIn: parent
+        text: "󰅂"
+        color: tile.ink
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+      }
+      MouseArea { anchors.fill: parent; onClicked: root.openPage(tile.page) }
+    }
+  }
+
+  component Toggle: Cell {
+    id: toggle
+    property string glyph: ""
+    property string label: ""
+    readonly property color ink: on && available ? root.onText : root.text
+    Column {
+      anchors.centerIn: parent
+      spacing: Style.space(4)
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: toggle.glyph
+        color: toggle.ink
+        font.family: Style.font.family
+        font.pixelSize: Style.font.iconLarge
+      }
+      Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        textFormat: Text.PlainText
+        text: toggle.label
+        color: toggle.ink
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+    MouseArea {
+      anchors.fill: parent
+      enabled: toggle.available
+      onPressed: toggle.pressed = true
+      onReleased: toggle.pressed = false
+      onCanceled: toggle.pressed = false
+      onClicked: toggle.activate()
+    }
+  }
+
+  // A level you drag: the filled part is the value. Horizontal on an iPad,
+  // vertical (bottom up) on a phone. A long press opens the module's page.
+  component Slider: Cell {
+    id: slider
+    property bool vertical: false
+    property string glyph: ""
+    property real value: 0
+    property string note: ""
+    property string chip: ""
+    signal moved(real value)
+    signal chipClicked()
+    signal longPressed()
+    function adjust(delta) { if (slider.available) slider.moved(Math.max(0, Math.min(1, slider.value + delta))) }
+    color: Style.controlFill(false, false, root.text, Commons.Color.accent)
+    clip: true
+
+    Rectangle {
+      x: 0
+      y: slider.vertical ? parent.height * (1 - slider.value) : 0
+      width: slider.vertical ? parent.width : parent.width * slider.value
+      height: slider.vertical ? parent.height * slider.value : parent.height
+      color: root.text
+      opacity: 0.85
+    }
+    Text {
+      x: slider.vertical ? (parent.width - width) / 2 : Style.space(12)
+      y: slider.vertical ? parent.height - height - Style.space(12) : (parent.height - height) / 2
+      text: slider.glyph
+      color: slider.value > 0.08 ? Commons.Color.background : root.text
+      font.family: Style.font.family
+      font.pixelSize: Style.font.title
+    }
+    Text {
+      visible: slider.note !== ""
+      x: slider.vertical ? Style.space(12) : parent.width - width - Style.space(12)
+      y: slider.vertical ? Style.space(12) : (parent.height - height) / 2
+      textFormat: Text.PlainText
+      text: slider.note
+      color: root.text
+      opacity: 0.7
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+    MouseArea {
+      id: drag
+      anchors.fill: parent
+      enabled: slider.available
+      preventStealing: true
+      function valueAt(mouse) {
+        return slider.vertical ? 1 - mouse.y / slider.height : mouse.x / slider.width
+      }
+      onPressed: function(mouse) { slider.moved(Math.max(0, Math.min(1, valueAt(mouse)))) }
+      onPositionChanged: function(mouse) { if (pressed) slider.moved(Math.max(0, Math.min(1, valueAt(mouse)))) }
+      onPressAndHold: slider.longPressed()
+    }
+    Rectangle {
+      id: chipBox
+      visible: slider.chip !== ""
+      x: slider.vertical ? Style.space(10) : parent.width - width - Style.space(10)
+      y: slider.vertical ? Style.space(10) : (parent.height - height) / 2
+      width: Math.min(chipRow.implicitWidth + Style.space(16), parent.width - Style.space(20))
+      height: Style.space(26)
+      color: Commons.Color.popups.background
+      border.width: Math.max(1, Style.space(1))
+      border.color: Style.normalBorderColor
+      radius: Style.cornerRadius
+      Row {
+        id: chipRow
+        anchors.centerIn: parent
+        spacing: Style.space(6)
+        Text {
+          width: Math.min(implicitWidth, chipBox.parent.width - Style.space(48))
+          textFormat: Text.PlainText
+          text: slider.chip
+          color: root.text
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+          font.bold: true
+          elide: Text.ElideRight
+        }
+        Text {
+          text: "󰅂"
+          color: root.text
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+      MouseArea {
+        anchors.fill: parent
+        anchors.margins: -Style.space(8)
+        onClicked: slider.chipClicked()
+      }
+    }
+  }
+
+  component FooterParts: Item {
+    // Battery line: opens the battery page; the power button the session.
+    Cell {
+      id: batteryCell
+      visible: root.batteryLine !== ""
+      page: "omarchy.power"
+      color: "transparent"
+      border.width: focused ? Math.max(1, Style.space(1)) : 0
+      width: batteryRow.implicitWidth + Style.space(16)
+      height: parent.height
+      onActivated: root.openPage("omarchy.power")
+      Row {
+        id: batteryRow
+        x: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(6)
+        Text { anchors.verticalCenter: parent.verticalCenter; text: battery.icon; color: root.text; font.family: Style.font.family; font.pixelSize: Style.font.body }
+        Text { anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: root.batteryLine; color: root.text; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+        Text { anchors.verticalCenter: parent.verticalCenter; text: "󰅂"; color: root.text; opacity: 0.6; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+      }
+      MouseArea { anchors.fill: parent; onClicked: batteryCell.activate() }
+    }
+    Cell {
+      id: powerCell
+      anchors.right: parent.right
+      width: root.touchMin
+      height: parent.height
+      color: "transparent"
+      border.width: focused ? Math.max(1, Style.space(1)) : 0
+      onActivated: root.sessionActions()
+      Text {
+        anchors.centerIn: parent
+        text: "󰐥"
+        color: Commons.Color.urgent
+        font.family: Style.font.family
+        font.pixelSize: Style.font.title
+      }
+      MouseArea { anchors.fill: parent; onClicked: powerCell.activate() }
+    }
+  }
+}
