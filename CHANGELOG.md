@@ -22,6 +22,8 @@ is missing or empty.
 - The lock and login screen have a new look: a large clock over the
   wallpaper, six PIN slots and the shell's own keypad, and a wrong PIN shown
   in red without anything moving.
+- The Home button responds to every press: it no longer depends on what the
+  keyboard is doing.
 
 ## [0.3.2] - 2026-11-19
 

@@ -446,10 +446,15 @@ class Buttons(unittest.TestCase):
     def test_a_home_press_that_wakes_the_screen_opens_nothing(self):
         buttons = powerd.Buttons()
         self.assertEqual(buttons.edge('home', True, 1.0, False), 'home')
-        buttons.edge('home', False, 1.1, True)
+        self.assertIsNone(buttons.edge('home', False, 1.1, True))
         self.assertTrue(buttons.home_woke)
         buttons.edge('home', True, 5.0, True)
         self.assertFalse(buttons.home_woke)
+
+    def test_home_let_go_after_a_press_alone_is_the_home_action(self):
+        self.assertEqual(self.events([('home', True, 1.0), ('home', False, 1.1)]), ['home', 'home-up'])
+        # A release whose press was not seen (powerd started meanwhile) is not one.
+        self.assertEqual(self.events([('home', False, 1.1)]), [])
 
     def test_power_alone_still_darkens_after_a_screenshot(self):
         edges = [('power', True, 1.0), ('home', True, 1.1), ('home', False, 1.3), ('power', False, 1.4),
@@ -868,13 +873,22 @@ class EventLoop(unittest.TestCase):
             connection.sendall(request.encode() + b'\n')
             return connection.recv(64).decode().strip()
 
-    def test_home_socket_reports_combo_after_screenshot_chord(self):
-        when = time.monotonic()
-        event = powerd.INPUT_EVENT.pack
-        os.write(self.key_write, b''.join(event(int(when+i/10), int((when+i/10)%1*1e6), 1, code, down)
-                     for i, (code, down) in enumerate(((116, 1), (172, 1), (172, 0), (116, 0)))))
-        self.wait(lambda: self.daemon.buttons.home_in_combo)
-        self.assertEqual(self.ask('home'), 'combo')
+    def test_home_alone_starts_the_home_action_and_a_screenshot_chord_does_not(self):
+        # The action comes from the button: no labwc binding or keyboard
+        # state in between. Half of Home + Power starts nothing.
+        user = pwd.struct_passwd(('tablet', 'x', 1000, 1000, '', '/home/tablet', '/bin/bash'))
+        spawned = []
+        with patch.object(powerd, 'session_user', lambda: user), \
+                patch.object(powerd, 'spawn_as_user', lambda *argv, **options: spawned.append((argv, options))):
+            when = time.monotonic()
+            event = powerd.INPUT_EVENT.pack
+            os.write(self.key_write, b''.join(event(int(when+i/10), int((when+i/10)%1*1e6), 1, code, down)
+                         for i, (code, down) in enumerate(((116, 1), (172, 1), (172, 0), (116, 0)))))
+            self.wait(lambda: self.daemon.buttons.home_in_combo)
+            self.assertEqual(spawned, [])
+            self.press(172)
+            self.wait(lambda: spawned)
+        self.assertEqual(spawned[0][0][1:], ('omarchy-home-button',))
         self.assertEqual(self.ask('status'), 'ON')
 
     def test_idle_dim_restore_and_manual_brightness_supersedes_dim(self):
