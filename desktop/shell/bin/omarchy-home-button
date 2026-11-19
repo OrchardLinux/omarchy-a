@@ -1,78 +1,40 @@
 #!/bin/bash
 
-# omarchy:summary=The iPad's Home button: open the launcher, or the overview when pressed twice; close the overview; nothing if the press took a screenshot or woke the screen
+# omarchy:summary=The iPad's Home button: open the launcher, or the overview when pressed twice; close the overview
 # omarchy:hidden=true
 
-# labwc runs this when Home comes up. omarchy-powerd saw the same press and
-# knows whether Home was pressed together with Power (a screenshot), or
-# woke a dark screen: in the grace before the lock the session is still
-# unlocked, so this binding runs, but the press was only the wake.
+# omarchy-powerd runs this when Home comes up after a press alone on a lit
+# screen: it reads the button itself, so a press that woke the screen or
+# was half of Home + Power (a screenshot) never gets here, and no keyboard
+# state or compositor binding stands in between.
 runtime="${XDG_RUNTIME_DIR:-/run/user/$UID}"
 stamp="$runtime/omarchy-home-press"
 # When the press happened, in ms, from bash's own clock (no fork).
 now=$(( ${EPOCHREALTIME/[.,]/} / 1000 ))
 
-# omarchy-powerd's answer is a Python round trip, slow to start on a tablet,
-# so it is asked at once and runs while this press waits for a second one.
-answer_file=$(mktemp "$runtime/omarchy-home-answer.XXXXXX")
-trap 'rm -f "$answer_file"' EXIT
-# Each press also leaves its verdict, as soon as it is known, for a second
-# press that comes before this one has finished: a press that only woke the
-# screen does not make the next one a double press.
-verdict="$runtime/omarchy-home-verdict-$now"
-{
-  /usr/libexec/omarchy-powerctl home >"$answer_file" 2>&1
-  case $(<"$answer_file") in combo | wake) echo taken ;; *) echo pressed ;; esac >"$verdict"
-} &
-asker=$!
-# Verdicts nobody read (no second press came) go after a few seconds.
-for old in "$runtime"/omarchy-home-verdict-*; do
-  [[ -e $old && ${old##*-} =~ ^[0-9]+$ ]] && (( now - ${old##*-} > 5000 )) && rm -f "$old"
-done
-
-# True when the press opens nothing: half of Home + Power (a screenshot),
-# or the press that woke a dark screen.
-press_taken() {
-  wait "$asker"
-  local answer
-  answer=$(<"$answer_file")
-  [[ $answer == combo || $answer == wake ]]
-}
+# A locked session's Home is the lock screen's (waking is omarchy-powerd's).
+[[ $(omarchy-shell lock status 2>/dev/null) == *'"secure":true'* ]] && exit 0
 
 # In the overview Home goes back to the desktop (omarchy-overview-changed
-# keeps the note). labwc leaves Home to this script even then, so that
-# Home + Power can take a screenshot of the overview.
+# keeps the note).
 if [[ -e $runtime/omarchy-overview-open ]]; then
-  press_taken && exit 0
-  rm -f "$stamp" "$answer_file"
+  rm -f "$stamp"
   exec labwc --overview
 fi
 
 # Two presses open the overview of all windows, and must not flash the
 # launcher on the way. So one press waits a moment for a second: the launcher
-# opens only once it is certain that the press stays alone.
+# opens only once it is certain that the press stays alone. The stamp is
+# this press's at once, so the first one, still waiting, will not open the
+# launcher meanwhile.
 last=$(cat "$stamp" 2>/dev/null)
-# A second press, unless the first only woke the screen or took a
-# screenshot: then this one is a press of its own (asked up to 1.5 s).
-first_taken() {
-  local file="$runtime/omarchy-home-verdict-$1" tries=0
-  while [[ ! -s $file ]] && (( tries++ < 75 )); do sleep 0.02; done
-  [[ $(cat "$file" 2>/dev/null) == taken ]]
-}
-# The stamp is this press's at once, so the first one, still waiting, will
-# not open the launcher meanwhile.
 echo "$now" >"$stamp"
-if [[ $last =~ ^[0-9]+$ ]] && (( now - last < 300 )) && ! first_taken "$last"; then
-  press_taken && exit 0
-  rm -f "$stamp" "$answer_file"
+if [[ $last =~ ^[0-9]+$ ]] && (( now - last < 300 )); then
+  rm -f "$stamp"
   exec labwc --overview
 fi
 sleep 0.3
-if press_taken; then
-  [[ $(cat "$stamp" 2>/dev/null) == "$now" ]] && rm -f "$stamp"
-  exit 0
-fi
-# A second press has taken the stamp; an older, slower one may have left its own.
+# A second press has taken the stamp.
 [[ $(cat "$stamp" 2>/dev/null) == "$now" ]] || exit 0
-rm -f "$stamp" "$answer_file"
+rm -f "$stamp"
 exec omarchy-shell omarchy.dock apps

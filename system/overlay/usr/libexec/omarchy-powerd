@@ -386,7 +386,10 @@ class Buttons:
     after a short press alone. Home and Power pressed together on a lit
     screen take a screenshot when the first of them comes up, if that is
     soon: held (the DFU and restart combination), they do nothing, and a
-    restart never releases them at all.
+    restart never releases them at all. Home let go after a press alone on a
+    lit screen is 'home-up': the session's Home action (omarchy-home-button).
+    It comes from the button itself, so no keyboard state, compositor
+    binding or held modifier stands between the press and the action.
     """
 
     def __init__(self):
@@ -420,9 +423,12 @@ class Buttons:
                 if self.held is not None:
                     self._start_combo(when)
                 return 'home'
+            pressed = self.home_down is not None
             self.home_down = None
             event = self._end_combo(when)
             self._both_up()
+            if event is None and pressed and not self.home_in_combo and not self.home_woke:
+                return 'home-up'
             return event
         if down:
             if not lit:
@@ -460,9 +466,21 @@ def session_user():
     return pwd.getpwnam(fields['Name'])
 
 
+def user_env(user):
+    return {'HOME': user.pw_dir, 'USER': user.pw_name, 'XDG_RUNTIME_DIR': f'/run/user/{user.pw_uid}',
+            'OMARCHY_PATH': SHELL_ROOT, 'PATH': '/usr/local/bin:/usr/bin'}
+
+
+def spawn_as_user(user, *argv, env=None):
+    """Start ARGV as the user and return at once (as_user waits for it)."""
+    return subprocess.Popen(('setpriv', f'--reuid={user.pw_uid}', f'--regid={user.pw_gid}', '--init-groups', '--',
+                             *argv), env={**user_env(user), **(env or {})}, cwd='/',
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            start_new_session=True)
+
+
 def as_user(user, *argv, timeout=5):
-    env = {'HOME': user.pw_dir, 'USER': user.pw_name, 'XDG_RUNTIME_DIR': f'/run/user/{user.pw_uid}',
-           'OMARCHY_PATH': SHELL_ROOT, 'PATH': '/usr/local/bin:/usr/bin'}
+    env = user_env(user)
     # setpriv looks the groups up in the child. In here, os.getgrouplist holds
     # Python's interpreter lock through NSS, and nss-systemd (group merges
     # with it) answers only once systemd has finished a sleep: the whole
@@ -892,6 +910,26 @@ class Daemon:
                 if job == 'lock':
                     self.post('lock-failed')
 
+    def home_action(self, when):
+        """Home let go after a press alone: the session's Home, at once.
+
+        Started, not waited for: the script tells one press from two by
+        when each starts. Only on a lit screen (a wake's press was handled
+        above); the script itself leaves a locked session alone.
+        """
+        if self.machine.state != ON:
+            log(f't={when:.6f} home-up: {self.machine.state}, nothing')
+            return
+        try:
+            user = session_user()
+            if user is None:
+                return
+            labwc = command('pgrep', '-u', str(user.pw_uid), '-x', 'labwc').stdout.split()
+            spawn_as_user(user, 'omarchy-home-button', env={'LABWC_PID': labwc[0]} if labwc else None)
+            log(f't={when:.6f} home-up: omarchy-home-button')
+        except (OSError, KeyError, ValueError, subprocess.SubprocessError) as error:
+            log(f'home: {error}')
+
     def lock_session(self, user):
         if as_user(user, 'omarchy-shell', 'lock', 'lock').stdout.strip() != 'ok':
             return False
@@ -931,11 +969,6 @@ class Daemon:
                     if self.machine.state == GRACE:
                         self.feed('wake')
                     connection.sendall(b'lit\n' if self.machine.state == ON else b'dark\n')
-                elif request == 'home':
-                    # labwc's Home binding asks: a Home press that took a screenshot or
-                    # woke the screen (dark in the grace before the lock) opens nothing.
-                    answer = 'combo' if self.buttons.home_in_combo else 'wake' if self.buttons.home_woke else 'alone'
-                    connection.sendall(answer.encode() + b'\n')
                 elif request == 'unlocked':
                     # The lock screen let the user in: new USB devices work again.
                     usb_new_devices(True)
@@ -1105,6 +1138,9 @@ class Daemon:
                         if name == 'screenshot':
                             log(f't={when:.6f} screenshot')
                             self.session_jobs.put('screenshot')
+                            continue
+                        if name == 'home-up':
+                            self.home_action(when)
                             continue
                         # Pressed before this wake's panel lit: that wake took care of it.
                         if self.machine.inflight and self.lit_at is not None and when <= self.lit_at:
