@@ -33,6 +33,11 @@ is missing or empty.
 - A control center: pull down from the top right, click its icon or press
   Super+Ctrl+1 for Wi-Fi, Bluetooth, brightness, volume and quick toggles.
   Long-press for the full settings pages.
+- The status bar is back to Omarchy's compact size. Stay Awake sits with the
+  icons on the right, and the keyboard button is gone: swipe up from the
+  bottom, or use the control center.
+- The launcher opens with a gentle zoom, and can use an opaque background
+  instead of the blurred wallpaper (Trigger > Toggle).
 
 ## [0.3.2] - 2026-11-19
 
