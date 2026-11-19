@@ -242,6 +242,14 @@ Item {
   ]
   property real exit: 0
   readonly property bool exiting: banner && place.leaving === true
+  // While it leaves it is drawn once, shadow and all, into a texture that is
+  // only faded and scaled, as the control center when it moves: faded part
+  // by part, its shadow would show through the card halfway, and redrawn
+  // every frame it would stutter in software OpenGL.
+  readonly property real exitPad: Style.space(40)
+  layer.enabled: exiting && gpu
+  layer.smooth: true
+  layer.sourceRect: Qt.rect(-exitPad, -exitPad, width + 2 * exitPad, height + 2 * exitPad)
   // A sender updating it on its way out brings it back.
   onExitingChanged: {
     if (exiting) { if (gpu) exitRun.restart(); else exit = 1 }
