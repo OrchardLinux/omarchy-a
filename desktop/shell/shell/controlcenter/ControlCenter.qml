@@ -388,7 +388,8 @@ Item {
         },
         Translate { y: root.reveal * root.pullSpan - card.y - card.height * card.grow }
       ]
-      opacity: Math.max(0, Math.min(1, root.reveal * 2))
+      // Solid within the first quarter of the way, most of it at once.
+      opacity: 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.25)), 2)
 
       MouseArea { anchors.fill: parent }  // taps inside never close
 
