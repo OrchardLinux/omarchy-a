@@ -328,6 +328,9 @@ Item {
   // Only the sender's own non-default actions as buttons, and its inline
   // reply when it takes one.
   readonly property bool bannerHasIcon: thumb.pictured || thumb.glyphed
+  // Two layers: a wide faint one (the design's soft drop) that does not
+  // smudge dark surfaces, and a small dense one at the edge that keeps the
+  // card defined on bright ones.
   Rectangle {
     id: bannerShadow
     visible: card.banner && card.gpu
@@ -336,10 +339,23 @@ Item {
     layer.enabled: visible
     layer.effect: MultiEffect {
       shadowEnabled: true
-      shadowColor: Qt.rgba(0, 0, 0, 0.25)
+      shadowColor: Qt.rgba(0, 0, 0, 0.18)
       shadowVerticalOffset: Style.space(10)
       shadowBlur: 1.0
       blurMax: Style.space(28)
+    }
+  }
+  Rectangle {
+    visible: card.banner && card.gpu
+    anchors.fill: bannerBox
+    color: "black"
+    layer.enabled: visible
+    layer.effect: MultiEffect {
+      shadowEnabled: true
+      shadowColor: Qt.rgba(0, 0, 0, 0.35)
+      shadowVerticalOffset: Style.space(2)
+      shadowBlur: 1.0
+      blurMax: Style.space(6)
     }
   }
   Rectangle {
