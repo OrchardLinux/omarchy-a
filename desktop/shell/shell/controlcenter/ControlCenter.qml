@@ -305,11 +305,15 @@ Item {
   }
 
   function open() {
+    root.popupStyle = false
+    root.show()
+  }
+  function show() {
     root.closePopout()
     root.prepare()
     root.opened = true
     root.mapped = true
-    if (panel.contentRevealed) root.settle(1, 0)
+    if (panel.contentRevealed) root.animateIn()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
   function close() {
@@ -317,9 +321,40 @@ Item {
     if (!root.opened) return
     root.closingFromOpen = true
     root.opened = false
-    root.settle(0, 0)
+    if (root.popupStyle) { spring.running = false; popupOut.restart() }
+    else root.settle(0, 0)
   }
   function toggle() { root.opened ? root.close() : root.open() }
+
+  // Clicked open from its bar button, it is a popup like the bar's others
+  // (upstream's KeyboardPanel): it fades in growing from just under full
+  // size toward the button, goes in two thirds of the time, and the screen
+  // does not dim. A phone keeps the whole screen.
+  property bool popupStyle: false
+  function togglePopup() {
+    if (root.opened) { root.close(); return }
+    root.popupStyle = !root.phone
+    root.show()
+  }
+  function animateIn() {
+    if (root.popupStyle) { spring.running = false; popupOut.stop(); popupIn.restart() }
+    else root.settle(1, 0)
+  }
+  NumberAnimation {
+    id: popupIn
+    target: root; property: "reveal"; to: 1
+    duration: Style.duration(180)
+    easing.type: Easing.Bezier
+    easing.bezierCurve: Style.easeOut
+  }
+  NumberAnimation {
+    id: popupOut
+    target: root; property: "reveal"; to: 0
+    duration: Style.duration(120)
+    easing.type: Easing.Bezier
+    easing.bezierCurve: Style.easeOut
+    onFinished: if (!root.opened) { root.mapped = false; root.dropPage() }
+  }
 
   // A finger pulls it down from the top edge (the bar), or up to put it
   // away: it follows the finger, past its place only against resistance.
@@ -333,6 +368,9 @@ Item {
 
   function beginPull() {
     spring.running = false
+    popupIn.stop()
+    popupOut.stop()
+    root.popupStyle = false
     if (!root.opened) {
       root.closePopout()
       root.prepare()
@@ -428,7 +466,7 @@ Item {
 
     onContentRevealedChanged: if (contentRevealed && root.opened && !root.pulling) {
       root.reveal = 0
-      root.settle(1, 0)
+      root.animateIn()
       keyCatcher.forceActiveFocus()
     }
 
@@ -440,7 +478,7 @@ Item {
       width: parent.width
       height: parent.height - y
       color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
-      opacity: Math.max(0, Math.min(1, root.reveal))
+      opacity: root.popupStyle ? 0 : Math.max(0, Math.min(1, root.reveal))
       MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -544,21 +582,22 @@ Item {
       // Its bottom edge is where the finger is: reveal is the finger's way
       // down as a share of the card's bottom. On the way it grows out of its
       // own top centre and fades in; the slide is what keeps the scaled bottom under the finger.
-      readonly property real grow: 0.86 + 0.14 * root.reveal
+      // As a popup: it grows from 97 % toward its button and fades.
+      readonly property real grow: root.popupStyle ? 0.97 + 0.03 * root.reveal : 0.86 + 0.14 * root.reveal
       transform: [
         Scale {
-          origin.x: card.width / 2
+          origin.x: root.popupStyle ? card.width : card.width / 2
           origin.y: 0
           xScale: card.grow
           yScale: card.grow
         },
-        Translate { y: root.reveal * root.pullSpan - card.y - card.height * card.grow }
+        Translate { y: root.popupStyle ? 0 : root.reveal * root.pullSpan - card.y - card.height * card.grow }
       ]
       // Coming in: solid within the first quarter of the way, most of it at
       // once. Going out (let go to close, or pushed up from open): it fades
       // with its way up, gone as its bottom edge reaches the status bar.
       readonly property real barShare: Math.min(0.9, root.barInset / root.pullSpan)
-      opacity: root.leaving
+      opacity: root.popupStyle ? root.reveal : root.leaving
         ? Math.max(0, Math.min(1, (root.reveal - barShare) / (1 - barShare)))
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.25)), 2)
 

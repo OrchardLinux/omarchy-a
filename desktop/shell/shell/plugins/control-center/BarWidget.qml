@@ -3,8 +3,8 @@ import Quickshell
 import qs.Ui
 import qs.Commons
 
-// The control center's button: one click opens it (the mouse's way to what
-// a finger pulls down from the top right). The bar's other icons stay
+// The control center's button: one click opens it as a popup, as the bar's
+// other icons open theirs (a finger pulls it down from the top right). The bar's other icons stay
 // upstream's, each opening its own panel.
 BarWidget {
   id: root
@@ -21,7 +21,7 @@ BarWidget {
     text: "󰘮"
     tooltipText: I18n.t("controlCenter.title")
     onPressed: function(mouseButton) {
-      if (mouseButton === Qt.LeftButton && root.center) root.center.toggle()
+      if (mouseButton === Qt.LeftButton && root.center) root.center.togglePopup()
     }
   }
 }
