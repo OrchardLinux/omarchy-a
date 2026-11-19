@@ -740,7 +740,6 @@ Item {
       }
       onCanceled: held = false
       onPressAndHold: if (!moving) held = true
-      onPressAndHold: if (!moving) { held = true; slider.longPressed() }
     }
     Rectangle {
       id: chipBox
