@@ -22,6 +22,9 @@ is missing or empty.
 - The lock and login screen have a new look: a large clock over the
   wallpaper, six PIN slots and the shell's own keypad, and a wrong PIN shown
   in red without anything moving.
+- No more separate login screen: the tablet boots straight to the lock, the
+  same screen as after Power, and the desktop is ready the moment you enter
+  the PIN. Logout starts a fresh desktop behind the lock.
 
 ## [0.3.2] - 2026-11-19
 
