@@ -25,6 +25,8 @@ is missing or empty.
 - No more separate login screen: the tablet boots straight to the lock, the
   same screen as after Power, and the desktop is ready the moment you enter
   the PIN. Logout starts a fresh desktop behind the lock.
+- The lock screen shows the status icons in its corner: Wi-Fi, battery, and
+  Bluetooth, a muted microphone, rotation lock and Stay Awake when they're on.
 
 ## [0.3.2] - 2026-11-19
 
