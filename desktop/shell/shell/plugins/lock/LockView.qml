@@ -54,7 +54,7 @@ Item {
     ? { lockIcon: 14, time: 60, date: 13, slot: 12, slotGap: 14, slotRow: 24, message: 28, gap: 12,
         keyWidth: 72, keyHeight: landscape ? 44 : 48, keyGap: 8, keyColumnGap: 16, digit: 24, backspace: 22, failure: 13, between: landscape ? 48 : 32, stack: landscape ? 24 : 32 }
     : { lockIcon: 16, time: landscape ? 90 : 96, date: 16, slot: 12, slotGap: 14, slotRow: 24, message: 40, gap: 16,
-        keyWidth: 80, keyHeight: 56, keyGap: 10, keyColumnGap: 20, digit: 26, backspace: 24, failure: 15, between: landscape ? 96 : 48, stack: 48 }
+        keyWidth: 80, keyHeight: 56, keyGap: 10, keyColumnGap: 20, digit: 26, backspace: 24, failure: 15, between: landscape ? 160 : 48, stack: 48 }
   function pt(name) { return Style.space(root.metrics[name]) }
   readonly property bool pinBusy: !root.inputEnabled || root.authenticatingPassword
   // A wrong PIN is drawn in the theme's red: some themes (Tokyo Night) give
@@ -64,14 +64,16 @@ Item {
   // the failure: readable on any wallpaper without darkening all of it. The
   // GPU draws it; software rendering goes without.
   readonly property bool gpu: Quickshell.env("QT_QUICK_BACKEND") !== "software"
+  // A soft dark shadow (the theme background at 80 %, about 8 px of blur,
+  // 1 px down): text stays readable over busy parts of the wallpaper.
   component Shade: MultiEffect {
     shadowEnabled: true
     shadowColor: Commons.Color.background
-    shadowOpacity: 0.55
+    shadowOpacity: 0.8
     shadowBlur: 1.0
-    blurMax: 64
+    blurMax: Style.space(8)
     shadowHorizontalOffset: 0
-    shadowVerticalOffset: 0
+    shadowVerticalOffset: Style.space(1)
     autoPaddingEnabled: true
   }
 
@@ -179,37 +181,11 @@ Item {
       decodeSize: Qt.size(width, height)
     }
 
-    // The wallpaper stays sharp under a dark gradient, light behind the
-    // clock so the wallpaper shows and dark behind the keypad so bare digits
-    // read on a bright one: down the screen in portrait, across it towards
-    // the keypad's side in landscape. On a dark theme its colour is the
-    // background taken almost to black, which darkens the wallpaper and
-    // keeps its own colours (a tint of the background turns warm wallpapers
-    // grey); a light theme keeps its background.
+    // One even scrim over the whole wallpaper: the theme's lock.scrim (its
+    // background at 70 %). A gradient was tried and rejected.
     Rectangle {
-      id: shade
       anchors.fill: parent
-      readonly property bool across: root.landscape
-      // Right to left, the keypad is on the left.
-      readonly property bool reversed: across && Commons.I18n.rightToLeft
-      readonly property color base: Commons.Color.background
-      readonly property bool darkTheme: (0.2126 * base.r + 0.7152 * base.g + 0.0722 * base.b) < 0.5
-      readonly property color ink: darkTheme ? Qt.rgba(base.r * 0.42, base.g * 0.42, base.b * 0.42, 1) : base
-      function at(share) { return Util.alpha(shade.ink, share) }
-      // One long, gentle fade over the whole screen: a little shade by the
-      // clock, a little more by the keypad, eased so no edge shows.
-      gradient: Gradient {
-        orientation: shade.across ? Gradient.Horizontal : Gradient.Vertical
-        GradientStop { position: 0.0; color: shade.at(shade.reversed ? 0.55 : 0.12) }
-        GradientStop { position: 0.125; color: shade.at(shade.reversed ? 0.532 : 0.138) }
-        GradientStop { position: 0.25; color: shade.at(shade.reversed ? 0.483 : 0.187) }
-        GradientStop { position: 0.375; color: shade.at(shade.reversed ? 0.414 : 0.256) }
-        GradientStop { position: 0.5; color: shade.at(shade.reversed ? 0.335 : 0.335) }
-        GradientStop { position: 0.625; color: shade.at(shade.reversed ? 0.256 : 0.414) }
-        GradientStop { position: 0.75; color: shade.at(shade.reversed ? 0.187 : 0.483) }
-        GradientStop { position: 0.875; color: shade.at(shade.reversed ? 0.138 : 0.532) }
-        GradientStop { position: 1.0; color: shade.at(shade.reversed ? 0.12 : 0.55) }
-      }
+      color: Commons.Color.lock.scrim
     }
 
     // The status bar's right-hand cluster only: no logo (the launcher is not
@@ -421,6 +397,8 @@ Item {
           Grid {
             id: keypad
             visible: root.touchPin
+            layer.enabled: root.gpu
+            layer.effect: Shade {}
             columns: 3
             rowSpacing: root.pt("keyGap")
             columnSpacing: root.pt("keyColumnGap")
@@ -497,7 +475,8 @@ Item {
                 width: root.pt("slot")
                 height: width
                 radius: Math.min(Style.cornerRadius, width / 2)
-                color: filled ? Commons.Color.lock.text : "transparent"
+                // Empty: a faint dark fill behind the outline, for busy wallpapers.
+                color: filled ? Commons.Color.lock.text : Util.alpha(Commons.Color.background, 0.35)
                 border.width: filled ? 0 : Math.max(1, Style.space(1.5))
                 border.color: root.errorState ? root.failureColor : Commons.Color.lock.placeholder
               }
