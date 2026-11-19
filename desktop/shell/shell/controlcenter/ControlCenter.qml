@@ -455,7 +455,6 @@ Item {
             available: root.brightness >= 0
             note: root.autoBrightness ? Commons.I18n.t("controlCenter.auto") : ""
             pageArrow: true
-            onChipClicked: root.openPage("omarchy.monitor")
             onMoved: function(v) { root.setBrightness(v * 100) }
             onLongPressed: root.openPage("omarchy.monitor")
           }
@@ -800,9 +799,12 @@ Item {
           font.pixelSize: chipBox.arrowOnly ? Style.font.body : Style.font.caption
         }
       }
+      // The arrow alone only shows there is a page (a long press opens
+      // it): the slider's end stays the slider's. A named chip is a button.
       MouseArea {
         anchors.fill: parent
         anchors.margins: -Style.space(8)
+        enabled: !chipBox.arrowOnly
         onClicked: slider.chipClicked()
       }
     }
