@@ -526,7 +526,9 @@ Item {
             clip: true
             Connections {
               target: card.scene
-              function onReplyingChanged() { if (!card.scene.replying && replyInput.activeFocus) replyInput.focus = false }
+              function onReplyingChanged() {
+                if (!card.scene.replying && !card.scene.replyPaused && replyInput.activeFocus) replyInput.focus = false
+              }
             }
             onAccepted: if (text.trim() !== "") card.replySent(text)
             Keys.onEscapePressed: { text = ""; if (card.scene) card.scene.endReply() }

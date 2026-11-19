@@ -27,6 +27,10 @@ Item {
   property var shell: null
   property bool opened: false
   property bool mapped: false
+  // Over an app it takes the keyboard: the app's text field going off must
+  // not put the on-screen keyboard away, which stays, under the control
+  // center (omarchy-keyboard hold … release).
+  onMappedChanged: run([omarchy("omarchy-keyboard"), mapped ? "hold" : "release"])
   property real reveal: 0
 
   readonly property bool gpu: Quickshell.env("QT_QUICK_BACKEND") !== "software"
@@ -522,6 +526,13 @@ Item {
   OverlayWindow {
     id: panel
     shown: root.mapped
+    // Above everything, the on-screen keyboard included (opened later, it lies
+    // over it), except while one of its own text fields is typed in (a Wi-Fi
+    // password): then a layer under the keyboard, OverlayWindow's tablet
+    // default, so the keyboard is there to type with.
+    readonly property var focusItem: keyCatcher.Window.activeFocusItem
+    readonly property bool typing: !!focusItem && focusItem.cursorPosition !== undefined
+    shownLayer: typing ? WlrLayer.Top : WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-control-center"
     // Where the bar shows above it (as a popup, and always on a phone) the
     // bar stays the bar: a click on an item there reaches it, and its popup

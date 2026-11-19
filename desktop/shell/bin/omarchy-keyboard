@@ -3,6 +3,8 @@
 
     omarchy-keyboard show|hide|toggle   what the person asks for (swipe up, bar button)
     omarchy-keyboard quiet              the window opening next was not asked for by a tap
+    omarchy-keyboard hold|release       a shell surface (the control center) is over the app
+                                        and has its keyboard: its field going off is no reason
     omarchy-keyboard listen             the policy: reads the compositor's facts on stdin
     omarchy-keyboard restart|run        (re)start the keyboard process itself
 
@@ -118,6 +120,7 @@ class Policy:
         self.pressing = False     # a finger is down on the focused surface
         self.opened_here = False
         self.hardware = False     # typing on a physical keyboard
+        self.held = False         # the control center is over the app (hold … release)
         self.keyboards = 0
 
     def _open(self):
@@ -148,7 +151,7 @@ class Policy:
                 self._open()
         elif words == ["field", "off"]:
             self.field = 0
-            if self.opened_here:
+            if self.opened_here and not self.held:
                 self.hide_at = now + self.HIDE_DELAY
         elif words == ["show"]:
             # Asked for right after a touch: Qt asks only for a text item it
@@ -188,6 +191,17 @@ class Policy:
 
     def person(self, action):
         """The person opened or closed it (swipe up, bar button)."""
+        if action == "hold":
+            # The control center opens over the app and takes the keyboard:
+            # the app's field goes off, and the keyboard stays, under it.
+            self.held, self.hide_at, self.hide_asked = True, None, False
+            return
+        if action == "release":
+            # Closed again: the keyboard goes only if no field came back.
+            self.held = False
+            if self.opened_here and not self.field:
+                self.hide_at = self.now() + self.HIDE_DELAY
+            return
         if action == "quiet":
             # A launcher opening a window to read, not to type in (About's
             # terminal): the tap that started it does not count for the field
@@ -281,8 +295,8 @@ def main(mode):
     elif mode == "hide":
         hide()
         tell_policy("hide")
-    elif mode == "quiet":
-        tell_policy("quiet")
+    elif mode in ("quiet", "hold", "release"):
+        tell_policy(mode)
     elif mode == "listen":
         listen()
     elif mode == "restart":
@@ -298,7 +312,7 @@ def main(mode):
     elif mode == "run":
         run()
     else:
-        raise SystemExit("Usage: omarchy-keyboard [show|hide|toggle|quiet|listen|restart|run]")
+        raise SystemExit("Usage: omarchy-keyboard [show|hide|toggle|quiet|hold|release|listen|restart|run]")
 
 
 if __name__ == "__main__":

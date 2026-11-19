@@ -118,11 +118,16 @@ Item {
   }
 
   // Orchard: the control center or the launcher opens over the screen as it
-  // is, a banner included (they share its layer, opened later); a reply
-  // being typed gives them the keyboard, its text staying.
+  // is, a banner and the on-screen keyboard included. A reply being typed
+  // pauses meanwhile (they take the keyboard; its text and the on-screen
+  // keyboard stay) and goes on once they close.
   readonly property bool shellCovered: !!shell
     && ((shell.controlCenter && shell.controlCenter.mapped) || (shell.launcher && shell.launcher.mapped))
-  onShellCoveredChanged: if (shellCovered) endReply()
+  property bool replyPaused: false
+  onShellCoveredChanged: {
+    if (shellCovered && replying) { replyPaused = true; replying = false }
+    else if (!shellCovered && replyPaused) { replyPaused = false; replying = true }
+  }
 
   // A reply field has the keyboard from its tap until the reply is sent,
   // Escape, or the card goes (labwc does not hand an overlay the keyboard on
@@ -140,6 +145,7 @@ Item {
     }
   }
   function endReply() {
+    replyPaused = false
     replying = false
     if (replyKeyboard) {
       replyKeyboard = false
