@@ -336,7 +336,7 @@ Item {
     layer.enabled: visible
     layer.effect: MultiEffect {
       shadowEnabled: true
-      shadowColor: Qt.rgba(0, 0, 0, 0.45)
+      shadowColor: Qt.rgba(0, 0, 0, 0.25)
       shadowVerticalOffset: Style.space(10)
       shadowBlur: 1.0
       blurMax: Style.space(28)
