@@ -292,6 +292,10 @@ Item {
     }
   }
 
+  // While open, a note for the Home button (omarchy-home-button closes it).
+  readonly property string openNote: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omarchy-control-center-open"
+  onOpenedChanged: Quickshell.execDetached(opened ? ["touch", openNote] : ["rm", "-f", openNote])
+
   ShellIpc {
     target: "omarchy.controlcenter"
     function toggle(): void { root.toggle() }
