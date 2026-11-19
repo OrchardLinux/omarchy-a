@@ -454,6 +454,8 @@ Item {
             value: root.brightness < 0 ? 0 : root.brightness / 100
             available: root.brightness >= 0
             note: root.autoBrightness ? Commons.I18n.t("controlCenter.auto") : ""
+            pageArrow: true
+            onChipClicked: root.openPage("omarchy.monitor")
             onMoved: function(v) { root.setBrightness(v * 100) }
             onLongPressed: root.openPage("omarchy.monitor")
           }
@@ -660,6 +662,8 @@ Item {
     property real value: 0
     property string note: ""
     property string chip: ""
+    // A page with no chip of its own shows the arrow alone.
+    property bool pageArrow: false
     signal moved(real value)
     signal chipClicked()
     signal longPressed()
@@ -694,7 +698,9 @@ Item {
     }
     Text {
       visible: slider.note !== ""
-      x: slider.vertical ? Style.space(12) : parent.width - width - Style.space(12)
+      // Left of the chip, which takes the right end.
+      x: slider.vertical ? Style.space(12)
+        : parent.width - width - Style.space(12) - (chipBox.visible ? chipBox.width + Style.space(8) : 0)
       y: slider.vertical ? Style.space(12) : (parent.height - height) / 2
       textFormat: Text.PlainText
       text: slider.note
@@ -750,24 +756,28 @@ Item {
     }
     Rectangle {
       id: chipBox
-      visible: slider.chip !== ""
-      x: slider.vertical ? Style.space(10) : parent.width - width - Style.space(10)
+      // The way to the slider's page, always in sight: a named chip (the
+      // output) or the arrow alone. While a long press holds the slider, it
+      // lights up: lifting goes there.
+      visible: slider.chip !== "" || slider.pageArrow
+      x: slider.vertical && slider.chip !== "" ? Style.space(10) : parent.width - width - Style.space(10)
       y: slider.vertical ? Style.space(10) : (parent.height - height) / 2
       width: Math.min(chipRow.implicitWidth + Style.space(16), parent.width - Style.space(20))
       height: Style.space(26)
-      color: Commons.Color.popups.background
+      color: drag.holding ? root.onFill : Commons.Color.popups.background
       border.width: Math.max(1, Style.space(1))
-      border.color: Style.normalBorderColor
+      border.color: drag.holding ? root.onFill : Style.normalBorderColor
       radius: Style.cornerRadius
       Row {
         id: chipRow
         anchors.centerIn: parent
         spacing: Style.space(6)
         Text {
+          visible: slider.chip !== ""
           width: Math.min(implicitWidth, chipBox.parent.width - Style.space(48))
           textFormat: Text.PlainText
           text: slider.chip
-          color: root.text
+          color: drag.holding ? root.onText : root.text
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
           font.bold: true
@@ -775,7 +785,7 @@ Item {
         }
         Text {
           text: "󰅂"
-          color: root.text
+          color: drag.holding ? root.onText : root.text
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
         }
