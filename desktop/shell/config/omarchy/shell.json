@@ -7,16 +7,16 @@
     "layout": {
       "left": [{ "id": "omarchy.menu" }],
       "centerBegin": [],
-      "center": [{ "id": "omarchy.clock", "format": "HH:mm" }],
+      "center": [{ "id": "omarchy.clock", "format": "HH:mm", "narrow": "left" }],
       "centerEnd": [],
       "right": [
-        { "id": "omarchy.indicators", "items": ["StayAwake"], "narrow": "left" },
-        { "id": "omarchy.audio", "narrow": false },
-        { "id": "omarchy.bluetooth", "narrow": false },
-        { "id": "omarchy.network", "narrow": "left" },
-        { "id": "omarchy.monitor", "narrow": false },
+        { "id": "omarchy.indicators", "items": ["StayAwake"] },
+        { "id": "omarchy.audio", "narrow": "hidden" },
+        { "id": "omarchy.bluetooth", "narrow": "hidden" },
+        { "id": "omarchy.network" },
+        { "id": "omarchy.monitor", "narrow": "hidden" },
         { "id": "omarchy.power" },
-        { "id": "ipadlinux.controlcenter", "narrow": false }
+        { "id": "ipadlinux.controlcenter", "narrow": "hidden" }
       ]
     }
   },
