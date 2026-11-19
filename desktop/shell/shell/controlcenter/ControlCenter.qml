@@ -375,17 +375,19 @@ Item {
       border.width: root.phone ? 0 : Math.max(1, Style.space(1))
       border.color: Commons.Color.popups.border
       radius: Style.cornerRadius
-      // It grows out of the corner it is pulled from (the top right on an
-      // iPad, the top on a phone) as it comes down and fades in, all with
-      // the pull's progress; the spring's overshoot swells it a hair.
+      // Its bottom edge is where the finger is: reveal is the finger's way
+      // down as a share of the card's bottom. On the way it grows out of the
+      // corner it is pulled from (top right on an iPad, top on a phone) and
+      // fades in; the slide is what keeps the scaled bottom under the finger.
+      readonly property real grow: 0.86 + 0.14 * root.reveal
       transform: [
         Scale {
           origin.x: root.phone ? card.width / 2 : card.width
           origin.y: 0
-          xScale: 0.86 + 0.14 * root.reveal
-          yScale: xScale
+          xScale: card.grow
+          yScale: card.grow
         },
-        Translate { y: -(1 - root.reveal) * root.pullSpan * 0.4 }
+        Translate { y: root.reveal * root.pullSpan - card.y - card.height * card.grow }
       ]
       opacity: Math.max(0, Math.min(1, root.reveal * 2))
 
