@@ -376,13 +376,12 @@ Item {
       border.color: Commons.Color.popups.border
       radius: Style.cornerRadius
       // Its bottom edge is where the finger is: reveal is the finger's way
-      // down as a share of the card's bottom. On the way it grows out of the
-      // corner it is pulled from (top right on an iPad, top on a phone) and
-      // fades in; the slide is what keeps the scaled bottom under the finger.
+      // down as a share of the card's bottom. On the way it grows out of its
+      // own top centre and fades in; the slide is what keeps the scaled bottom under the finger.
       readonly property real grow: 0.86 + 0.14 * root.reveal
       transform: [
         Scale {
-          origin.x: root.phone ? card.width / 2 : card.width
+          origin.x: card.width / 2
           origin.y: 0
           xScale: card.grow
           yScale: card.grow
