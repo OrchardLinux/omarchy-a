@@ -22,11 +22,14 @@ is missing or empty.
 - The lock and login screen have a new look: a large clock over the
   wallpaper, six PIN slots and the shell's own keypad, and a wrong PIN shown
   in red without anything moving.
+- The Home button responds to every press: it no longer depends on what the
+  keyboard is doing.
 - No more separate login screen: the tablet boots straight to the lock, the
   same screen as after Power, and the desktop is ready the moment you enter
   the PIN. Logout starts a fresh desktop behind the lock.
 - The lock screen shows the status icons in its corner: Wi-Fi, battery, and
   Bluetooth, a muted microphone, rotation lock and Stay Awake when they're on.
+- The lock screen's keypad is cleaner: digits only, without key backgrounds.
 
 ## [0.3.2] - 2026-11-19
 

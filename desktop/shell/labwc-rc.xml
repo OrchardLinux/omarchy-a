@@ -26,8 +26,8 @@
        Four fingers up, Home pressed twice (omarchy-home-button) or Super+Tab.
        Opening it puts the app drawer and the keyboard away. It opens with no
        window as well: the dimmed desktop, which a tap or Home closes.
-       Home closes it: labwc leaves that key to omarchy-home-button, which
-       knows from these commands that the overview is open. -->
+       Home closes it: omarchy-home-button (run by omarchy-powerd) knows
+       from these commands that the overview is open. -->
   <overview swipe="yes"
     openCommand="omarchy-overview-changed opened"
     closeCommand="omarchy-overview-changed closed" />
@@ -60,13 +60,12 @@
     <keybind key="Super_R" onRelease="yes">
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />
     </keybind>
-    <!-- J71b Home emits KEY_HOMEPAGE (172), not navigation KEY_HOME. Only this home
-         action is the session's, and only unlocked; waking is omarchy-powerd's.
-         A Home press that was part of Home + Power took a screenshot instead;
-         a second press right after the first opens the overview, which is
-         why the drawer waits a moment after one press. -->
-    <keybind key="XF86HomePage" onRelease="yes">
-      <action name="Execute" command="omarchy-home-button" />
+    <!-- J71b Home emits KEY_HOMEPAGE (172), not navigation KEY_HOME. Its action
+         comes from omarchy-powerd, which reads the button itself and runs
+         omarchy-home-button: no keyboard state stands in between. Here it is
+         only kept from the focused app (a browser would go to its home page). -->
+    <keybind key="XF86HomePage">
+      <action name="Execute" command="/usr/bin/true" />
     </keybind>
     <!-- Keyboard shortcuts for a Bluetooth keyboard, after upstream Omarchy (W = Super).
          labwc has no directional focus, so Super+arrows cycle windows; Super+Shift+arrows

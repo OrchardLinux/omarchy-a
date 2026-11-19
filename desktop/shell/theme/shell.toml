@@ -224,7 +224,7 @@ selection        = "#7aa2f7"
 selection-alpha  = 0.45
 # scrim lies over the wallpaper, under the clock and the PIN keys.
 scrim            = "#1a1b26"
-scrim-alpha      = 0.25
+scrim-alpha      = 0.7
 
 [image-picker]
 # Carousel-style picker shown directly over the desktop, with no card
