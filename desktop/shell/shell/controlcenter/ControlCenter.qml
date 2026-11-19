@@ -386,6 +386,17 @@ Item {
       }
     }
 
+    // While a touch is spent, it reaches nothing: no hover, press or drag
+    // on the page that opened under it, until the finger lifts.
+    MouseArea {
+      anchors.fill: parent
+      z: 20
+      visible: root.touchSpent
+      hoverEnabled: true
+      preventStealing: true
+      acceptedButtons: Qt.AllButtons
+    }
+
     Rectangle {
       id: card
       x: root.phone ? 0 : parent.width - width - Style.gapsOut
