@@ -117,18 +117,35 @@ Item {
     return bannerMode && narrowScreens ? room : Math.min(Style.space(380), room)
   }
 
-  // Orchard: a banner waits while the control center or the launcher covers
-  // the screen, its time paused, and shows once that closes.
-  readonly property bool shellCovered: bannerMode && !!shell
-    && ((shell.controlCenter && shell.controlCenter.opened) || (shell.launcher && shell.launcher.opened))
-  // A reply being typed lets the keyboard go meanwhile; its text stays.
-  onShellCoveredChanged: if (shellCovered) replying = false
+  // Orchard: the control center or the launcher opens over the screen as it
+  // is, a banner included (they share its layer, opened later); a reply
+  // being typed gives them the keyboard, its text staying.
+  readonly property bool shellCovered: !!shell
+    && ((shell.controlCenter && shell.controlCenter.mapped) || (shell.launcher && shell.launcher.mapped))
+  onShellCoveredChanged: if (shellCovered) endReply()
 
   // A reply field has the keyboard from its tap until the reply is sent,
   // Escape, or the card goes (labwc does not hand an overlay the keyboard on
   // demand, so it is taken outright, as keyboard mode does). Its card does
   // not time out meanwhile.
   property bool replying: false
+  // The on-screen keyboard was opened for the reply (a finger tapped the
+  // field): it goes again with the reply.
+  property bool replyKeyboard: false
+  function beginReply(byTouch) {
+    replying = true
+    if (byTouch && !replyKeyboard) {
+      replyKeyboard = true
+      Util.execArgv(["omarchy-keyboard", "show"])
+    }
+  }
+  function endReply() {
+    replying = false
+    if (replyKeyboard) {
+      replyKeyboard = false
+      Util.execArgv(["omarchy-keyboard", "hide"])
+    }
+  }
   function replyOf(key, revision) {
     var ref = refs[key]
     if (!ref || !ref.hasInlineReply) return ""
@@ -136,7 +153,7 @@ Item {
   }
   function sendReply(key, text) {
     var ref = refs[key]
-    replying = false
+    endReply()
     if (!ref || !ref.hasInlineReply) return
     try { ref.sendInlineReply(String(text)) } catch (e) {}
     closeToast(key, "activated")
@@ -1641,25 +1658,37 @@ Item {
       readonly property var margins: service.marginsFor(String(modelData.name))
       readonly property bool stepAside: service.fullscreenOn(String(modelData.name))
       readonly property bool hasSomethingToShow: showingNotifications && toasts.count > 0
-      visible: (!stepAside || hasSomethingToShow) && !service.shellCovered
+      visible: !stepAside || hasSomethingToShow
       color: "transparent"
 
       WlrLayershell.namespace: "omarchy-notifications"
-      WlrLayershell.layer: WlrLayer.Overlay
+      // Orchard: the Top layer, as the control center and launcher on a
+      // tablet (OverlayWindow): opened later, they lie over a banner, and the
+      // on-screen keyboard (Overlay) stays over all of them.
+      WlrLayershell.layer: Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? WlrLayer.Top : WlrLayer.Overlay
       readonly property bool takesKeyboard: service.keyboardMode && service.targetDisplayName === String(modelData.name)
       WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive
         : service.replying ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
 
       // Constant width and full height, so the buffer is allocated once.
-      anchors { top: true; bottom: true; right: true }
+      // Orchard: the whole screen while a reply is typed, so a tap outside
+      // the banner ends it (and does nothing else).
+      anchors { top: true; bottom: true; right: true; left: service.replying }
       implicitWidth: Math.min(clipper.width + Style.space(10), screen.width)
 
       // Orchard: the deck's rectangle by its numbers, at least as tall as
       // the cards drawn in it: the deck's height follows a card that grew
       // after it arrived (a banner's reply row) only later, and taps on the
       // new part fell through to the desktop meanwhile.
-      mask: Region {
+      MouseArea {
+        anchors.fill: parent
+        visible: service.replying
+        acceptedButtons: Qt.AllButtons
+        onPressed: service.endReply()
+      }
+      mask: service.replying ? null : deckRegion
+      property Region deckRegion: Region {
         x: surface.showingNotifications ? clipper.x + deck.x : 0
         y: surface.showingNotifications ? clipper.y + deck.y : 0
         width: surface.showingNotifications ? deck.width : 0
@@ -1799,7 +1828,7 @@ Item {
                         && service.openDeck === Layout.groupKeyFor(model)
               // Hover opens the body only when there is nothing else to open.
               sole: toasts.count === 1
-              paused: service.expanded || service.replying || service.shellCovered
+              paused: service.expanded || service.replying
 
               drawnHeight: service.at(model.key, "height")
               // A hidden output collapses child visibility; its measurements

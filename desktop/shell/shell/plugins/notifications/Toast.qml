@@ -524,10 +524,13 @@ Item {
             font.family: Style.font.family
             font.pixelSize: Style.font.body
             clip: true
-            onActiveFocusChanged: if (card.scene) card.scene.replying = activeFocus
+            Connections {
+              target: card.scene
+              function onReplyingChanged() { if (!card.scene.replying && replyInput.activeFocus) replyInput.focus = false }
+            }
             onAccepted: if (text.trim() !== "") card.replySent(text)
-            Keys.onEscapePressed: { text = ""; focus = false; if (card.scene) card.scene.replying = false }
-            Component.onDestruction: if (activeFocus && card.scene) card.scene.replying = false
+            Keys.onEscapePressed: { text = ""; if (card.scene) card.scene.endReply() }
+            Component.onDestruction: if (activeFocus && card.scene) card.scene.endReply()
             Text {
               anchors.verticalCenter: parent.verticalCenter
               visible: parent.text === ""
@@ -537,10 +540,17 @@ Item {
               font: parent.font
             }
           }
-          MouseArea {
+          // A finger's tap opens the on-screen keyboard as well; a mouse
+          // click does not (there is a keyboard then).
+          Item {
             anchors.fill: parent
-            visible: !replyInput.activeFocus
-            onClicked: { if (card.scene) card.scene.replying = true; replyInput.forceActiveFocus() }
+            visible: !(card.scene && card.scene.replying)
+            TapHandler {
+              onTapped: function(point) {
+                if (card.scene) card.scene.beginReply(point.device.type === PointerDevice.TouchScreen)
+                replyInput.forceActiveFocus()
+              }
+            }
           }
         }
         Rectangle {
