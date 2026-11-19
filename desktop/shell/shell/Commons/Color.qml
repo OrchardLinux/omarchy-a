@@ -135,7 +135,7 @@ QtObject {
     property color borderError: root.composed("lock.border-error", "lock.border-alpha", root.urgent, 1.0)
     property color selection: root.composed("lock.selection", "lock.selection-alpha", root.accent, 0.45)
     // Over the wallpaper, under the clock and keys.
-    property color scrim: root.composed("lock.scrim", "lock.scrim-alpha", root.background, 0.25)
+    property color scrim: root.composed("lock.scrim", "lock.scrim-alpha", root.background, 0.7)
   }
   // The image picker has no card surface or backdrop; per-slice dim
   // overlays / text outlines use the foundational `background` color directly.
