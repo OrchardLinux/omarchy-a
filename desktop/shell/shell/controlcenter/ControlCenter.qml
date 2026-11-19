@@ -318,6 +318,16 @@ Item {
     root.popupStyle = false
     root.show()
   }
+  // A bar item's popup opening puts the control center away (its own
+  // button's registration aside).
+  Connections {
+    target: root.shell ? root.shell.bar : null
+    function onActivePopoutChanged() {
+      var popout = root.shell.bar.activePopout
+      if (root.opened && popout && popout.moduleName !== "ipadlinux.controlcenter") root.close()
+    }
+  }
+
   function show() {
     root.closePopout()
     if (root.shell && root.shell.launcher && root.shell.launcher.opened) root.shell.launcher.close()
@@ -493,10 +503,10 @@ Item {
     id: panel
     shown: root.mapped
     WlrLayershell.namespace: "omarchy-control-center"
-    // As a popup it leaves the bar to the bar: a click on another item there
-    // reaches it (and its popup closes this one). Pulled down or opened from
-    // the keyboard, it takes the whole screen.
-    mask: root.popupStyle ? popupInput : null
+    // Where the bar shows above it (as a popup, and always on a phone) the
+    // bar stays the bar: a click on an item there reaches it, and its popup
+    // closes this one. Pulled down on an iPad, it dims and takes the screen.
+    mask: root.popupStyle || root.phone ? popupInput : null
     Region { id: popupInput; item: popupInputArea }
     Item {
       id: popupInputArea
