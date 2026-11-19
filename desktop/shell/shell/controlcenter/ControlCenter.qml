@@ -600,17 +600,30 @@ Item {
       acceptedButtons: Qt.LeftButton | Qt.RightButton
       pressAndHoldInterval: 400
       property bool held: false
+      property bool used: false
       readonly property bool holding: held && containsMouse
-      onPressed: { tile.pressed = true; held = false }
+      // Held on armed a while longer, it opens without waiting for the lift.
+      Timer {
+        id: tileHoldOpen
+        interval: 600
+        onTriggered: if (tileMouse.holding) {
+          tileMouse.held = false
+          tileMouse.used = true
+          tile.pressed = false
+          root.openPage(tile.page)
+        }
+      }
+      onPressed: { tile.pressed = true; held = false; used = false }
       onReleased: {
+        tileHoldOpen.stop()
         tile.pressed = false
-        if (held && containsMouse && tile.page) root.openPage(tile.page)
+        if (!used && held && containsMouse && tile.page) root.openPage(tile.page)
         held = false
       }
-      onCanceled: { tile.pressed = false; held = false }
-      onPressAndHold: if (tile.page) held = true
+      onCanceled: { tile.pressed = false; held = false; used = false; tileHoldOpen.stop() }
+      onPressAndHold: if (tile.page) { held = true; tileHoldOpen.restart() }
       onClicked: function(mouse) {
-        if (held) return
+        if (held || used) return
         if (mouse.button === Qt.RightButton) { if (tile.page) root.openPage(tile.page) }
         else tile.activate()
       }
@@ -736,7 +749,15 @@ Item {
       property point pressedAt
       property bool moving: false
       property bool held: false
+      // The page opened by holding on: the rest of the touch does nothing.
+      property bool used: false
       readonly property bool holding: held && containsMouse
+      // Held on armed a while longer, it opens without waiting for the lift.
+      Timer {
+        id: sliderHoldOpen
+        interval: 600
+        onTriggered: if (drag.holding) { drag.held = false; drag.used = true; slider.longPressed() }
+      }
       function valueAt(mouse) {
         return Math.max(0, Math.min(1, slider.vertical ? 1 - mouse.y / slider.height : mouse.x / slider.width))
       }
@@ -744,9 +765,10 @@ Item {
         pressedAt = Qt.point(mouse.x, mouse.y)
         moving = false
         held = false
+        used = false
       }
       onPositionChanged: function(mouse) {
-        if (!pressed) return
+        if (!pressed || used) return
         var along = slider.vertical ? Math.abs(mouse.y - pressedAt.y) : Math.abs(mouse.x - pressedAt.x)
         var across = slider.vertical ? Math.abs(mouse.x - pressedAt.x) : Math.abs(mouse.y - pressedAt.y)
         if (held) {
@@ -754,17 +776,20 @@ Item {
           // off it the other way only cancels (containsMouse).
           if (along <= Style.space(10) || along < across) return
           held = false
+          sliderHoldOpen.stop()
         } else if (!moving && along + across <= Style.space(10)) return
         moving = true
         slider.moved(valueAt(mouse))
       }
       onReleased: function(mouse) {
+        sliderHoldOpen.stop()
+        if (used) { used = false; return }
         if (held) { if (containsMouse) slider.longPressed() }
         else if (!moving) slider.moved(valueAt(mouse))
         held = false
       }
-      onCanceled: held = false
-      onPressAndHold: if (!moving) held = true
+      onCanceled: { held = false; used = false; sliderHoldOpen.stop() }
+      onPressAndHold: if (!moving) { held = true; sliderHoldOpen.restart() }
     }
     Rectangle {
       id: chipBox
