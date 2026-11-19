@@ -83,7 +83,17 @@ Item {
   function marginsFor(screenName) {
     return Delivery.deckMargins(barPosition, Delivery.barThickness(barRef, screenName, defaultBarSize), Style.gapsOut)
   }
-  readonly property int notificationWidth: Style.space(380)
+  // Orchard: never wider than the narrowest screen allows with the same gap
+  // on both sides: a phone (375 wide) had the card run off its left edge.
+  readonly property int notificationWidth: {
+    var narrowest = 0
+    for (var i = 0; i < Quickshell.screens.length; i++) {
+      var w = Quickshell.screens[i].width
+      if (w > 0 && (narrowest === 0 || w < narrowest)) narrowest = w
+    }
+    var room = narrowest > 0 ? narrowest - 2 * Style.gapsOut : Style.space(380)
+    return Math.min(Style.space(380), room)
+  }
 
   // ---------------------------------------------------- fullscreen windows
   //
