@@ -13,6 +13,16 @@ is missing or empty.
 
 ## Unreleased
 
+### Desktop
+
+- A new launcher replaces the app grid: Home, Super and the bar's logo open
+  apps, actions and (on a phone) the system controls in swipeable tabs, with
+  search, recent apps and files, long-press app menus and full keyboard
+  control.
+- The lock and login screen have a new look: a large clock over the
+  wallpaper, six PIN slots and the shell's own keypad, and a wrong PIN shown
+  in red without anything moving.
+
 ## [0.3.2] - 2026-11-19
 
 Built on orchard 0.3.2.
