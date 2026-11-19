@@ -18,8 +18,10 @@ Panel {
   manageIpc: false
 
   // Centralized close so callers can't forget to drop the passphrase prompt.
+  // Orchard: as a control center page, closing is going back.
   function close() {
-    root.controller.hide()
+    if (root.hosted) root.host.leavePage(root)
+    else root.controller.hide()
     cancelPasswordPrompt()
     optionsSsid = ""
   }
