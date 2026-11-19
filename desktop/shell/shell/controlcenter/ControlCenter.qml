@@ -375,10 +375,19 @@ Item {
       border.width: root.phone ? 0 : Math.max(1, Style.space(1))
       border.color: Commons.Color.popups.border
       radius: Style.cornerRadius
-      // It slides down from above the screen's top edge, as the finger
-      // pulled it, and back up; it fades in over the first part of the way.
-      transform: Translate { y: -(1 - root.reveal) * root.pullSpan }
-      opacity: Math.max(0, Math.min(1, root.reveal * 2.5))
+      // It grows out of the corner it is pulled from (the top right on an
+      // iPad, the top on a phone) as it comes down and fades in, all with
+      // the pull's progress; the spring's overshoot swells it a hair.
+      transform: [
+        Scale {
+          origin.x: root.phone ? card.width / 2 : card.width
+          origin.y: 0
+          xScale: 0.86 + 0.14 * root.reveal
+          yScale: xScale
+        },
+        Translate { y: -(1 - root.reveal) * root.pullSpan * 0.4 }
+      ]
+      opacity: Math.max(0, Math.min(1, root.reveal * 2))
 
       MouseArea { anchors.fill: parent }  // taps inside never close
 
