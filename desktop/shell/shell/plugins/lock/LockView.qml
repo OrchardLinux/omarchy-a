@@ -471,7 +471,7 @@ Item {
           }
         }
 
-        // The failure, between the slots and the keys (below the field in
+        // The failure, between the slots and the keys (above the field in
         // password mode). Its space is kept when empty, so nothing moves.
         Text {
           id: failureLine

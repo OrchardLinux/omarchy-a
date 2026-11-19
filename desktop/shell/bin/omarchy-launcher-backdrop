@@ -25,7 +25,16 @@ calc() { awk "BEGIN { print $1 }"; }
 
 # Blurred hard at an eighth of the size and scaled back up smoothly, so only
 # soft fields of colour remain.
-vipsthumbnail "$wallpaper" --size "$(((width + 7) / 8))x$(((height + 7) / 8))" --crop -o "$work/small.v"
+vipsthumbnail "$wallpaper" --size "$(((width + 7) / 8))x$(((height + 7) / 8))" --crop -o "$work/thumb.v"
+# Any wallpaper as three sRGB bands: a greyscale one is made colour, a
+# transparent one laid on black, as the desktop shows it.
+vips colourspace "$work/thumb.v" "$work/srgb.v" srgb
+if (( $(vipsheader -f bands "$work/srgb.v") > 3 )); then
+  vips flatten "$work/srgb.v" "$work/flat.v"
+else
+  cp "$work/srgb.v" "$work/flat.v"
+fi
+vips extract_band "$work/flat.v" "$work/small.v" 0 --n 3
 vips cast "$work/small.v" "$work/small-float.v" float
 vips gaussblur "$work/small-float.v" "$work/blurred.v" 20 --precision float
 vips resize "$work/blurred.v" "$work/large.v" 8 --kernel cubic
