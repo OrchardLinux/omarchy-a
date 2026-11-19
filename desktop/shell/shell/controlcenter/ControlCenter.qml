@@ -216,6 +216,7 @@ Item {
   }
   function close() {
     if (!root.opened) return
+    root.closingFromOpen = true
     root.opened = false
     root.settle(0, 0)
   }
@@ -251,6 +252,7 @@ Item {
     root.pulling = false
     var flick = Style.space(400)
     var keep = velocity > flick || (velocity > -flick && root.reveal > 0.4)
+    root.closingFromOpen = !keep && root.pullFrom > 0.5
     root.opened = keep
     root.settle(keep ? 1 : 0, velocity / root.pullSpan)
     if (keep) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -267,8 +269,10 @@ Item {
     spring.running = true
   }
 
-  // Going out: closing, or a finger pushing it up from open.
-  readonly property bool leaving: root.pulling ? root.pullFrom > 0.5 : !root.opened
+  // Going out: closing from open, or a finger pushing it up from open. A
+  // pull let go before it opened falls back with the coming-in fade.
+  property bool closingFromOpen: false
+  readonly property bool leaving: root.pulling ? root.pullFrom > 0.5 : (!root.opened && root.closingFromOpen)
   FrameAnimation {
     id: spring
     onTriggered: {
