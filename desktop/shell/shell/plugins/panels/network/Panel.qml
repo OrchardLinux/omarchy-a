@@ -240,7 +240,7 @@ Panel {
   }
 
   ShellIpc {
-    target: "omarchy.network"
+    target: root.hosted ? "" : "omarchy.network"
 
     function open() { root.open() }
     function close() { root.close() }
@@ -1085,12 +1085,15 @@ Panel {
   // outside-click via an overlay MouseArea + Region mask that lets the bar
   // remain clickable, fade animation, popout coordination). What stays
   // here is the wifi-specific UI inside.
+  // The content, for a host that shows it as a page (the control center).
+  readonly property Component pageContent: panel.content
+
   KeyboardPanel {
     id: panel
     anchorItem: button
     owner: root
     bar: root.bar
-    open: root.opened
+    open: root.popupOpen
     focusTarget: root.passwordSsid !== "" && root.credentialFocusTarget ? root.credentialFocusTarget : panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
     contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)

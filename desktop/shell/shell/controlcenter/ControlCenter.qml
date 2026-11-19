@@ -13,6 +13,7 @@ import "../plugins/panels/power" as Power
 import "../plugins/panels/bluetooth/Model.js" as BluetoothModel
 import "../plugins/status" as StatusParts
 import "../plugins/panels/monitor" as Monitor
+import "../plugins/panels/network" as NetworkPanel
 
 // The control center (SHELL-SPEC, step 2): the main view. States you flip
 // and the two sliders, over the same status objects the bar and the lock
@@ -150,9 +151,14 @@ Item {
   Item {
     visible: false
     Monitor.Panel { id: displayModule; host: pageHost; bar: pageHost; moduleName: "omarchy.monitor" }
+    NetworkPanel.Panel { id: networkModule; host: pageHost; bar: pageHost; moduleName: "omarchy.network" }
   }
-  readonly property var modules: ({ "omarchy.monitor": displayModule })
-  readonly property var pageTitles: ({ "omarchy.monitor": Commons.I18n.t("monitor.display") })
+  readonly property var modules: ({ "omarchy.monitor": displayModule, "omarchy.network": networkModule })
+  readonly property var pageTitles: ({
+    "omarchy.monitor": Commons.I18n.t("monitor.display"),
+    // Wired when that is the connection in use, as the page then shows it.
+    "omarchy.network": network.kind === "ethernet" ? Commons.I18n.t("controlCenter.network") : Commons.I18n.t("controlCenter.wifi")
+  })
 
   property var page: null
   // 0 on the main view, 1 on the page; the push in between.
