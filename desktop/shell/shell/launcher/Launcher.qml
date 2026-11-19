@@ -552,7 +552,17 @@ Item {
     }
   }
 
-  Component.onCompleted: wallpaperProc.running = true
+  Component.onCompleted: { wallpaperProc.running = true; opaqueProc.running = true }
+
+  // Orchard: Trigger > Toggle > Opaque Launcher shows it on the theme's
+  // plain background instead of the frosted wallpaper (no blurred copy is
+  // made then). Read as it opens.
+  property bool opaque: false
+  Process {
+    id: opaqueProc
+    command: ["omarchy-toggle-enabled", "launcher-opaque"]
+    onExited: function(code) { root.opaque = code === 0 }
+  }
 
   // The background plugin names the new wallpaper the moment a theme or
   // background switch sets it, before its own fade: the blurred copy is made
@@ -572,7 +582,7 @@ Item {
   readonly property real backdropTint: 0.8
   readonly property color backdropColor: Commons.Color.menu.background
   // Everything but the size: what makes a background outdated.
-  readonly property string backdropLook: wallpaper
+  readonly property string backdropLook: wallpaper && !opaque
     ? ["frosted4", wallpaper, Math.round(backdropColor.r * 255), Math.round(backdropColor.g * 255), Math.round(backdropColor.b * 255), backdropTint].join("|") : ""
   readonly property string backdropKey: backdropKeyFor(backdropWidth, backdropHeight)
   readonly property string backdropPath: backdropPathFor(backdropKey)
@@ -661,6 +671,7 @@ Item {
     if (root.menu) root.menu.evaluateGuards()
     // A wallpaper changed since: the next open shows it.
     wallpaperProc.running = true
+    opaqueProc.running = true
     root.endSearch()
     root.pageIndex = 0
     root.zone = ""
