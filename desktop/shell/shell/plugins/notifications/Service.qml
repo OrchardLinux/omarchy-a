@@ -1723,7 +1723,11 @@ Item {
         visible: surface.showingNotifications
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: surface.margins.top
+        // A banner's shadow reaches above it (its blur less its drop) and
+        // further below: the clip leaves room for both.
+        readonly property int shadowAbove: service.bannerMode ? Style.space(18) : 0
+        readonly property int shadowBelow: service.bannerMode ? Style.space(40) : 0
+        anchors.topMargin: surface.margins.top - shadowAbove
         // Room for the arrival's scale animation, and the gap from the edge;
         // a banner's shadow needs more, as far as the screen has room for it
         // (the window must not be wider than the screen).
@@ -1731,11 +1735,12 @@ Item {
           ? Math.max(0, Math.min(Style.space(28), surface.screen.width - service.notificationWidth - surface.margins.right))
           : Style.spacing.sm
         width: service.notificationWidth + motionInset + surface.margins.right
-        height: deck.y + deck.height + motionInset
+        height: deck.y + deck.height + Math.max(motionInset, shadowBelow)
         clip: true
 
         Item {
           id: deck
+          y: clipper.shadowAbove
           x: clipper.motionInset
           width: service.notificationWidth
           height: service.deckHeight
