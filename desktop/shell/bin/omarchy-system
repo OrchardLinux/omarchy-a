@@ -71,6 +71,13 @@ exit_session() {
   # Proceed as soon as apps exit, with a bound for unresponsive windows.
   timeout 2s omarchy-hyprland-window-close-all --wait
   if "${command[@]}"; then
+    # Orchard: a logout ends only the desktop; arch-ipad-login-session starts
+    # the next one behind the lock in the same login session, where the
+    # delayed OSD would land and stay. Once Labwc is told to exit, it goes.
+    if [[ $action == "logout" ]]; then
+      kill "$osd_pid" 2>/dev/null
+      return 0
+    fi
     # The unit kills the delayed OSD when this script exits, so stay until the session goes down.
     wait "$osd_pid"
   else
