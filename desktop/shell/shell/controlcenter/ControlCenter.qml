@@ -487,15 +487,14 @@ Item {
           }
         }
 
-        // Brightness and volume: one row each on an iPad, side by side as
-        // tall squares on a phone.
+        // Brightness and volume: one full-width row each, a phone's taller.
         Grid {
-          columns: root.phone ? 2 : 1
+          columns: 1
           spacing: root.gap
           Slider {
-            width: root.phone ? (content.width - root.gap) / 2 : content.width
-            height: root.phone ? Style.space(150) : Style.space(44)
-            vertical: root.phone
+            width: content.width
+            height: Style.space(root.phone ? 48 : 44)
+            vertical: false
             glyph: "󰃞"
             value: root.brightness < 0 ? 0 : root.brightness / 100
             available: root.brightness >= 0
@@ -505,9 +504,9 @@ Item {
             onLongPressed: root.openPage("omarchy.monitor")
           }
           Slider {
-            width: root.phone ? (content.width - root.gap) / 2 : content.width
-            height: root.phone ? Style.space(150) : Style.space(44)
-            vertical: root.phone
+            width: content.width
+            height: Style.space(root.phone ? 48 : 44)
+            vertical: false
             glyph: root.volume <= 0 || (root.sink && root.sink.audio && root.sink.audio.muted) ? "󰝟" : "󰕾"
             value: root.volume
             available: !!(root.sink && root.sink.audio)
