@@ -483,8 +483,28 @@ Item {
 
   // While open, a note for the Home button (omarchy-home-button closes it).
   readonly property string openNote: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omarchy-control-center-open"
+  // One writer, run again until the note matches: two detached commands could
+  // finish out of order and leave the note behind a closed control center,
+  // and Home would then only ever "close" it. A note left from an earlier
+  // shell goes at start.
+  property bool noteWritten: true
+  function writeOpenNote() {
+    if (noteWriter.running || root.noteWritten === root.opened) return
+    noteWriter.writing = root.opened
+    noteWriter.command = root.opened ? ["touch", root.openNote] : ["rm", "-f", root.openNote]
+    noteWriter.running = true
+  }
+  Process {
+    id: noteWriter
+    property bool writing: false
+    onExited: {
+      root.noteWritten = writing
+      root.writeOpenNote()
+    }
+  }
+  Component.onCompleted: writeOpenNote()
   onOpenedChanged: {
-    Quickshell.execDetached(opened ? ["touch", openNote] : ["rm", "-f", openNote])
+    writeOpenNote()
     Qt.callLater(notePopupCard)
   }
 
