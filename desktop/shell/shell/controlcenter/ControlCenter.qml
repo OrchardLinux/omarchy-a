@@ -201,29 +201,87 @@ Item {
 
   // ----------------------------------------------------------- lifecycle
 
-  function open() {
+  function prepare() {
     if (!brightnessRead.running) brightnessRead.running = true
     if (!autoRead.running) autoRead.running = true
     root.focusIndex = -1
-    revealOut.stop()
+  }
+
+  function open() {
+    root.prepare()
     root.opened = true
-    if (root.mapped && panel.contentRevealed) revealIn.restart()
     root.mapped = true
+    if (panel.contentRevealed) root.settle(1, 0)
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
   function close() {
     if (!root.opened) return
     root.opened = false
-    revealIn.stop()
-    revealOut.restart()
+    root.settle(0, 0)
   }
   function toggle() { root.opened ? root.close() : root.open() }
 
-  NumberAnimation { id: revealIn; target: root; property: "reveal"; to: 1; duration: root.gpu ? Style.duration(160) : 0; easing.type: Easing.OutCubic }
-  NumberAnimation {
-    id: revealOut; target: root; property: "reveal"; to: 0
-    duration: root.gpu ? Style.duration(110) : 0; easing.type: Easing.InCubic
-    onFinished: if (!root.opened) root.mapped = false
+  // A finger pulls it down from the top edge (the bar), or up to put it
+  // away: it follows the finger, past its place only against resistance.
+  // Let go, it keeps the finger's speed and a spring carries it to open or
+  // back, by how far it came and how fast it was moving.
+  property bool pulling: false
+  readonly property real pullSpan: Math.max(1, card.y + card.height)
+  property real pullFrom: 0
+
+  function beginPull() {
+    spring.running = false
+    if (!root.opened) {
+      root.prepare()
+      root.reveal = 0
+      root.mapped = true
+    }
+    root.pullFrom = root.reveal
+    root.pulling = true
+  }
+  function pullTo(distance) {
+    if (!root.pulling) return
+    var r = root.pullFrom + distance / root.pullSpan
+    // Past fully open it gives a little, ever less.
+    if (r > 1) r = 1 + (1 - 1 / (1 + (r - 1) * 2)) * 0.08
+    root.reveal = Math.max(0, r)
+  }
+  function endPull(velocity) {
+    if (!root.pulling) return
+    root.pulling = false
+    var flick = Style.space(400)
+    var keep = velocity > flick || (velocity > -flick && root.reveal > 0.4)
+    root.opened = keep
+    root.settle(keep ? 1 : 0, velocity / root.pullSpan)
+    if (keep) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  // The spring: reveal moves to its target from the speed it has, slightly
+  // underdamped on the way in (it lands, overshoots a touch, settles) and
+  // critically damped on the way out (it simply goes).
+  property real springTarget: 0
+  property real springVelocity: 0
+  function settle(target, velocity) {
+    root.springTarget = target
+    root.springVelocity = velocity
+    spring.running = true
+  }
+  FrameAnimation {
+    id: spring
+    onTriggered: {
+      var dt = Math.min(frameTime, 1 / 30)
+      var stiffness = 260
+      var damping = 2 * Math.sqrt(stiffness) * (root.springTarget > 0 ? 0.78 : 1.0)
+      var force = -stiffness * (root.reveal - root.springTarget) - damping * root.springVelocity
+      root.springVelocity += force * dt
+      root.reveal += root.springVelocity * dt
+      if (Math.abs(root.reveal - root.springTarget) < 0.002 && Math.abs(root.springVelocity) < 0.02) {
+        root.reveal = root.springTarget
+        root.springVelocity = 0
+        running = false
+        if (!root.opened) root.mapped = false
+      }
+    }
   }
 
   ShellIpc {
@@ -240,9 +298,9 @@ Item {
     shown: root.mapped
     WlrLayershell.namespace: "omarchy-control-center"
 
-    onContentRevealedChanged: if (contentRevealed && root.opened) {
+    onContentRevealedChanged: if (contentRevealed && root.opened && !root.pulling) {
       root.reveal = 0
-      revealIn.restart()
+      root.settle(1, 0)
       keyCatcher.forceActiveFocus()
     }
 
@@ -251,7 +309,7 @@ Item {
     Rectangle {
       anchors.fill: parent
       color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
-      opacity: root.reveal
+      opacity: Math.max(0, Math.min(1, root.reveal))
       MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -290,6 +348,23 @@ Item {
       onActiveChanged: if (active) root.focusIndex = -1
     }
 
+    // Pushed up by a finger, it follows and goes away. Above the card, so it
+    // sees every touch; it takes one only once it moves up or down, and a
+    // slider keeps its own drags.
+    Item {
+      anchors.fill: parent
+      z: 10
+      DragHandler {
+        target: null
+        xAxis.enabled: false
+        acceptedDevices: PointerDevice.TouchScreen
+        grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+        enabled: root.opened || root.pulling
+        onActiveChanged: active ? root.beginPull() : root.endPull(centroid.velocity.y)
+        onTranslationChanged: if (active) root.pullTo(translation.y)
+      }
+    }
+
     Rectangle {
       id: card
       x: root.phone ? 0 : parent.width - width - Style.gapsOut
@@ -300,8 +375,10 @@ Item {
       border.width: root.phone ? 0 : Math.max(1, Style.space(1))
       border.color: Commons.Color.popups.border
       radius: Style.cornerRadius
-      opacity: root.reveal
-      transform: Translate { y: (1 - root.reveal) * -Style.space(8) }
+      // It slides down from above the screen's top edge, as the finger
+      // pulled it, and back up; it fades in over the first part of the way.
+      transform: Translate { y: -(1 - root.reveal) * root.pullSpan }
+      opacity: Math.max(0, Math.min(1, root.reveal * 2.5))
 
       MouseArea { anchors.fill: parent }  // taps inside never close
 

@@ -1852,6 +1852,33 @@ Item {
         anchors.fill: parent
         sourceComponent: root.vertical ? verticalBar : horizontalBar
       }
+
+      // Orchard: a finger pulling down from the top edge's right third pulls
+      // the control center down with it (SHELL-SPEC, step 2); the left two
+      // thirds will be the notification center's. Only a vertical drag takes
+      // the touch from the icons under it: a tap still reaches them. The
+      // touch stays this surface's while the finger moves down the screen.
+      Item {
+        x: parent.width * 2 / 3
+        width: parent.width - x
+        height: parent.height
+        visible: root.position === "top" && !!root.shell && !!root.shell.controlCenter
+
+        DragHandler {
+          id: pull
+          target: null
+          xAxis.enabled: false
+          acceptedDevices: PointerDevice.TouchScreen
+          grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+          readonly property var center: root.shell ? root.shell.controlCenter : null
+          onActiveChanged: {
+            if (!center) return
+            if (active) center.beginPull()
+            else center.endPull(centroid.velocity.y)
+          }
+          onTranslationChanged: if (active && center) center.pullTo(translation.y)
+        }
+      }
     }
 
     PopupWindow {

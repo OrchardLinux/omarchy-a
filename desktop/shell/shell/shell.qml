@@ -30,7 +30,9 @@ ShellRoot {
   // bar's logo open it, without mapping Hyprland's dock.
   Launcher { id: appGrid; shell: shell; appLibrary: shell.appLibrary }
   // Orchard: the control center (`omarchy-shell omarchy.controlcenter toggle`).
-  ControlCenter { shell: shell }
+  ControlCenter { id: controlCenter; shell: shell }
+  // The bar pulls it down from the top edge's right third (Bar.qml).
+  readonly property var controlCenter: controlCenter
   ShellIpc {
     target: "omarchy.dock"
     function apps(): void { appGrid.toggle() }
