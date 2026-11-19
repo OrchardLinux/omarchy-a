@@ -30,18 +30,7 @@ Item {
   readonly property bool popupOpen: !hosted && panelController.open
   readonly property color barForeground: bar ? bar.barForeground : Commons.Color.foreground
 
-  // Orchard: a panel the control center has a page for opens there instead
-  // of its popup, from its bar icon, a shortcut, IPC or the menu alike.
-  function controlCenterFor() {
-    var center = bar && bar.shell ? bar.shell.controlCenter : null
-    return center && typeof center.hasPage === "function" && center.hasPage(moduleName) ? center : null
-  }
-  function open() {
-    if (hosted) { host.showPage(root); return }
-    var center = controlCenterFor()
-    if (center) center.showModule(moduleName)
-    else panelController.show()
-  }
+  function open() { if (hosted) host.showPage(root); else panelController.show() }
   function close() { if (hosted) host.leavePage(root); else panelController.hide() }
   function closeForPopoutSwitch() {
     popoutSwitchClosing = true

@@ -88,8 +88,7 @@
     <keybind key="W-C-1">
       <action name="Execute" command="omarchy-shell omarchy.controlcenter toggle" />
     </keybind>
-    <!-- Upstream's module keys: Audio, Bluetooth, Display, Network, Power.
-         A module the control center has a page for opens there. -->
+    <!-- Upstream's module keys: Audio, Bluetooth, Display, Network, Power. -->
     <keybind key="W-C-a">
       <action name="Execute" command="omarchy-shell shell toggle omarchy.audio" />
     </keybind>
