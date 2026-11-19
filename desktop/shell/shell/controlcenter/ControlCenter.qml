@@ -728,8 +728,15 @@ Item {
         held = false
       }
       onPositionChanged: function(mouse) {
-        if (!pressed || held) return
-        if (!moving && Math.abs(mouse.x - pressedAt.x) + Math.abs(mouse.y - pressedAt.y) <= Style.space(10)) return
+        if (!pressed) return
+        var along = slider.vertical ? Math.abs(mouse.y - pressedAt.y) : Math.abs(mouse.x - pressedAt.x)
+        var across = slider.vertical ? Math.abs(mouse.x - pressedAt.x) : Math.abs(mouse.y - pressedAt.y)
+        if (held) {
+          // Armed, a move along the slider disarms it and drags after all;
+          // off it the other way only cancels (containsMouse).
+          if (along <= Style.space(10) || along < across) return
+          held = false
+        } else if (!moving && along + across <= Style.space(10)) return
         moving = true
         slider.moved(valueAt(mouse))
       }
