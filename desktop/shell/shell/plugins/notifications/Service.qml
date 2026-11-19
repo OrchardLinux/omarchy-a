@@ -1779,13 +1779,31 @@ Item {
             z: 5000
             anchors.fill: parent
             anchors.margins: -Style.space(4)
-            readonly property bool containsMouse: hoverHandler.hovered
+            readonly property bool containsMouse: hoverHandler.hovered && !touchedAt
             readonly property real mouseX: hoverHandler.point.position.x
             readonly property real mouseY: hoverHandler.point.position.y
             HoverHandler {
               id: hoverHandler
               acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-              onPointChanged: if (hovered) hoverArea.moved({ x: point.position.x, y: point.position.y })
+              onPointChanged: {
+                if (!hovered) return
+                // labwc puts the cursor where a finger touched: a pointer that
+                // only stands at the last touch is no mouse hovering.
+                var p = point.position
+                if (hoverArea.touchedAt && Math.abs(p.x - hoverArea.touchedAt.x) < 4
+                    && Math.abs(p.y - hoverArea.touchedAt.y) < 4) return
+                hoverArea.touchedAt = null
+                hoverArea.moved({ x: p.x, y: p.y })
+              }
+            }
+            // Where the last touch was; a touch also ends any hover.
+            property var touchedAt: null
+            PointHandler {
+              acceptedDevices: PointerDevice.TouchScreen
+              onActiveChanged: if (active) {
+                hoverArea.touchedAt = { x: point.position.x, y: point.position.y }
+                if (service.hoverKey !== "") service.hoverKey = ""
+              }
             }
 
             // The cards cannot see hover under this region, so they are told.
