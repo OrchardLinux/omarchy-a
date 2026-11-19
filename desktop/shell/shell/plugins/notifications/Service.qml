@@ -540,7 +540,7 @@ Item {
   readonly property int arriveDuration: 250
   readonly property int leaveDuration: 200
   // A banner's own exit (Toast.qml), a little longer than a deck card's.
-  readonly property int bannerExit: 260
+  readonly property int bannerExit: 280
   property int sceneDuration: arriveDuration
   // How far a card drops in from, and rises by on its way out.
   readonly property real travel: Style.space(24)
@@ -910,7 +910,9 @@ Item {
       // deck only waits for it.
       gone[keys[j]] = bannerMode
         ? { y: from.y, scale: from.scale, opacity: from.opacity, height: from.height,
-            z: 0, front: true, hidden: place ? place.hidden === true : true,
+            // Not hidden: a leaving card has no place left in the layout, and
+            // a hidden one is drawn at once at nothing, cutting its exit off.
+            z: 0, front: true, hidden: false,
             leaving: true, until: Date.now() + Style.duration(bannerExit) }
         : { y: from.y - travel, scale: from.scale, opacity: 0, height: from.height,
             z: 0, front: staying === 0, hidden: place ? place.hidden === true : true,
@@ -941,8 +943,17 @@ Item {
   }
 
   function finishLeaving() {
-    var keys = Object.keys(leaving)
-    for (var i = 0; i < keys.length; i++) finishClose(keys[i], leaving[keys[i]])
+    var keys = Object.keys(leaving), now = Date.now()
+    for (var i = 0; i < keys.length; i++) {
+      // Orchard: a departure still on its own clock (a banner's longer exit)
+      // ends there, not with the scene's.
+      var departing = departures[keys[i]]
+      if (departing && departing.until > now) {
+        if (!departureDeadline.running) departureDeadline.start()
+        continue
+      }
+      finishClose(keys[i], leaving[keys[i]])
+    }
   }
 
   function unmarkLeaving(key) {

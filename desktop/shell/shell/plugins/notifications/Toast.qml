@@ -251,10 +251,26 @@ Item {
   NumberAnimation {
     id: exitRun
     target: card; property: "exit"; from: 0; to: 1
-    duration: Style.duration(card.scene ? card.scene.bannerExit : 260)
-    easing.type: Easing.Bezier
-    easing.bezierCurve: Style.easeOut
+    duration: Style.duration(card.scene ? card.scene.bannerExit : 280)
+    // Even over its whole time: the arrival's strong ease-out did nearly all
+    // of it in the first fifth, so the banner seemed to drop out at once.
+    easing.type: Easing.InOutCubic
   }
+
+  // What the banner shows of the sender's buttons and reply stays as it was
+  // once one is used (and while it leaves): the sender withdrawing the
+  // notification right after a reply must not collapse the card on its way.
+  property bool settled: false
+  property var shownActions: []
+  property string shownReply: ""
+  function keepShown() {
+    if (settled || exiting) return
+    shownActions = actions
+    shownReply = reply
+  }
+  onActionsChanged: keepShown()
+  onReplyChanged: keepShown()
+  Component.onCompleted: keepShown()
   function swipeEnded(velocity) {
     var flick = Style.space(500)
     var away = swipeAxis === "x"
@@ -509,15 +525,15 @@ Item {
 
         // The sender's own buttons, under the text.
         Row {
-          visible: card.actions.length > 0
+          visible: card.shownActions.length > 0
           x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
           width: parent.width - x
           spacing: Style.space(8)
           Repeater {
-            model: card.banner ? card.actions : []
+            model: card.banner ? card.shownActions : []
             Rectangle {
               required property var modelData
-              width: (parent.width - parent.spacing * (card.actions.length - 1)) / card.actions.length
+              width: (parent.width - parent.spacing * (card.shownActions.length - 1)) / card.shownActions.length
               height: Style.space(34)
               color: "transparent"
               border.width: 1
@@ -537,7 +553,7 @@ Item {
               MouseArea {
                 id: actionArea
                 anchors.fill: parent
-                onClicked: card.actionInvoked(String(parent.modelData.id))
+                onClicked: { card.settled = true; card.actionInvoked(String(parent.modelData.id)) }
               }
             }
           }
@@ -545,7 +561,7 @@ Item {
 
         // The inline reply, when the sender takes one.
         Row {
-          visible: card.reply !== ""
+          visible: card.shownReply !== ""
           x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
           width: parent.width - x
           spacing: Style.space(8)
@@ -571,14 +587,14 @@ Item {
                   if (!card.scene.replying && !card.scene.replyPaused && replyInput.activeFocus) replyInput.focus = false
                 }
               }
-              onAccepted: if (text.trim() !== "") card.replySent(text)
+              onAccepted: if (text.trim() !== "") { card.settled = true; card.replySent(text) }
               Keys.onEscapePressed: { text = ""; if (card.scene) card.scene.endReply() }
               Component.onDestruction: if (activeFocus && card.scene) card.scene.endReply()
               Text {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: parent.text === ""
                 textFormat: Text.PlainText
-                text: card.reply
+                text: card.shownReply
                 color: card.dimColor
                 font: parent.font
               }
@@ -613,7 +629,7 @@ Item {
             MouseArea {
               id: sendArea
               anchors.fill: parent
-              onClicked: if (replyInput.text.trim() !== "") card.replySent(replyInput.text)
+              onClicked: if (replyInput.text.trim() !== "") { card.settled = true; card.replySent(replyInput.text) }
             }
           }
         }
