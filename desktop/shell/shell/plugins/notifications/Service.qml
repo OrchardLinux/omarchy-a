@@ -539,6 +539,8 @@ Item {
   readonly property var sceneCurve: Style.easeOut
   readonly property int arriveDuration: 250
   readonly property int leaveDuration: 200
+  // A banner's own exit (Toast.qml), a little longer than a deck card's.
+  readonly property int bannerExit: 260
   property int sceneDuration: arriveDuration
   // How far a card drops in from, and rises by on its way out.
   readonly property real travel: Style.space(24)
@@ -903,11 +905,16 @@ Item {
       // Under the cards closing in, so the one taking its place covers it on
       // the way up. Its text goes first, or it would read through them; the
       // last card keeps its words, with nothing to cover it.
-      // Orchard: a banner slides up out of sight as it fades.
-      var away = bannerMode ? (from.height || 0) + Style.space(8) : travel
-      gone[keys[j]] = { y: from.y - away, scale: from.scale, opacity: 0, height: from.height,
-                        z: 0, front: staying === 0, hidden: place ? place.hidden === true : true,
-                        leaving: true, until: Date.now() + Style.duration(leaveDuration) }
+      // Orchard: a banner stays where it is and leaves on its own (Toast's
+      // exit: a fade, a slight shrink and drift up, as the popups go); the
+      // deck only waits for it.
+      gone[keys[j]] = bannerMode
+        ? { y: from.y, scale: from.scale, opacity: from.opacity, height: from.height,
+            z: 0, front: true, hidden: place ? place.hidden === true : true,
+            leaving: true, until: Date.now() + Style.duration(bannerExit) }
+        : { y: from.y - travel, scale: from.scale, opacity: 0, height: from.height,
+            z: 0, front: staying === 0, hidden: place ? place.hidden === true : true,
+            leaving: true, until: Date.now() + Style.duration(leaveDuration) }
     }
     departures = gone
     leaving = next

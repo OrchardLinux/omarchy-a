@@ -216,7 +216,7 @@ Item {
   y: scene ? scene.at(row.key, "y") : 0
   z: place.z
   scale: scene ? scene.at(row.key, "scale") : 1
-  opacity: (place.hidden ? 0 : (scene ? scene.at(row.key, "opacity") : 1)) * swipeFade
+  opacity: (place.hidden ? 0 : (scene ? scene.at(row.key, "opacity") : 1)) * swipeFade * (1 - exit)
   transformOrigin: Item.Top
 
   // Orchard: a finger takes the card along, up or to either side (down stays
@@ -233,7 +233,27 @@ Item {
   property real swipeY: 0
   readonly property real swipeFade: swipeAxis === "x" ? Math.max(0, 1 - Math.abs(swipeX) / width)
     : swipeAxis === "y" ? Math.max(0, 1 + swipeY / Math.max(1, height)) : 1
-  transform: Translate { x: card.swipeX; y: card.swipeY }
+  transform: [
+    Translate { x: card.swipeX; y: card.swipeY },
+    // A banner's exit: it fades, shrinks to 97 % toward its top centre and
+    // drifts up a little, as the bar's popups go (at once in software).
+    Scale { origin.x: card.width / 2; origin.y: 0; xScale: 1 - 0.03 * card.exit; yScale: 1 - 0.03 * card.exit },
+    Translate { y: -Style.space(10) * card.exit }
+  ]
+  property real exit: 0
+  readonly property bool exiting: banner && place.leaving === true
+  // A sender updating it on its way out brings it back.
+  onExitingChanged: {
+    if (exiting) { if (gpu) exitRun.restart(); else exit = 1 }
+    else { exitRun.stop(); exit = 0 }
+  }
+  NumberAnimation {
+    id: exitRun
+    target: card; property: "exit"; from: 0; to: 1
+    duration: Style.duration(card.scene ? card.scene.bannerExit : 260)
+    easing.type: Easing.Bezier
+    easing.bezierCurve: Style.easeOut
+  }
   function swipeEnded(velocity) {
     var flick = Style.space(500)
     var away = swipeAxis === "x"
