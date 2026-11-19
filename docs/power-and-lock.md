@@ -12,8 +12,8 @@ orchard `docs/bring-up/suspend.md`); this model decides when.
 1. Power, released after a short press on its own, requests lock and eases the
    backlight to dark over 240 ms. Home and Power pressed together on a lit
    screen take a screenshot (`omarchy-capture-screenshot fullscreen`) when the
-   first of them comes up within 1.5 s; Home then does not open the dock
-   (`omarchy-home-button` asks `omarchy-powerctl home`). Held longer (the DFU
+   first of them comes up within 1.5 s; Home then does not open the dock.
+   Held longer (the DFU
    and restart combination), they do nothing. Sleep follows
    only after the screen stayed dark for a short while. Idle
    screen-off has an eight-second grace period before requesting lock.
@@ -55,11 +55,13 @@ times inside resume cannot measure this (printk showed 133 ms for what ktime
 measured as 3.36 s); the key timestamps can. It:
 
 - reads the `gpio-keys` input device itself (Power, Home), with kernel
-  timestamps on `CLOCK_MONOTONIC`. No process per press. labwc no longer binds
-  Power; labwc's Home binding is only the session's home action and does not
-  fire while locked. A Home press that woke a dark screen (in the grace before
-  the lock, when the session is still unlocked) opens nothing either:
-  `omarchy-powerctl home` answers `wake`. Volume stays with labwc, `allowWhenLocked`, and never
+  timestamps on `CLOCK_MONOTONIC`. labwc binds neither Power nor Home (Home
+  only so that the focused app does not get it). Home let go after a press
+  alone on a lit screen starts `omarchy-home-button` in the session at once:
+  the action comes from the button, so no keyboard state, held modifier or
+  compositor binding can swallow it. A press that woke a dark screen (also in
+  the grace before the lock) or was half of Home + Power starts nothing, and
+  the script leaves a locked session alone. Volume stays with labwc, `allowWhenLocked`, and never
   touches the panel or the state;
 - reads every input device that reports `SW_MACHINE_COVER` (the iPad
   Smart Cover; the kernel names two hall sensors, each its own device). The
