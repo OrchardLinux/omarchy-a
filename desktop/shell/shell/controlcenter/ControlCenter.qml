@@ -385,7 +385,7 @@ Item {
   property bool pulling: false
   // A long press opened a page while the finger is still down (see above).
   property bool touchSpent: false
-  readonly property real pullSpan: Math.max(1, card.y + card.height)
+  readonly property real pullSpan: Math.max(1, card.y + card.follow)
   property real pullFrom: 0
 
   function beginPull() {
@@ -645,7 +645,12 @@ Item {
       // The main view's height, the page's, and the push between them.
       readonly property real mainHeight: content.implicitHeight + root.pad * 2
       readonly property real pageHeight: pageView.implicitHeight + root.pad * 2
-      height: root.phone ? parent.height - root.barInset : mainHeight + (pageHeight - mainHeight) * root.pageShift
+      readonly property real contentHeight: mainHeight + (pageHeight - mainHeight) * root.pageShift
+      height: root.phone ? parent.height - root.barInset : contentHeight
+      // What the finger holds: the card's bottom, or on a phone (where the
+      // card is the screen) the bottom of its content; the empty sheet below
+      // comes in under the thumb.
+      readonly property real follow: root.phone ? Style.space(12) + contentHeight : height
       clip: true
       color: root.phone ? "transparent" : Commons.Color.popups.background
       // The bar's popups' own border (KeyboardPanel): the theme's spec.
@@ -666,7 +671,7 @@ Item {
           xScale: card.grow
           yScale: card.grow
         },
-        Translate { y: root.popupStyle ? 0 : root.reveal * root.pullSpan - card.y - card.height * card.grow }
+        Translate { y: root.popupStyle ? 0 : root.reveal * root.pullSpan - card.y - card.follow * card.grow }
       ]
       // Coming in: solid within the first quarter of the way, most of it at
       // once. Going out (let go to close, or pushed up from open): it fades
