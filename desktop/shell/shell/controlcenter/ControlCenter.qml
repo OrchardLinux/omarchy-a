@@ -705,6 +705,8 @@ Item {
       property point pressedAt
       property real startValue: 0
       property bool moving: false
+      // A long press uses the touch up: nothing after it moves the level.
+      property bool held: false
       function along(mouse) {
         return slider.vertical ? (pressedAt.y - mouse.y) / slider.height : (mouse.x - pressedAt.x) / slider.width
       }
@@ -712,15 +714,16 @@ Item {
         pressedAt = Qt.point(mouse.x, mouse.y)
         startValue = slider.value
         moving = false
+        held = false
       }
       onPositionChanged: function(mouse) {
-        if (!pressed) return
-        if (!moving && Math.abs(mouse.x - pressedAt.x) + Math.abs(mouse.y - pressedAt.y) <= Style.space(6)) return
+        if (!pressed || held) return
+        if (!moving && Math.abs(mouse.x - pressedAt.x) + Math.abs(mouse.y - pressedAt.y) <= Style.space(10)) return
         moving = true
         slider.moved(Math.max(0, Math.min(1, startValue + along(mouse))))
       }
       // A long press is a finger held still: once it moved, it is a drag.
-      onPressAndHold: if (!moving) slider.longPressed()
+      onPressAndHold: if (!moving) { held = true; slider.longPressed() }
     }
     Rectangle {
       id: chipBox
