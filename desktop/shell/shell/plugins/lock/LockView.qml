@@ -52,9 +52,9 @@ Item {
   readonly property bool landscape: width > height
   readonly property var metrics: phone
     ? { lockIcon: 16, time: 72, date: 14, slot: 12, slotGap: 14, slotRow: 24, message: 28, gap: 12,
-        keyWidth: 94, keyHeight: landscape ? 56 : 64, keyGap: 12, digit: 26, backspace: 22, failure: 13, between: landscape ? 48 : 36, stack: landscape ? 28 : 36 }
+        keyWidth: 64, keyHeight: landscape ? 46 : 52, keyGap: 10, keyColumnGap: 36, digit: 28, backspace: 24, failure: 13, between: landscape ? 48 : 36, stack: landscape ? 28 : 36 }
     : { lockIcon: 18, time: landscape ? 112 : 120, date: 18, slot: 14, slotGap: 18, slotRow: 24, message: 40, gap: 16,
-        keyWidth: 112, keyHeight: 84, keyGap: 18, digit: 30, backspace: 26, failure: 15, between: landscape ? 120 : 56, stack: 56 }
+        keyWidth: 72, keyHeight: 56, keyGap: 18, keyColumnGap: 48, digit: 34, backspace: 28, failure: 15, between: landscape ? 120 : 56, stack: 56 }
   function pt(name) { return Style.space(root.metrics[name]) }
   readonly property bool pinBusy: !root.inputEnabled || root.authenticatingPassword
   // A wrong PIN is drawn in the theme's red: some themes (Tokyo Night) give
@@ -179,11 +179,24 @@ Item {
       decodeSize: Qt.size(width, height)
     }
 
-    // The wallpaper stays sharp under the theme's scrim, which keeps the
-    // clock and keys readable on a bright one.
+    // The wallpaper stays sharp under a dark gradient, light behind the
+    // clock so the wallpaper shows and dark behind the keypad so bare digits
+    // read on a bright one: down the screen in portrait, across it towards
+    // the keypad's side in landscape. Its light end is the theme's
+    // lock.scrim; the rest is the theme background.
     Rectangle {
+      id: shade
       anchors.fill: parent
-      color: Commons.Color.lock.scrim
+      readonly property bool across: root.landscape
+      // Right to left, the keypad is on the left.
+      readonly property bool reversed: across && Commons.I18n.rightToLeft
+      gradient: Gradient {
+        orientation: shade.across ? Gradient.Horizontal : Gradient.Vertical
+        GradientStop { position: 0.0; color: shade.reversed ? Util.alpha(Commons.Color.background, 0.95) : Commons.Color.lock.scrim }
+        GradientStop { position: shade.reversed ? 0.4 : 0.35; color: Util.alpha(Commons.Color.background, shade.reversed ? 0.9 : 0.6) }
+        GradientStop { position: shade.reversed ? 0.65 : 0.6; color: Util.alpha(Commons.Color.background, shade.reversed ? 0.6 : 0.9) }
+        GradientStop { position: 1.0; color: shade.reversed ? Commons.Color.lock.scrim : Util.alpha(Commons.Color.background, 0.95) }
+      }
     }
 
     // The status bar's right-hand cluster only: no logo (the launcher is not
@@ -397,30 +410,24 @@ Item {
             visible: root.touchPin
             columns: 3
             rowSpacing: root.pt("keyGap")
-            columnSpacing: root.pt("keyGap")
+            columnSpacing: root.pt("keyColumnGap")
             Repeater {
               model: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"]
-              BorderSurface {
+              // A bare digit in a full cell, nothing drawn around it at rest;
+              // pressed, a faint square behind it. Backspace the same.
+              Item {
                 id: pinKey
                 required property string modelData
                 readonly property bool backspaceKey: modelData === "⌫"
                 width: root.pt("keyWidth")
                 height: root.pt("keyHeight")
-                radius: Style.cornerRadius
-                // The lock's background at its theme opacity. Backspace has no
-                // surface, only its press.
-                color: modelData === "" || backspaceKey ? "transparent" : Commons.Color.lock.background
-                borderSpec: backspaceKey || modelData === "" ? Border.none()
-                  : Border.controlSpec("normal", Commons.Color.lock.text, Commons.Color.accent)
                 opacity: modelData === "" ? 0 : (root.pinBusy ? 0.55 : 1)
-                // Pressed: the shell's pressed fill and a slight squeeze, at once.
-                scale: pinMouse.pressed ? 0.96 : 1
 
                 Rectangle {
                   anchors.fill: parent
-                  radius: parent.radius
+                  radius: Style.cornerRadius
                   visible: pinMouse.pressed
-                  color: Style.pressedFillFor(Commons.Color.lock.text, Commons.Color.accent)
+                  color: Util.alpha(Commons.Color.lock.text, 0.12)
                 }
                 Text {
                   anchors.centerIn: parent
@@ -479,7 +486,7 @@ Item {
                 radius: Math.min(Style.cornerRadius, width / 2)
                 color: filled ? Commons.Color.lock.text : "transparent"
                 border.width: filled ? 0 : Math.max(1, Style.space(1.5))
-                border.color: root.errorState ? root.failureColor : Commons.Color.lock.text
+                border.color: root.errorState ? root.failureColor : Commons.Color.lock.placeholder
               }
             }
           }
