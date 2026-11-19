@@ -34,17 +34,11 @@ Panel {
   property string displaysJson: ""
   property var displays: []
 
-  // Orchard: the tablet's own rows, which upstream's panel does not have:
-  // ambient-light auto-brightness (hidden without the tool), rotation lock,
-  // and Stay Awake (the shell's idle service owns its state and bar icon).
+  // Orchard: the tablet's own row, which upstream's panel does not have:
+  // ambient-light auto-brightness (hidden without the tool). Rotation lock and
+  // Stay Awake are the control center's toggles.
   property bool autoAvailable: false
   property bool autoOn: false
-  readonly property var idleService: bar?.shell?.firstPartyServiceFor("omarchy.idle")
-  readonly property bool stayAwake: idleService ? idleService.stayAwake === true : false
-  property bool rotationLocked: false
-  property bool rotationLoaded: false
-  readonly property string rotationHelper: (Quickshell.env("OMARCHY_PATH") ||
-    "/usr/share/omarchy") + "/bin/omarchy-rotation-lock"
   // Orchard: the screen turns with the iPad (arch-ipad-rotate-output, under
   // the rotation lock); labwc has no command to turn it by hand, so upstream's
   // rotate menu stays shut.
@@ -407,7 +401,6 @@ Panel {
   function refresh() {
     if (!stateProc.running) stateProc.running = true
     if (!autoReadProc.running && !autoWriteProc.running) autoReadProc.running = true
-    if (!rotationRead.running && !rotationWrite.running) rotationRead.running = true
   }
 
   // The focused display's brightness, for the bar icon's wheel and IPC.
@@ -854,24 +847,6 @@ Panel {
     onRunningChanged: if (!running) root.refresh()
   }
 
-  Process {
-    id: rotationRead
-    command: [root.rotationHelper, "status"]
-    stdout: StdioCollector {
-      onStreamFinished: {
-        try {
-          root.rotationLocked = JSON.parse(text).locked === true
-          root.rotationLoaded = true
-        } catch (_) { root.rotationLoaded = false }
-      }
-    }
-  }
-
-  Process {
-    id: rotationWrite
-    onExited: function(exitCode, exitStatus) { root.refresh() }
-  }
-
   BarIconButton {
     id: button
     anchors.fill: parent
@@ -1140,42 +1115,6 @@ Panel {
             foreground: root.bar.foreground
             fontFamily: root.bar.fontFamily
             onClicked: root.setAuto(!root.autoOn)
-          }
-
-          // ---------- Orchard: rotation lock and Stay Awake ----------
-          // Not on the control center's page: there they are toggles of
-          // their own on the main view.
-          PanelSeparator {
-            visible: !root.hosted
-            foreground: root.bar.foreground
-          }
-
-          Toggle {
-            visible: !root.hosted
-            width: parent.width
-            label: "Rotation lock"
-            description: root.rotationLocked ? "Keep the current orientation" : "Turn the display with the iPad"
-            checked: root.rotationLocked
-            enabled: root.rotationLoaded && !rotationWrite.running
-            foreground: root.bar.foreground
-            fontFamily: root.bar.fontFamily
-            onClicked: {
-              rotationWrite.command = [root.rotationHelper, root.rotationLocked ? "off" : "on"]
-              rotationWrite.running = true
-            }
-          }
-
-          Toggle {
-            visible: !root.hosted
-            width: parent.width
-            label: Commons.I18n.t("bar.stayAwake")
-            description: root.stayAwake ? "The screen stays on; no automatic lock or sleep"
-                                        : "Lock and sleep after the idle timeout"
-            checked: root.stayAwake
-            enabled: !!root.idleService
-            foreground: root.bar.foreground
-            fontFamily: root.bar.fontFamily
-            onClicked: root.idleService.setIdleEnabled(root.stayAwake)
           }
 
           // ---------- Text size ----------

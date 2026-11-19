@@ -245,6 +245,7 @@
   "clipboard.imageFrom": "Image from %1",
   "clipboard.screenshotFrom": "Screenshot from %1",
   "clipboard.search": "Search clipboard…",
+  "controlCenter.title": "Control center",
   "controlCenter.auto": "auto",
   "controlCenter.awake": "Awake",
   "controlCenter.balanced": "Balanced",

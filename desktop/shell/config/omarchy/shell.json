@@ -15,7 +15,8 @@
         { "id": "omarchy.bluetooth", "narrow": false },
         { "id": "omarchy.network", "narrow": "left" },
         { "id": "omarchy.monitor", "narrow": false },
-        { "id": "omarchy.power" }
+        { "id": "omarchy.power" },
+        { "id": "ipadlinux.controlcenter" }
       ]
     }
   },

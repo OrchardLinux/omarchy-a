@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "ipadlinux.controlcenter",
+  "name": "Control center",
+  "version": "1.0.0",
+  "author": "iPad Linux",
+  "description": "Open the control center",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "Control center",
+    "description": "Open the control center",
+    "category": "System",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}
