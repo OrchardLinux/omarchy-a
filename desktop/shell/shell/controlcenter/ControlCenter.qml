@@ -59,6 +59,16 @@ Item {
     : !(source && source.audio) || source.audio.muted
   readonly property bool micKnown: UntypedInput.active ? UntypedInput.known : !!(source && source.audio)
 
+  // The on-screen keyboard's visibility, as omarchy-keyboard records it.
+  FileView {
+    id: keyboardState
+    path: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omarchy-keyboard-visible"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+  }
+  readonly property bool keyboardShown: keyboardState.loaded && keyboardState.text().trim() === "1"
+
   property int brightness: -1
   property bool autoBrightness: false
 
@@ -235,7 +245,7 @@ Item {
     { key: "awake", glyph: "", label: Commons.I18n.t("controlCenter.awake"),
       on: root.stayAwake, enabled: !!root.idleService, act: root.toggleAwake },
     { key: "keyboard", glyph: "󰌌", label: Commons.I18n.t("controlCenter.keyboard"),
-      on: false, enabled: true, act: root.showKeyboard }
+      on: root.keyboardShown, enabled: true, act: root.showKeyboard }
   ]
   // Live once their backend exists (power profiles, Focus, Night Light, media).
   readonly property var later: [

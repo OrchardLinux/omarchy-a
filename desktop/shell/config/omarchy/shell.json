@@ -16,7 +16,7 @@
         { "id": "omarchy.network", "narrow": "left" },
         { "id": "omarchy.monitor", "narrow": false },
         { "id": "omarchy.power" },
-        { "id": "ipadlinux.controlcenter" }
+        { "id": "ipadlinux.controlcenter", "narrow": false }
       ]
     }
   },

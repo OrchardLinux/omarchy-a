@@ -11,7 +11,9 @@ with open(path) as f:
     config = json.load(f)
 right = config.get("bar", {}).get("layout", {}).get("right")
 if isinstance(right, list) and not any(isinstance(w, dict) and w.get("id") == "ipadlinux.controlcenter" for w in right):
-    right.append({"id": "ipadlinux.controlcenter"})
+    # On a phone's narrow bar it waits in the overflow: a finger pulls the
+    # control center down there.
+    right.append({"id": "ipadlinux.controlcenter", "narrow": False})
     with open(path + ".new", "w") as f:
         json.dump(config, f, indent=2)
         f.write("\n")

@@ -59,7 +59,7 @@ console.log(JSON.stringify({count, pages: [...Array(count + 1).keys()].map(ids),
         second = pages['pages'][1]
         self.assertEqual(second['left'], ['omarchy.menu', 'omarchy.audio', 'omarchy.bluetooth'])
         self.assertEqual(second['center'], ['omarchy.clock'])
-        self.assertEqual(second['right'], ['omarchy.monitor', 'omarchy.overflow'])
+        self.assertEqual(second['right'], ['omarchy.monitor', 'ipadlinux.controlcenter', 'omarchy.overflow'])
         # Three 40 px touch slots a side, as on the first page.
         self.assertTrue(all(len(page[side]) <= 3 for page in pages['pages'] for side in ('left', 'right')))
         self.assertEqual(pages['pages'][2], pages['pages'][0])
