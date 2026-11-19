@@ -73,11 +73,10 @@ class KeyboardShortcutTests(unittest.TestCase):
         # One press waits for a second before the drawer opens: two presses
         # must not flash the drawer on the way to the overview.
         self.assertLess(home.index('sleep'), home.index('omarchy-shell omarchy.dock apps'))
-        # Home closes the overview from the script, not inside labwc: a Home
-        # that is half of Home + Power must leave the overview on screen.
-        self.assertLess(home.index('combo'), home.index('omarchy-overview-open'))
-        # A press that woke the screen in the grace before the lock opens nothing.
-        self.assertLess(home.index('== wake'), home.index('omarchy-overview-open'))
+        # A locked session's Home is the lock screen's. (A press that woke the
+        # screen or was half of Home + Power never starts the script: see
+        # omarchy-powerd's 'home-up'.)
+        self.assertLess(home.index('lock status'), home.index('omarchy-overview-open'))
         self.assertIn('omarchy-overview-open"', changed)
         self.assertIn('omarchy-overview-open', (PROJECT / 'desktop/shell/default/labwc/autostart').read_text())
 
