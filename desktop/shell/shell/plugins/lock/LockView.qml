@@ -51,10 +51,10 @@ Item {
   readonly property bool phone: Math.min(width, height) < 600
   readonly property bool landscape: width > height
   readonly property var metrics: phone
-    ? { lockIcon: 16, time: 72, date: 14, slot: 12, slotGap: 14, slotRow: 24, message: 28, gap: 12,
-        keyWidth: 64, keyHeight: landscape ? 46 : 52, keyGap: 10, keyColumnGap: 36, digit: 28, backspace: 24, failure: 13, between: landscape ? 48 : 36, stack: landscape ? 28 : 36 }
-    : { lockIcon: 18, time: landscape ? 112 : 120, date: 18, slot: 14, slotGap: 18, slotRow: 24, message: 40, gap: 16,
-        keyWidth: 72, keyHeight: 56, keyGap: 18, keyColumnGap: 48, digit: 34, backspace: 28, failure: 15, between: landscape ? 120 : 56, stack: 56 }
+    ? { lockIcon: 14, time: 60, date: 13, slot: 12, slotGap: 14, slotRow: 24, message: 28, gap: 12,
+        keyWidth: 72, keyHeight: landscape ? 44 : 48, keyGap: 8, keyColumnGap: 16, digit: 24, backspace: 22, failure: 13, between: landscape ? 48 : 32, stack: landscape ? 24 : 32 }
+    : { lockIcon: 16, time: landscape ? 90 : 96, date: 16, slot: 12, slotGap: 14, slotRow: 24, message: 40, gap: 16,
+        keyWidth: 80, keyHeight: 56, keyGap: 10, keyColumnGap: 20, digit: 26, backspace: 24, failure: 15, between: landscape ? 96 : 48, stack: 48 }
   function pt(name) { return Style.space(root.metrics[name]) }
   readonly property bool pinBusy: !root.inputEnabled || root.authenticatingPassword
   // A wrong PIN is drawn in the theme's red: some themes (Tokyo Night) give
