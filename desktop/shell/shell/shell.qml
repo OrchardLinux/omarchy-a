@@ -9,7 +9,7 @@ import qs.Commons
 import qs.Commons as Commons
 
 import "plugins/bar"
-import "plugins/dock"
+import "launcher"
 import "services"
 import "services/AuthServiceStore.js" as AuthServiceStore
 
@@ -24,9 +24,10 @@ ShellRoot {
   property BarWidgetRegistry barWidgetRegistry: BarWidgetRegistry { }
   property AppLibrary appLibrary: AppLibrary { }
 
-  // Keep the stock Apps menu action (`omarchy-shell omarchy.dock apps`)
-  // without mapping Hyprland's dock or restoring the obsolete Home strip.
-  AppGrid { id: appGrid; appLibrary: shell.appLibrary }
+  // Orchard: the launcher answers the stock Apps menu action
+  // (`omarchy-shell omarchy.dock apps`), so Home, Super, Super+Space and the
+  // bar's logo open it, without mapping Hyprland's dock.
+  Launcher { id: appGrid; shell: shell; appLibrary: shell.appLibrary }
   ShellIpc {
     target: "omarchy.dock"
     function apps(): void { appGrid.toggle() }

@@ -74,7 +74,7 @@
   "system.hibernate": {"icon":"󰤁","label":"Hibernate","when":"omarchy-hibernation-available && ! omarchy-sleep-disabled","action":"systemctl hibernate"},
   "system.logout": {"icon":"󰍃","label":"Logout","action":"omarchy-system logout"},
   // Orchard: a reboot does not come back into Linux. The device's own boot chain starts its own system; Linux returns through DFU.
-  "system.reboot": {"icon":"󰜉","label":"Reboot (leaves Linux)","action":"omarchy-system reboot"},
+  "system.reboot": {"icon":"󰜉","label":"Reboot","action":"omarchy-system reboot"},
   "system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system shutdown"},
 
   // Learn
@@ -221,7 +221,9 @@
 
   // Setup
   "setup.default": {"icon":"","label":"Defaults","aliases":["default","defaults"]},
-  "setup.default.browser": {"icon":"","label":"Browser","title":"Default Browser"},
+  // Orchard: a Defaults list shows only where its command exists; the tablet
+  // opens Firefox and Foot directly and has no switch for them yet.
+  "setup.default.browser": {"icon":"","label":"Browser","title":"Default Browser","when":"omarchy-cmd-present omarchy-default-browser"},
   "setup.default.browser.chromium": {"icon":"","label":"Chromium","checked":"[[ \"$(omarchy-default-browser)\" == \"chromium\" ]]","action":"omarchy-default-browser chromium"},
   "setup.default.browser.chrome": {"icon":"󰊯","label":"Chrome","checked":"[[ \"$(omarchy-default-browser)\" == \"chrome\" ]]","action":"omarchy-default-browser chrome"},
   "setup.default.browser.brave": {"icon":"󰖟","label":"Brave","checked":"[[ \"$(omarchy-default-browser)\" == \"brave\" ]]","action":"omarchy-default-browser brave"},
@@ -229,16 +231,16 @@
   "setup.default.browser.edge": {"icon":"󰇩","label":"Edge","checked":"[[ \"$(omarchy-default-browser)\" == \"edge\" ]]","action":"omarchy-default-browser edge"},
   "setup.default.browser.firefox": {"icon":"","label":"Firefox","checked":"[[ \"$(omarchy-default-browser)\" == \"firefox\" ]]","action":"omarchy-default-browser firefox"},
   "setup.default.browser.zen": {"icon":"󰖟","label":"Zen","checked":"[[ \"$(omarchy-default-browser)\" == \"zen\" ]]","action":"omarchy-default-browser zen"},
-  "setup.default.dictation": {"icon":"","label":"Dictation","title":"Default Dictation"},
+  "setup.default.dictation": {"icon":"","label":"Dictation","title":"Default Dictation","when":"omarchy-cmd-present omarchy-default-dictation"},
   "setup.default.dictation.hex": {"icon":"","label":"Hex","checked":"[[ \"$(omarchy-default-dictation)\" == \"hex\" ]]","action":"omarchy-default-dictation hex"},
   "setup.default.dictation.superwhisper": {"icon":"","label":"Superwhisper","checked":"[[ \"$(omarchy-default-dictation)\" == \"superwhisper\" ]]","action":"omarchy-default-dictation superwhisper"},
   "setup.default.dictation.voxtype": {"icon":"","label":"Voxtype","checked":"[[ \"$(omarchy-default-dictation)\" == \"voxtype\" ]]","action":"omarchy-default-dictation voxtype"},
-  "setup.default.terminal": {"icon":"","label":"Terminal","title":"Default Terminal"},
+  "setup.default.terminal": {"icon":"","label":"Terminal","title":"Default Terminal","when":"omarchy-cmd-present omarchy-default-terminal"},
   "setup.default.terminal.alacritty": {"icon":"","label":"Alacritty","checked":"[[ \"$(omarchy-default-terminal)\" == \"alacritty\" ]]","action":"omarchy-default-terminal alacritty"},
   "setup.default.terminal.foot": {"icon":"","label":"Foot","checked":"[[ \"$(omarchy-default-terminal)\" == \"foot\" ]]","action":"omarchy-default-terminal foot"},
   "setup.default.terminal.ghostty": {"icon":"","label":"Ghostty","checked":"[[ \"$(omarchy-default-terminal)\" == \"ghostty\" ]]","action":"omarchy-default-terminal ghostty"},
   "setup.default.terminal.kitty": {"icon":"","label":"Kitty","checked":"[[ \"$(omarchy-default-terminal)\" == \"kitty\" ]]","action":"omarchy-default-terminal kitty"},
-  "setup.default.editor": {"icon":"","label":"Editor","title":"Default Editor"},
+  "setup.default.editor": {"icon":"","label":"Editor","title":"Default Editor","when":"omarchy-cmd-present omarchy-default-editor"},
   "setup.default.editor.plain": {"icon":"","label":"Plain","checked":"[[ \"$(omarchy-default-editor)\" == \"plain\" ]]","action":"omarchy-default-editor plain"},
   "setup.default.editor.neovim": {"icon":"","label":"Neovim","checked":"[[ \"$(omarchy-default-editor)\" == \"nvim\" ]]","action":"omarchy-default-editor nvim"},
   "setup.default.editor.vscode": {"icon":"","label":"VSCode","checked":"[[ \"$(omarchy-default-editor)\" == \"code\" ]]","action":"omarchy-default-editor code"},

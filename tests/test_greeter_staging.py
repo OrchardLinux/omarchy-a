@@ -36,7 +36,7 @@ class GreeterStagingTests(unittest.TestCase):
         self.assertEqual(mode(target / 'usr/libexec/arch-ipad-login-session'), 0o755)
         menu = (omarchy / 'default/omarchy/omarchy-menu.jsonc').read_text()
         self.assertIn('"system.shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system shutdown"}', menu)
-        self.assertIn('"system.reboot": {"icon":"󰜉","label":"Reboot (leaves Linux)","action":"omarchy-system reboot"}', menu)
+        self.assertIn('"system.reboot": {"icon":"󰜉","label":"Reboot","action":"omarchy-system reboot"}', menu)
         self.assertIn('"label":"Logout","action":"omarchy-system logout"}', menu)
         # Suspend is offered once the charger PM contract is ready.
         self.assertIn('"when":"command -v ipadlinux-suspend-ready >/dev/null && ipadlinux-suspend-ready"', menu)

@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+
+# omarchy:summary=List recently used files, newest first, with the app that opens each, as JSON
+# omarchy:args=[count]
+# omarchy:hidden=true
+
+# The launcher's Recent files. GTK keeps the list in recently-used.xbel, the
+# same file Folio's Recents reads. Files that are gone are left out, and each
+# carries the desktop entry `xdg-mime` names as its default app.
+
+import json
+import os
+import subprocess
+import sys
+import xml.etree.ElementTree as ElementTree
+from datetime import datetime
+from urllib.parse import unquote, urlparse
+
+MIME_NS = "{http://www.freedesktop.org/standards/shared-mime-info}"
+
+
+def stamp(value):
+    if not value:
+        return 0
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0
+
+
+def default_app(mime, cache):
+    if mime not in cache:
+        try:
+            answer = subprocess.run(["xdg-mime", "query", "default", mime], capture_output=True,
+                                    text=True, timeout=3).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            answer = ""
+        cache[mime] = answer
+    return cache[mime]
+
+
+def main():
+    count = int(sys.argv[1]) if len(sys.argv) > 1 else 8
+    data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    try:
+        root = ElementTree.parse(os.path.join(data, "recently-used.xbel")).getroot()
+    except (OSError, ElementTree.ParseError):
+        print("[]")
+        return
+
+    home = os.path.expanduser("~")
+    rows = []
+    for bookmark in root.iter("bookmark"):
+        url = urlparse(bookmark.get("href", ""))
+        if url.scheme != "file":
+            continue
+        path = unquote(url.path)
+        if not os.path.isfile(path):
+            continue
+        mime = bookmark.find(".//" + MIME_NS + "mime-type")
+        when = max(stamp(bookmark.get(key)) for key in ("added", "modified", "visited"))
+        rows.append({"path": path, "time": when, "mime": mime.get("type", "") if mime is not None else ""})
+
+    rows.sort(key=lambda row: row["time"], reverse=True)
+    apps = {}
+    out = []
+    for row in rows[:count]:
+        folder = os.path.dirname(row["path"])
+        if folder == home or folder.startswith(home + os.sep):
+            folder = "~" + folder[len(home):]
+        out.append({
+            "path": row["path"],
+            "name": os.path.basename(row["path"]),
+            "folder": folder,
+            "time": row["time"],
+            "app": default_app(row["mime"], apps) if row["mime"] else "",
+        })
+    print(json.dumps(out))
+
+
+main()
