@@ -14,6 +14,19 @@ BarWidget {
 
   readonly property var center: root.bar && root.bar.shell ? root.bar.shell.controlCenter : null
 
+  // Open as a popup, it is the bar's open popup like any other: the bar
+  // draws its mark under this button, and another item's popup opening (or
+  // the bar's switching between them) closes it through close().
+  readonly property bool popupShown: !!root.center && root.center.opened && root.center.popupStyle
+  onPopupShownChanged: {
+    if (!root.bar) return
+    if (root.popupShown) root.bar.requestPopout(root)
+    else root.bar.releasePopout(root)
+  }
+  function open() { if (root.center && !root.center.opened) root.center.togglePopup() }
+  function close() { if (root.center && root.center.opened) root.center.close() }
+  function closeForPopoutSwitch() { root.close() }
+
   BarIconButton {
     id: button
     anchors.fill: parent

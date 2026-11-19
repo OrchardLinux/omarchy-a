@@ -474,6 +474,17 @@ Item {
     id: panel
     shown: root.mapped
     WlrLayershell.namespace: "omarchy-control-center"
+    // As a popup it leaves the bar to the bar: a click on another item there
+    // reaches it (and its popup closes this one). Pulled down or opened from
+    // the keyboard, it takes the whole screen.
+    mask: root.popupStyle ? popupInput : null
+    Region { id: popupInput; item: popupInputArea }
+    Item {
+      id: popupInputArea
+      y: root.barInset
+      width: parent.width
+      height: Math.max(0, parent.height - root.barInset)
+    }
 
     onContentRevealedChanged: if (contentRevealed && root.opened && !root.pulling) {
       root.reveal = 0
