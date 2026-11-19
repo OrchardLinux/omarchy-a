@@ -182,10 +182,15 @@ Item {
     }
 
     // One even scrim over the whole wallpaper: the theme's lock.scrim (its
-    // background at 70 %). A gradient was tried and rejected.
+    // background at 70 %). A gradient was tried and rejected. On a dark
+    // theme the colour is taken almost to black: it darkens the wallpaper
+    // and keeps its colours, where the background itself (Tokyo Night's
+    // navy, say) turned warm wallpapers a muddy grey-purple.
     Rectangle {
       anchors.fill: parent
-      color: Commons.Color.lock.scrim
+      readonly property color scrim: Commons.Color.lock.scrim
+      readonly property bool darkTheme: (0.2126 * scrim.r + 0.7152 * scrim.g + 0.0722 * scrim.b) < 0.5
+      color: darkTheme ? Qt.rgba(scrim.r * 0.42, scrim.g * 0.42, scrim.b * 0.42, scrim.a) : scrim
     }
 
     // The status bar's right-hand cluster only: no logo (the launcher is not
