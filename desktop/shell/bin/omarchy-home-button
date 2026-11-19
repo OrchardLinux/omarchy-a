@@ -15,6 +15,14 @@ now=$(( ${EPOCHREALTIME/[.,]/} / 1000 ))
 # A locked session's Home is the lock screen's (waking is omarchy-powerd's).
 [[ $(omarchy-shell lock status 2>/dev/null) == *'"secure":true'* ]] && exit 0
 
+# The control center goes away at once. A single press then opens nothing
+# else; a second one still opens the overview.
+control_center=
+if [[ -e $runtime/omarchy-control-center-open ]]; then
+  control_center=1
+  omarchy-shell omarchy.controlcenter close >/dev/null 2>&1 &
+fi
+
 # In the overview Home goes back to the desktop (omarchy-overview-changed
 # keeps the note).
 if [[ -e $runtime/omarchy-overview-open ]]; then
@@ -37,4 +45,5 @@ sleep 0.3
 # A second press has taken the stamp.
 [[ $(cat "$stamp" 2>/dev/null) == "$now" ]] || exit 0
 rm -f "$stamp"
+[[ -z $control_center ]] || exit 0
 exec omarchy-shell omarchy.dock apps

@@ -30,6 +30,9 @@ is missing or empty.
 - The lock screen shows the status icons in its corner: Wi-Fi, battery, and
   Bluetooth, a muted microphone, rotation lock and Stay Awake when they're on.
 - The lock screen's keypad is cleaner: digits only, without key backgrounds.
+- A control center: pull down from the top right, click its icon or press
+  Super+Ctrl+1 for Wi-Fi, Bluetooth, brightness, volume and quick toggles.
+  Long-press for the full settings pages.
 
 ## [0.3.2] - 2026-11-19
 

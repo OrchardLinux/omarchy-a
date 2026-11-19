@@ -82,6 +82,11 @@
     <keybind key="W-S-t">
       <action name="Execute" command="omarchy-launch-or-focus omactivity" />
     </keybind>
+    <!-- The control center: upstream's Super+Ctrl+1 opens the bar's first
+         panel on the right, which is the status cluster's. -->
+    <keybind key="W-C-1">
+      <action name="Execute" command="omarchy-shell omarchy.controlcenter toggle" />
+    </keybind>
     <keybind key="W-space">
       <action name="Execute" command="omarchy-shell omarchy.dock apps" />
     </keybind>
