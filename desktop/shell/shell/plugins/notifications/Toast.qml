@@ -209,8 +209,81 @@ Item {
   y: scene ? scene.at(row.key, "y") : 0
   z: place.z
   scale: scene ? scene.at(row.key, "scale") : 1
-  opacity: place.hidden ? 0 : (scene ? scene.at(row.key, "opacity") : 1)
+  opacity: (place.hidden ? 0 : (scene ? scene.at(row.key, "opacity") : 1)) * swipeFade
   transformOrigin: Item.Top
+
+  // Orchard: a finger takes the card along, up or to either side (down stays
+  // free for the notification center's pull). A clear swipe throws it away,
+  // a short one springs back; a tap still opens it. The mouse keeps
+  // upstream's close mark and right click.
+  readonly property bool gpu: Quickshell.env("QT_QUICK_BACKEND") !== "software"
+  property string swipeAxis: ""
+  // Where the drag stood when it took the touch: the direction is read from
+  // the way the finger goes after that, not from a jump on the first event.
+  property point swipeFrom: Qt.point(0, 0)
+  property bool swipeFromSet: false
+  property real swipeX: 0
+  property real swipeY: 0
+  readonly property real swipeFade: swipeAxis === "x" ? Math.max(0, 1 - Math.abs(swipeX) / width)
+    : swipeAxis === "y" ? Math.max(0, 1 + swipeY / Math.max(1, height)) : 1
+  transform: Translate { x: card.swipeX; y: card.swipeY }
+  function swipeEnded(velocity) {
+    var flick = Style.space(500)
+    var away = swipeAxis === "x"
+      ? Math.abs(swipeX) > width * 0.35 || Math.abs(velocity.x) > flick
+      : swipeAxis === "y" && (swipeY < -height * 0.4 || velocity.y < -flick)
+    if (away) {
+      swipeOut.to = swipeAxis === "x" ? (swipeX + velocity.x * 0.05 >= 0 ? width * 1.2 : -width * 1.2) : -height * 1.5
+      swipeOut.property = swipeAxis === "x" ? "swipeX" : "swipeY"
+      if (gpu) swipeOut.restart()
+      else card.dismissed()
+    } else {
+      swipeBack.restart()
+    }
+  }
+  NumberAnimation {
+    id: swipeOut
+    target: card
+    duration: Style.duration(140)
+    easing.type: Easing.OutCubic
+    onFinished: card.dismissed()
+  }
+  ParallelAnimation {
+    id: swipeBack
+    NumberAnimation { target: card; property: "swipeX"; to: 0; duration: card.gpu ? Style.duration(180) : 0; easing.type: Easing.OutCubic }
+    NumberAnimation { target: card; property: "swipeY"; to: 0; duration: card.gpu ? Style.duration(180) : 0; easing.type: Easing.OutCubic }
+    onFinished: card.swipeAxis = ""
+  }
+  DragHandler {
+    id: swipe
+    target: null
+    acceptedDevices: PointerDevice.TouchScreen
+    grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+    onActiveChanged: {
+      if (active) {
+        swipeBack.stop(); swipeOut.stop()
+        card.swipeAxis = ""
+        card.swipeFromSet = false
+      } else if (card.swipeAxis !== "") {
+        card.swipeEnded(centroid.velocity)
+      }
+    }
+    onTranslationChanged: {
+      if (!active) return
+      if (!card.swipeFromSet) {
+        card.swipeFrom = Qt.point(translation.x, translation.y)
+        card.swipeFromSet = true
+        return
+      }
+      var tx = translation.x - card.swipeFrom.x, ty = translation.y - card.swipeFrom.y
+      if (card.swipeAxis === "") {
+        if (Math.abs(tx) < dragThreshold && Math.abs(ty) < dragThreshold) return
+        card.swipeAxis = Math.abs(tx) >= Math.abs(ty) ? "x" : (ty < 0 ? "y" : "down")
+      }
+      if (card.swipeAxis === "x") card.swipeX = tx
+      else if (card.swipeAxis === "y") card.swipeY = Math.min(0, ty)
+    }
+  }
 
   // `visible` is deliberately unbound: anything derived from layout output
   // (opacity, place.hidden) closes a binding loop through `heights`. A hidden

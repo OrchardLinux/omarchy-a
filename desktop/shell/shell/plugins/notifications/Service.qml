@@ -1607,14 +1607,22 @@ Item {
 
           // One hover region over the whole deck, so crossing between cards does
           // not flicker it shut. It accepts no buttons; clicks reach the cards.
-          MouseArea {
+          // Orchard: a HoverHandler for a mouse or touchpad only (upstream: a
+          // MouseArea, which a finger also hovers: it opened the stack and
+          // showed the close mark under every touch).
+          Item {
             id: hoverArea
             z: 5000
             anchors.fill: parent
             anchors.margins: -Style.space(4)
-            hoverEnabled: true
-            acceptedButtons: Qt.NoButton
-            propagateComposedEvents: true
+            readonly property bool containsMouse: hoverHandler.hovered
+            readonly property real mouseX: hoverHandler.point.position.x
+            readonly property real mouseY: hoverHandler.point.position.y
+            HoverHandler {
+              id: hoverHandler
+              acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+              onPointChanged: if (hovered) hoverArea.moved({ x: point.position.x, y: point.position.y })
+            }
 
             // The cards cannot see hover under this region, so they are told.
             function hoverAt(x, y) {
@@ -1653,7 +1661,7 @@ Item {
                 service.pointerLeft()
               }
             }
-            onPositionChanged: function(mouse) {
+            function moved(mouse) {
               hoverAt(mouse.x, mouse.y)
 
               // Which deck you are over decides which opens.
