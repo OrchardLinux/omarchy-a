@@ -182,20 +182,26 @@ Item {
     // The wallpaper stays sharp under a dark gradient, light behind the
     // clock so the wallpaper shows and dark behind the keypad so bare digits
     // read on a bright one: down the screen in portrait, across it towards
-    // the keypad's side in landscape. Its light end is the theme's
-    // lock.scrim; the rest is the theme background.
+    // the keypad's side in landscape. On a dark theme its colour is the
+    // background taken almost to black, which darkens the wallpaper and
+    // keeps its own colours (a tint of the background turns warm wallpapers
+    // grey); a light theme keeps its background.
     Rectangle {
       id: shade
       anchors.fill: parent
       readonly property bool across: root.landscape
       // Right to left, the keypad is on the left.
       readonly property bool reversed: across && Commons.I18n.rightToLeft
+      readonly property color base: Commons.Color.background
+      readonly property bool darkTheme: (0.2126 * base.r + 0.7152 * base.g + 0.0722 * base.b) < 0.5
+      readonly property color ink: darkTheme ? Qt.rgba(base.r * 0.42, base.g * 0.42, base.b * 0.42, 1) : base
+      function at(share) { return Util.alpha(shade.ink, share) }
       gradient: Gradient {
         orientation: shade.across ? Gradient.Horizontal : Gradient.Vertical
-        GradientStop { position: 0.0; color: shade.reversed ? Util.alpha(Commons.Color.background, 0.95) : Commons.Color.lock.scrim }
-        GradientStop { position: shade.reversed ? 0.4 : 0.35; color: Util.alpha(Commons.Color.background, shade.reversed ? 0.9 : 0.6) }
-        GradientStop { position: shade.reversed ? 0.65 : 0.6; color: Util.alpha(Commons.Color.background, shade.reversed ? 0.6 : 0.9) }
-        GradientStop { position: 1.0; color: shade.reversed ? Commons.Color.lock.scrim : Util.alpha(Commons.Color.background, 0.95) }
+        GradientStop { position: 0.0; color: shade.at(shade.reversed ? 0.95 : 0.25) }
+        GradientStop { position: shade.reversed ? 0.4 : 0.35; color: shade.at(shade.reversed ? 0.9 : 0.6) }
+        GradientStop { position: shade.reversed ? 0.65 : 0.6; color: shade.at(shade.reversed ? 0.6 : 0.9) }
+        GradientStop { position: 1.0; color: shade.at(shade.reversed ? 0.25 : 0.95) }
       }
     }
 
