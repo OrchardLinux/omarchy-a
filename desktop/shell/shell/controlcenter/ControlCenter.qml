@@ -620,7 +620,7 @@ Item {
         }
       }
     }
-    // Tap toggles; a right click opens the page. Held still (0.4 s), the
+    // Tap toggles; a right click opens the page. Held still (0.2 s), the
     // touch arms the page as on a slider: the tile shows it is held, lifting
     // opens the page, sliding off cancels. One rule for every control: a tap
     // never opens another level.
@@ -628,7 +628,7 @@ Item {
       id: tileMouse
       anchors.fill: parent
       acceptedButtons: Qt.LeftButton | Qt.RightButton
-      pressAndHoldInterval: 400
+      pressAndHoldInterval: 200
       // A button keeps its touch: sliding off cancels, and the control center
       // is not dragged away.
       preventStealing: true
@@ -638,7 +638,7 @@ Item {
       // Held on armed a while longer, it opens without waiting for the lift.
       Timer {
         id: tileHoldOpen
-        interval: 400
+        interval: 600
         onTriggered: if (tileMouse.holding) {
           tileMouse.held = false
           tileMouse.used = true
@@ -768,12 +768,12 @@ Item {
       enabled: slider.available
       preventStealing: true
       // The level goes where the finger is: on a tap when it lifts, on a
-      // drag as soon as it moves and from then on. Held still (0.4 s), the
+      // drag as soon as it moves and from then on. Held still (0.2 s), the
       // touch arms the page instead and changes nothing: the slider shows it
       // is held, lifting opens the page, sliding off cancels (and back on
       // arms it again). Nothing happens on the touch itself before it is
       // known which it is.
-      pressAndHoldInterval: 400
+      pressAndHoldInterval: 200
       property point pressedAt
       property bool moving: false
       property bool held: false
@@ -783,7 +783,7 @@ Item {
       // Held on armed a while longer, it opens without waiting for the lift.
       Timer {
         id: sliderHoldOpen
-        interval: 400
+        interval: 600
         onTriggered: if (drag.holding) { drag.held = false; drag.used = true; root.touchSpent = true; slider.longPressed() }
       }
       function valueAt(mouse) {
