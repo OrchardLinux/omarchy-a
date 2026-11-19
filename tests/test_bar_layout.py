@@ -27,7 +27,7 @@ if (JSON.stringify(layout) !== before) throw new Error('the configured layout wa
 console.log(JSON.stringify(narrow));
 ''', BAR / 'BarModel.js', CONFIG))
         ids = {section: [entry['id'] for entry in entries] for section, entries in narrow.items()}
-        self.assertEqual(ids['left'], ['omarchy.menu', 'ipadlinux.keyboard', 'omarchy.network'])
+        self.assertEqual(ids['left'], ['omarchy.menu', 'omarchy.indicators', 'omarchy.network'])
         self.assertEqual(ids['center'], ['omarchy.clock'])
         self.assertEqual(ids['right'], ['omarchy.power', 'omarchy.overflow'])
         # Touch slots are 40 px, the battery with its percentage two of them, and

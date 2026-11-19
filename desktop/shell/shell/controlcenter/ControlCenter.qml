@@ -196,10 +196,6 @@ Item {
   function toggleRotation() { run([omarchy("omarchy-rotation-lock"), rotation.locked ? "off" : "on"]); rotation.locked = !rotation.locked }
   function toggleAwake() { if (idleService) idleService.setIdleEnabled(root.stayAwake) }
   function showKeyboard() { root.close(); run([omarchy("omarchy-keyboard"), "toggle"]) }
-  function sessionActions() {
-    root.close()
-    if (root.shell) root.shell.summon("omarchy.menu", JSON.stringify({ menu: "system" }))
-  }
   function setVolume(value) {
     if (sink && sink.audio) sink.audio.volume = Math.max(0, Math.min(1, value))
   }
@@ -649,7 +645,7 @@ Item {
           }
         }
 
-        // Battery line and the session actions (iPad: here; phone: at the foot).
+        // The battery line (iPad: here; phone: at the foot).
         Item {
           id: footer
           width: content.width
@@ -1044,7 +1040,8 @@ Item {
   }
 
   component FooterParts: Item {
-    // Battery line: opens the battery page; the power button the session.
+    // Battery line: opens the battery page. Ending the session is the
+    // launcher's (its footer, a phone's System tab), not the control center's.
     Cell {
       id: batteryCell
       visible: root.batteryLine !== ""
@@ -1064,23 +1061,6 @@ Item {
         Text { anchors.verticalCenter: parent.verticalCenter; text: "󰅂"; color: root.text; opacity: 0.6; font.family: Style.font.family; font.pixelSize: Style.font.caption }
       }
       MouseArea { anchors.fill: parent; onClicked: batteryCell.activate() }
-    }
-    Cell {
-      id: powerCell
-      anchors.right: parent.right
-      width: root.touchMin
-      height: parent.height
-      color: "transparent"
-      border.width: focused ? Math.max(1, Style.space(1)) : 0
-      onActivated: root.sessionActions()
-      Text {
-        anchors.centerIn: parent
-        text: "󰐥"
-        color: Commons.Color.urgent
-        font.family: Style.font.family
-        font.pixelSize: Style.font.title
-      }
-      MouseArea { anchors.fill: parent; onClicked: powerCell.activate() }
     }
   }
 }

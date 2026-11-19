@@ -19,7 +19,6 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: "󰘮"
-    active: !!root.center && root.center.opened
     tooltipText: I18n.t("controlCenter.title")
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.LeftButton && root.center) root.center.toggle()
