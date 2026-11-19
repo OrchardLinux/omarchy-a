@@ -64,7 +64,9 @@ only by Home and Power), the idle service (omarchy-powerd's idle), the keyboard
 panel, menu and overlays (below the on-screen keyboard), the app grid (a text
 field for the on-screen keyboard, and no version under the selected app; the
 shell itself opens the launcher instead), the menu's bar logo (opens the
-launcher), the image picker (fits a phone's width), `Commons/Color.qml` (cyan, blue and yellow from the theme, `lock.scrim`), network rows (long press for Forget and
+launcher), the image picker (fits a phone's width), `Commons/Color.qml` (cyan, blue and yellow from the theme, `lock.scrim`), the network, power and Bluetooth panels (the
+state behind their bar icon in each one's `Status.qml`, shared with the status
+cluster), network rows (long press for Forget and
 Change passphrase), Bluetooth pairing feedback, the background (no Hyprland
 boot cover or theme intro videos, software decode at panel size, no startup
 signal of its own when the session starts locked), the lock (taken at session
@@ -82,7 +84,8 @@ charger PM readiness.
 **Translations.** `default/i18n/en/cli.json` holds only the keys of the commands
 shipped here; `shell.json` adds the auto-brightness and captive-portal keys.
 
-**Our own files** (no upstream counterpart): the launcher
+**Our own files** (no upstream counterpart): the status cluster
+(`shell/plugins/status/`), the launcher
 (`shell/launcher/`, `bin/omarchy-launcher-recent-files`,
 `bin/omarchy-launcher-backdrop`), the labwc config, theme renderer
 and window buttons (`labwc-*`, `render-labwc-*.py`), the on-screen keyboard

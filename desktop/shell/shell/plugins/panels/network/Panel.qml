@@ -67,14 +67,17 @@ Panel {
     Commons.I18n.t("network.phrase7")
   ]
   readonly property string connectionPhrase: connectionPhrases[connectionPhraseIndex % connectionPhrases.length]
-  readonly property bool networkManagerAvailable: Networking.backend === NetworkBackendType.NetworkManager
-  readonly property var networkDevices: Networking.devices ? Networking.devices.values : []
-  readonly property var wifiDevice: findDevice(DeviceType.Wifi)
-  readonly property var wifiNetworkObjects: wifiDevice && wifiDevice.networks ? wifiDevice.networks.values : []
+  // Orchard: the connection state lives in Status.qml, which the status
+  // cluster and the lock share; these names stay the panel's.
+  Status { id: status }
+  readonly property bool networkManagerAvailable: status.networkManagerAvailable
+  readonly property var networkDevices: status.networkDevices
+  readonly property var wifiDevice: status.wifiDevice
+  readonly property var wifiNetworkObjects: status.wifiNetworkObjects
   // Bound here rather than in a row, so it also sees networks with no delegate:
   // scrolled out of view, or the panel closed.
   readonly property string wifiStateKey: Model.wifiStateKey(wifiNetworkObjects)
-  readonly property var connectedWifiNetwork: findConnectedWifiNetwork()
+  readonly property var connectedWifiNetwork: status.connectedWifiNetwork
   property var wifiNetworks: []
   property bool scanning: false
   property bool wifiStationAvailable: false
@@ -431,7 +434,6 @@ Panel {
   onWifiDeviceChanged: {
     setScannerEnabled(true)
     syncWifiNetworks()
-    resetActiveApSignal()
   }
 
   onWifiNetworkObjectsChanged: syncWifiNetworks()
@@ -479,89 +481,20 @@ Panel {
     connectDirectly(net.ssid)
   }
 
-  // Bar pill state, derived from the native NetworkManager service so the
-  // icon reflects connection changes without polling. Wired is preferred
-  // when both are up, matching the default-route device.
-  readonly property var wiredDevice: findDevice(DeviceType.Wired)
-  readonly property string kind: {
-    if (wiredDevice && wiredDevice.connected) return "ethernet"
-    if (connectedWifiNetwork) return "wifi"
-    // NetworkManager can leave the active profile out of the device's
-    // AvailableConnections, and Quickshell only builds known networks from
-    // that list. An OWE transition-mode network does this between scans: the
-    // in-use access point carries the hidden "_owetm_" SSID, so the profile
-    // for the open SSID looks out of range even while it is connected. Trust
-    // the device's own state then instead of flickering to disconnected.
-    if (wifiDevice && wifiDevice.connected) return "wifi"
-    return "disconnected"
-  }
-  readonly property int signalStrength: kind === "wifi"
-    ? Model.connectedSignalStrength(connectedWifiNetwork ? connectedWifiNetwork.signalStrength : 0, activeApSignal)
-    : -1
-  // Filled by activeApSignalPoll from nmcli while the connected network has no
-  // strength of its own to report.
-  property int activeApSignal: -1
-  readonly property bool needsActiveApSignal: kind === "wifi"
-    && !(connectedWifiNetwork && connectedWifiNetwork.signalStrength > 0)
-  // Bumped whenever the cached reading stops describing the current link, so
-  // an nmcli read still in flight from before cannot write a stale strength.
-  property int activeApSignalGeneration: 0
-  property int activeApSignalRequest: -1
-  onKindChanged: if (kind !== "wifi") resetActiveApSignal()
-
-  // Switching Wi-Fi networks always passes through a non-"wifi" kind (both the
-  // device and the old network drop out of the connected state while the new
-  // profile activates), so this also covers a change of network.
-  function resetActiveApSignal() {
-    activeApSignal = -1
-    activeApSignalGeneration++
-  }
-
-  function pollActiveApSignal() {
-    if (activeApSignalProc.running) return
-    activeApSignalRequest = activeApSignalGeneration
-    activeApSignalProc.running = true
-  }
-
-  function finishActiveApSignal(raw) {
-    if (activeApSignalRequest !== activeApSignalGeneration) {
-      // The link changed mid-read and the restarted poll skipped while this
-      // one was running; read again now instead of a full interval later.
-      if (needsActiveApSignal) activeApSignalPoll.restart()
-      return
-    }
-    activeApSignal = Model.parseActiveApSignal(raw)
-  }
+  readonly property var wiredDevice: status.wiredDevice
+  readonly property string kind: status.kind
+  readonly property int signalStrength: status.signalStrength
 
   function copyToClipboard(value) {
     if (!value || !root.bar) return
     Quickshell.execDetached(["bash", "-c", "printf %s " + Util.shellQuote(value) + " | wl-copy"])
   }
 
-  // NetworkManager performs the HTTP probe (including unexpected page bodies,
-  // not just redirects). Consume its native notifications rather than running
-  // a second curl loop or mistaking an ordinary timeout for a captive portal.
-  readonly property bool connectivityChecksEnabled: networkManagerAvailable
-    && Networking.canCheckConnectivity && Networking.connectivityCheckEnabled
-  readonly property string connectivity: Model.connectivityState(kind, Networking.connectivity, {
-    Portal: NetworkConnectivity.Portal, Limited: NetworkConnectivity.Limited,
-    Full: NetworkConnectivity.Full, None: NetworkConnectivity.None
-  }, connectivityChecksEnabled, limitedSettled)
-  // A network switch passes through Limited for a fraction of a second while
-  // NetworkManager's first probe is in flight. Wait that out rather than flash
-  // the outage warning on every connect.
-  readonly property bool nativeLimited: Networking.connectivity === NetworkConnectivity.Limited
-  property bool limitedSettled: false
-  onNativeLimitedChanged: if (!nativeLimited) limitedSettled = false
-  Timer {
-    id: limitedSettle
-    interval: 3000
-    running: root.nativeLimited
-    onTriggered: root.limitedSettled = true
-  }
-  readonly property bool hasCaptivePortal: connectivity === "portal"
-  readonly property bool restricted: hasCaptivePortal || connectivity === "limited"
-  readonly property string icon: Model.connectionIcon(kind, signalStrength, connectivity)
+  readonly property bool connectivityChecksEnabled: status.connectivityChecksEnabled
+  readonly property string connectivity: status.connectivity
+  readonly property bool hasCaptivePortal: status.hasCaptivePortal
+  readonly property bool restricted: status.restricted
+  readonly property string icon: status.icon
   // Keyed on the device rather than the SSID: on an OWE transition-mode
   // network the listed network comes and goes with every scan while the link
   // stays up, and a real network switch already passes through "disconnected".
@@ -727,28 +660,7 @@ Panel {
     return Model.formatPacketLoss(percent, hasInternetPing, Commons.I18n.formatNumber)
   }
 
-  // Prefer a connected device: a machine can expose several NICs of the
-  // same type (e.g. an idle onboard port alongside the active adapter),
-  // and the first-enumerated one may be carrierless.
-  function findDevice(type) {
-    var devices = networkDevices || []
-    var fallback = null
-    for (var i = 0; i < devices.length; i++) {
-      var device = devices[i]
-      if (!device || device.type !== type) continue
-      if (device.connected) return device
-      if (!fallback) fallback = device
-    }
-    return fallback
-  }
-
-  function findConnectedWifiNetwork() {
-    var networks = wifiNetworkObjects || []
-    for (var i = 0; i < networks.length; i++) {
-      if (networks[i] && networks[i].connected) return networks[i]
-    }
-    return null
-  }
+  function findDevice(type) { return status.findDevice(type) }
 
   function syncWifiNetworks() {
     rebuildWifiRows()
@@ -1009,25 +921,6 @@ Panel {
     }
   }
 
-  // Reads the in-use access point's strength without triggering a scan, for
-  // the connected network that has none of its own (see signalStrength).
-  Process {
-    id: activeApSignalProc
-    command: ["nmcli", "-t", "-f", "IN-USE,SIGNAL", "device", "wifi", "list", "ifname", root.wifiDevice ? root.wifiDevice.name : "", "--rescan", "no"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.finishActiveApSignal(text)
-    }
-  }
-
-  Timer {
-    id: activeApSignalPoll
-    interval: 5000
-    repeat: true
-    triggeredOnStart: true
-    running: root.needsActiveApSignal
-    onTriggered: root.pollActiveApSignal()
-  }
 
   Timer {
     id: scanRestart
