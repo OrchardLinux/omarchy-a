@@ -418,7 +418,7 @@ Item {
       acceptedButtons: Qt.AllButtons
     }
 
-    Rectangle {
+    BorderSurface {
       id: card
       // While it moves, drawn once into a texture that is only scaled, moved
       // and faded (cheap on any GPU); at rest drawn directly, sharp.
@@ -429,8 +429,9 @@ Item {
       width: root.phone ? parent.width : root.cardWidth
       height: root.phone ? parent.height - root.barInset : content.implicitHeight + root.pad * 2
       color: root.phone ? "transparent" : Commons.Color.popups.background
-      border.width: root.phone ? 0 : Math.max(1, Style.space(1))
-      border.color: Commons.Color.popups.border
+      // The bar's popups' own border (KeyboardPanel): the theme's spec.
+      borderSpec: root.phone ? Border.none()
+        : Border.surfaceSpec("popups", "border", Commons.Color.popups.border, Math.max(1, Style.space(2)))
       radius: Style.cornerRadius
       // Its bottom edge is where the finger is: reveal is the finger's way
       // down as a share of the card's bottom. On the way it grows out of its
