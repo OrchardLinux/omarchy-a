@@ -145,6 +145,9 @@ Item {
   readonly property var pageTitles: ({ "omarchy.monitor": Commons.I18n.t("monitor.display") })
 
   property var page: null
+  // A page opened on its own (its bar icon, a shortcut): no way back to the
+  // main view, as the icon's own menu would be; Esc or a tap outside closes.
+  property bool standalone: false
   // 0 on the main view, 1 on the page; the push in between.
   property real pageShift: 0
   NumberAnimation {
@@ -156,7 +159,25 @@ Item {
     onFinished: if (root.pageShift === 0) root.dropPage()
   }
 
+  function hasPage(module) { return !!root.modules[module] }
+
+  // Straight to a module's page, as its icon's menu: again closes.
+  function showModule(module) {
+    var panelForPage = root.modules[module]
+    if (!panelForPage) return
+    if (root.opened && root.standalone && root.page === panelForPage) { root.close(); return }
+    pageSlide.stop()
+    if (root.page && root.page !== panelForPage) root.page.hostShown = false
+    root.page = panelForPage
+    panelForPage.hostShown = true
+    root.standalone = true
+    root.pageShift = 1
+    if (!root.opened) root.open()
+    Qt.callLater(function() { if (pageLoader.item) pageLoader.item.forceActiveFocus() })
+  }
+
   function showPage(panelForPage) {
+    root.standalone = false
     if (!root.opened) root.open()
     if (root.page && root.page !== panelForPage) root.page.hostShown = false
     root.page = panelForPage
@@ -167,6 +188,7 @@ Item {
   }
   function leavePage(panelForPage) {
     if (root.page !== panelForPage) return
+    if (root.standalone) { root.close(); return }
     pageSlide.to = 0
     pageSlide.restart()
     keyCatcher.forceActiveFocus()
@@ -174,6 +196,7 @@ Item {
   function dropPage() {
     if (root.page) root.page.hostShown = false
     root.page = null
+    root.standalone = false
     root.pageShift = 0
   }
 
@@ -399,8 +422,8 @@ Item {
     function toggle(): void { root.toggle() }
     function open(): void { if (!root.opened) root.open() }
     function close(): void { root.close() }
-    // Open at a module's page: omarchy.monitor, omarchy.network, …
-    function page(module: string): void { root.openPage(module) }
+    // A module's page on its own, as its bar icon opens it: omarchy.monitor, …
+    function page(module: string): void { root.showModule(module) }
   }
 
   // ------------------------------------------------------------- window
@@ -669,6 +692,7 @@ Item {
         spacing: root.gap
 
         Item {
+          visible: !root.standalone
           width: parent.width
           height: root.touchMin
           Row {
@@ -705,8 +729,9 @@ Item {
           sourceComponent: root.page ? root.page.pageContent : null
           // As tall as its content, within the screen; the content scrolls
           // beyond that.
-          readonly property real room: root.screenHeight - card.y - root.pad * 2 - root.touchMin - root.gap - Style.gapsOut
-          height: item ? Math.min(item.implicitHeight, root.phone ? card.height - root.pad * 2 - root.touchMin - root.gap - Style.space(12) : room) : 0
+          readonly property real header: root.standalone ? 0 : root.touchMin + root.gap
+          readonly property real room: root.screenHeight - card.y - root.pad * 2 - header - Style.gapsOut
+          height: item ? Math.min(item.implicitHeight, root.phone ? card.height - root.pad * 2 - header - Style.space(12) : room) : 0
         }
       }
     }
