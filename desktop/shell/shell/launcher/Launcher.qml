@@ -1112,12 +1112,15 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       BorderSurface {
         id: searchBox
         readonly property bool hot: searchHover.hovered
-        width: parent.width - (content.trailing > 0 ? content.trailing + Style.spacing.lg : 0)
-        height: root.searchHeight
-        Behavior on width {
+        // Only Cancel coming and going animates the field; the launcher's
+        // own size (set as its window maps on open) takes effect at once.
+        property real cancelShare: root.searching ? 1 : 0
+        Behavior on cancelShare {
           enabled: root.gpu && root.opened
           NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic }
         }
+        width: parent.width - searchBox.cancelShare * (cancelButton.width + Style.spacing.lg)
+        height: root.searchHeight
         radius: Style.cornerRadius
         // Focus in the shipped [controls] mirrors hover, whose border is
         // fainter than idle's, so a focused field would read as less active
