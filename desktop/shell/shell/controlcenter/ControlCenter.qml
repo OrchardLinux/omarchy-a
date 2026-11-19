@@ -227,6 +227,8 @@ Item {
   // Let go, it keeps the finger's speed and a spring carries it to open or
   // back, by how far it came and how fast it was moving.
   property bool pulling: false
+  // A long press opened a page while the finger is still down (see above).
+  property bool touchSpent: false
   readonly property real pullSpan: Math.max(1, card.y + card.height)
   property real pullFrom: 0
 
@@ -371,9 +373,16 @@ Item {
         xAxis.enabled: false
         acceptedDevices: PointerDevice.TouchScreen
         grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
-        enabled: root.opened || root.pulling
+        enabled: (root.opened || root.pulling) && !root.touchSpent
         onActiveChanged: active ? root.beginPull() : root.endPull(centroid.velocity.y)
         onTranslationChanged: if (active) root.pullTo(translation.y)
+      }
+      // The touch that held a control until its page opened is spent: once
+      // the control lets go of it (its view hides), nothing else takes it.
+      // The next touch counts again.
+      PointHandler {
+        acceptedDevices: PointerDevice.TouchScreen
+        onActiveChanged: if (!active) root.touchSpent = false
       }
     }
 
@@ -613,6 +622,7 @@ Item {
         onTriggered: if (tileMouse.holding) {
           tileMouse.held = false
           tileMouse.used = true
+          root.touchSpent = true
           root.openPage(tile.page)
         }
       }
@@ -754,7 +764,7 @@ Item {
       Timer {
         id: sliderHoldOpen
         interval: 400
-        onTriggered: if (drag.holding) { drag.held = false; drag.used = true; slider.longPressed() }
+        onTriggered: if (drag.holding) { drag.held = false; drag.used = true; root.touchSpent = true; slider.longPressed() }
       }
       function valueAt(mouse) {
         return Math.max(0, Math.min(1, slider.vertical ? 1 - mouse.y / slider.height : mouse.x / slider.width))
