@@ -709,21 +709,16 @@ Item {
       enabled: slider.available
       preventStealing: true
       // The level goes where the finger is: on a tap when it lifts, on a
-      // drag as soon as it moves and from then on. A long press (the page)
-      // is caught instead and changes nothing, so nothing happens on the
-      // touch itself before it is known which of the three it is.
+      // drag as soon as it moves and from then on. Held still (0.4 s), the
+      // touch arms the page instead and changes nothing: the slider shows it
+      // is held, lifting opens the page, sliding off cancels (and back on
+      // arms it again). Nothing happens on the touch itself before it is
+      // known which it is.
+      pressAndHoldInterval: 400
       property point pressedAt
       property bool moving: false
       property bool held: false
-      // Still for a moment: neither a tap nor a drag. The slider shows it is
-      // being held (the pressed tint, a little smaller) until the finger
-      // lifts or moves.
-      property bool holding: false
-      Timer {
-        id: holdHint
-        interval: 180
-        onTriggered: if (drag.pressed && !drag.moving) drag.holding = true
-      }
+      readonly property bool holding: held && containsMouse
       function valueAt(mouse) {
         return Math.max(0, Math.min(1, slider.vertical ? 1 - mouse.y / slider.height : mouse.x / slider.width))
       }
@@ -731,21 +726,20 @@ Item {
         pressedAt = Qt.point(mouse.x, mouse.y)
         moving = false
         held = false
-        holding = false
-        holdHint.restart()
       }
       onPositionChanged: function(mouse) {
         if (!pressed || held) return
         if (!moving && Math.abs(mouse.x - pressedAt.x) + Math.abs(mouse.y - pressedAt.y) <= Style.space(10)) return
         moving = true
-        holding = false
         slider.moved(valueAt(mouse))
       }
       onReleased: function(mouse) {
-        holding = false
-        if (!moving && !held) slider.moved(valueAt(mouse))
+        if (held) { if (containsMouse) slider.longPressed() }
+        else if (!moving) slider.moved(valueAt(mouse))
+        held = false
       }
-      onCanceled: holding = false
+      onCanceled: held = false
+      onPressAndHold: if (!moving) held = true
       onPressAndHold: if (!moving) { held = true; slider.longPressed() }
     }
     Rectangle {
