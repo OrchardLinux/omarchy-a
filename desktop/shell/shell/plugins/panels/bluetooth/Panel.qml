@@ -681,7 +681,7 @@ Panel {
   }
 
   ShellIpc {
-    target: "omarchy.bluetooth"
+    target: root.hosted ? "" : "omarchy.bluetooth"
 
     function open() { root.open() }
     function close() { root.close() }
@@ -702,12 +702,15 @@ Panel {
     }
   }
 
+  // The content, for a host that shows it as a page (the control center).
+  readonly property Component pageContent: panel.content
+
   KeyboardPanel {
     id: panel
     anchorItem: button
     owner: root
     bar: root.bar
-    open: root.opened
+    open: root.popupOpen
     focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
     contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
@@ -746,11 +749,22 @@ Panel {
             textFormat: Text.PlainText
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            text: root.icon
+            // Orchard: as a control center page, the way back.
+            text: root.hosted ? "󰁍" : root.icon
             color: root.bar.foreground
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.display
-            opacity: root.adapter && root.adapter.enabled ? 1.0 : 0.5
+            opacity: root.hosted ? 1.0 : (root.adapter && root.adapter.enabled ? 1.0 : 0.5)
+            // Pressed, it shrinks, as the control center's controls do.
+            scale: backPress.pressed ? 0.85 : 1
+            Behavior on scale { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
+            MouseArea {
+              id: backPress
+              anchors.fill: parent
+              anchors.margins: -Style.space(10)
+              enabled: root.hosted
+              onClicked: root.close()
+            }
           }
 
           // Compact on/off switch on the trailing edge of the hero, and the

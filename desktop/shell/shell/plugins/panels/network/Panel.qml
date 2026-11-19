@@ -18,8 +18,10 @@ Panel {
   manageIpc: false
 
   // Centralized close so callers can't forget to drop the passphrase prompt.
+  // Orchard: as a control center page, closing is going back.
   function close() {
-    root.controller.hide()
+    if (root.hosted) root.host.leavePage(root)
+    else root.controller.hide()
     cancelPasswordPrompt()
     optionsSsid = ""
   }
@@ -240,7 +242,7 @@ Panel {
   }
 
   ShellIpc {
-    target: "omarchy.network"
+    target: root.hosted ? "" : "omarchy.network"
 
     function open() { root.open() }
     function close() { root.close() }
@@ -1085,12 +1087,15 @@ Panel {
   // outside-click via an overlay MouseArea + Region mask that lets the bar
   // remain clickable, fade animation, popout coordination). What stays
   // here is the wifi-specific UI inside.
+  // The content, for a host that shows it as a page (the control center).
+  readonly property Component pageContent: panel.content
+
   KeyboardPanel {
     id: panel
     anchorItem: button
     owner: root
     bar: root.bar
-    open: root.opened
+    open: root.popupOpen
     focusTarget: root.passwordSsid !== "" && root.credentialFocusTarget ? root.credentialFocusTarget : panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
     contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
@@ -1217,13 +1222,24 @@ Panel {
         Text {
           id: heroIcon
           textFormat: Text.PlainText
-          text: root.icon
-          color: root.restricted ? root.bar.urgent : root.bar.foreground
+          // Orchard: as a control center page, the way back.
+          text: root.hosted ? "󰁍" : root.icon
+          color: !root.hosted && root.restricted ? root.bar.urgent : root.bar.foreground
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.display
-          opacity: root.networkManagerAvailable ? 1.0 : 0.5
+          opacity: root.hosted || root.networkManagerAvailable ? 1.0 : 0.5
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
+          // Pressed, it shrinks, as the control center's controls do.
+          scale: backPress.pressed ? 0.85 : 1
+          Behavior on scale { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
+          MouseArea {
+            id: backPress
+            anchors.fill: parent
+            anchors.margins: -Style.space(10)
+            enabled: root.hosted
+            onClicked: root.close()
+          }
         }
 
         // Sharing belongs to the connected-network hero rather than the scan

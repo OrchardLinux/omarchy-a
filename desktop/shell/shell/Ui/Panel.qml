@@ -19,11 +19,19 @@ Item {
   property bool popoutSwitching: false
   property bool popoutSwitchClosing: false
 
-  readonly property bool opened: panelController.open
+  // Orchard: a host (the control center) can show this panel's content as
+  // one of its pages instead of the popup. Hosted, opening shows the page,
+  // closing (Esc in the content) goes back, the popup stays closed and the
+  // IPC target is the bar's panel's alone.
+  property var host: null
+  property bool hostShown: false
+  readonly property bool hosted: host !== null
+  readonly property bool opened: hosted ? hostShown : panelController.open
+  readonly property bool popupOpen: !hosted && panelController.open
   readonly property color barForeground: bar ? bar.barForeground : Commons.Color.foreground
 
-  function open() { panelController.show() }
-  function close() { panelController.hide() }
+  function open() { if (hosted) host.showPage(root); else panelController.show() }
+  function close() { if (hosted) host.leavePage(root); else panelController.hide() }
   function closeForPopoutSwitch() {
     popoutSwitchClosing = true
     close()
@@ -48,7 +56,7 @@ Item {
 
   ShellIpc {
     // A panel that answers its target itself leaves this one without one.
-    target: root.manageIpc ? root.ipcTarget : ""
+    target: root.manageIpc && !root.hosted ? root.ipcTarget : ""
 
     function open(): void { root.open() }
     function close(): void { root.close() }

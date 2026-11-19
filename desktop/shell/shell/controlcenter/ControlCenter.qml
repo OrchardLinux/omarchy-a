@@ -12,6 +12,9 @@ import "../plugins/panels/bluetooth" as BluetoothStatus
 import "../plugins/panels/power" as Power
 import "../plugins/panels/bluetooth/Model.js" as BluetoothModel
 import "../plugins/status" as StatusParts
+import "../plugins/panels/monitor" as Monitor
+import "../plugins/panels/network" as NetworkPanel
+import "../plugins/panels/audio" as AudioPanel
 
 // The control center (SHELL-SPEC, step 2): the main view. States you flip
 // and the two sliders, over the same status objects the bar and the lock
@@ -58,6 +61,16 @@ Item {
     : !(source && source.audio) || source.audio.muted
   readonly property bool micKnown: UntypedInput.active ? UntypedInput.known : !!(source && source.audio)
 
+  // The on-screen keyboard's visibility, as omarchy-keyboard records it.
+  FileView {
+    id: keyboardState
+    path: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omarchy-keyboard-visible"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+  }
+  readonly property bool keyboardShown: keyboardState.loaded && keyboardState.text().trim() === "1"
+
   property int brightness: -1
   property bool autoBrightness: false
 
@@ -88,10 +101,101 @@ Item {
   function run(argv) { Quickshell.execDetached(argv) }
   function omarchy(name) { return (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/bin/" + name }
 
-  // Until the pages exist: the bar's panel for that module.
+  // A module's page: its panel's content, pushed in from the right. A
+  // module without a page yet opens the bar's panel for it.
   function openPage(module) {
+    var panelForPage = root.modules[module]
+    if (panelForPage) { panelForPage.open(); return }
     root.close()
     run(["omarchy-shell", "shell", "toggle", module])
+  }
+
+  // ------------------------------------------------------------ pages
+  // Each page is a panel of its own (not the bar's), hosted: pageHost stands
+  // in for the bar it would read its colours and font from, and opening or
+  // closing it shows or leaves the page.
+
+  QtObject {
+    id: pageHost
+    readonly property color foreground: root.text
+    readonly property color barForeground: root.text
+    readonly property color urgent: Commons.Color.urgent
+    readonly property string fontFamily: Style.font.family
+    readonly property var shell: root.shell
+    readonly property string position: "top"
+    readonly property bool vertical: false
+    readonly property int barSize: Style.bar.sizeHorizontal
+    // The rest of what a panel's own bar button and popup ask of a bar,
+    // inert here: hosted, neither is ever shown.
+    readonly property var activePopout: null
+    readonly property bool foregroundAnimationEnabled: false
+    readonly property int sizeHorizontal: Style.bar.sizeHorizontal
+    readonly property int iconFont: Style.font.icon
+    readonly property int iconSize: Style.font.icon
+    readonly property int iconSlot: Style.space(28)
+    readonly property bool iconCanvas: false
+    readonly property var clickTargets: []
+    function barSizeFor() { return Style.bar.sizeHorizontal }
+    function showTooltip() {}
+    function hideTooltip() {}
+    function requestPopout() { return false }
+    function releasePopout() {}
+    function notePopoutCard() {}
+    function popoutCardFor() { return null }
+    function targetBelongsToWindow() { return false }
+    function run(command) { Quickshell.execDetached(["sh", "-c", command]) }
+    function switchPanelFrom(panel, direction) { return false }
+    function showPage(panel) { root.showPage(panel) }
+    function leavePage(panel) { root.leavePage(panel) }
+  }
+
+  Item {
+    visible: false
+    Monitor.Panel { id: displayModule; host: pageHost; bar: pageHost; moduleName: "omarchy.monitor" }
+    NetworkPanel.Panel { id: networkModule; host: pageHost; bar: pageHost; moduleName: "omarchy.network" }
+    AudioPanel.Panel { id: audioModule; host: pageHost; bar: pageHost; moduleName: "omarchy.audio" }
+    BluetoothStatus.Panel { id: bluetoothModule; host: pageHost; bar: pageHost; moduleName: "omarchy.bluetooth" }
+    Power.Panel { id: powerModule; host: pageHost; bar: pageHost; moduleName: "omarchy.power" }
+  }
+  readonly property var modules: ({
+    "omarchy.monitor": displayModule,
+    "omarchy.network": networkModule,
+    "omarchy.audio": audioModule,
+    "omarchy.bluetooth": bluetoothModule,
+    "omarchy.power": powerModule
+  })
+
+  property var page: null
+  // 0 on the main view, 1 on the page; the push in between.
+  property real pageShift: 0
+  NumberAnimation {
+    id: pageSlide
+    target: root
+    property: "pageShift"
+    duration: Style.duration(300)
+    easing.type: Easing.OutCubic
+    onFinished: if (root.pageShift === 0) root.dropPage()
+  }
+
+  function showPage(panelForPage) {
+    if (!root.opened) root.open()
+    if (root.page && root.page !== panelForPage) root.page.hostShown = false
+    root.page = panelForPage
+    panelForPage.hostShown = true
+    pageSlide.to = 1
+    pageSlide.restart()
+    Qt.callLater(function() { if (pageLoader.item) pageLoader.item.forceActiveFocus() })
+  }
+  function leavePage(panelForPage) {
+    if (root.page !== panelForPage) return
+    pageSlide.to = 0
+    pageSlide.restart()
+    keyCatcher.forceActiveFocus()
+  }
+  function dropPage() {
+    if (root.page) root.page.hostShown = false
+    root.page = null
+    root.pageShift = 0
   }
 
   function toggleWifi() { Networking.wifiEnabled = !Networking.wifiEnabled }
@@ -103,10 +207,6 @@ Item {
   function toggleRotation() { run([omarchy("omarchy-rotation-lock"), rotation.locked ? "off" : "on"]); rotation.locked = !rotation.locked }
   function toggleAwake() { if (idleService) idleService.setIdleEnabled(root.stayAwake) }
   function showKeyboard() { root.close(); run([omarchy("omarchy-keyboard"), "toggle"]) }
-  function sessionActions() {
-    root.close()
-    if (root.shell) root.shell.summon("omarchy.menu", JSON.stringify({ menu: "system" }))
-  }
   function setVolume(value) {
     if (sink && sink.audio) sink.audio.volume = Math.max(0, Math.min(1, value))
   }
@@ -152,7 +252,7 @@ Item {
     { key: "awake", glyph: "", label: Commons.I18n.t("controlCenter.awake"),
       on: root.stayAwake, enabled: !!root.idleService, act: root.toggleAwake },
     { key: "keyboard", glyph: "󰌌", label: Commons.I18n.t("controlCenter.keyboard"),
-      on: false, enabled: true, act: root.showKeyboard }
+      on: root.keyboardShown, enabled: true, act: root.showKeyboard }
   ]
   // Live once their backend exists (power profiles, Focus, Night Light, media).
   readonly property var later: [
@@ -207,11 +307,34 @@ Item {
     root.focusIndex = -1
   }
 
+  // A bar panel's popup goes first: the control center is never over one.
+  function closePopout() {
+    var bar = root.shell ? root.shell.bar : null
+    var popout = bar ? bar.activePopout : null
+    if (popout && typeof popout.close === "function") popout.close()
+  }
+
   function open() {
+    root.popupStyle = false
+    root.show()
+  }
+  // A bar item's popup opening puts the control center away (its own
+  // button's registration aside).
+  Connections {
+    target: root.shell ? root.shell.bar : null
+    function onActivePopoutChanged() {
+      var popout = root.shell.bar.activePopout
+      if (root.opened && popout && popout.moduleName !== "ipadlinux.controlcenter") root.close()
+    }
+  }
+
+  function show() {
+    root.closePopout()
+    if (root.shell && root.shell.launcher && root.shell.launcher.opened) root.shell.launcher.close()
     root.prepare()
     root.opened = true
     root.mapped = true
-    if (panel.contentRevealed) root.settle(1, 0)
+    if (panel.contentRevealed) root.animateIn()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
   function close() {
@@ -219,9 +342,41 @@ Item {
     if (!root.opened) return
     root.closingFromOpen = true
     root.opened = false
-    root.settle(0, 0)
+    if (root.popupStyle) { spring.running = false; popupOut.restart() }
+    else root.settle(0, 0)
   }
   function toggle() { root.opened ? root.close() : root.open() }
+
+  // Clicked open from its bar button, it is a popup like the bar's others
+  // (upstream's KeyboardPanel): it fades in growing from just under full
+  // size toward the button, goes in two thirds of the time, and the screen
+  // does not dim. A phone keeps the whole screen.
+  property bool popupStyle: false
+  function togglePopup() {
+    if (root.opened) { root.close(); return }
+    root.popupStyle = !root.phone
+    root.show()
+  }
+  function animateIn() {
+    if (root.popupStyle) { spring.running = false; popupOut.stop(); popupIn.restart() }
+    else root.settle(1, 0)
+  }
+  NumberAnimation {
+    id: popupIn
+    target: root; property: "reveal"; to: 1
+    // Software rendering: at once, as the launcher does there.
+    duration: root.gpu ? Style.duration(180) : 0
+    easing.type: Easing.Bezier
+    easing.bezierCurve: Style.easeOut
+  }
+  NumberAnimation {
+    id: popupOut
+    target: root; property: "reveal"; to: 0
+    duration: root.gpu ? Style.duration(120) : 0
+    easing.type: Easing.Bezier
+    easing.bezierCurve: Style.easeOut
+    onFinished: if (!root.opened) { root.mapped = false; root.dropPage() }
+  }
 
   // A finger pulls it down from the top edge (the bar), or up to put it
   // away: it follows the finger, past its place only against resistance.
@@ -230,12 +385,16 @@ Item {
   property bool pulling: false
   // A long press opened a page while the finger is still down (see above).
   property bool touchSpent: false
-  readonly property real pullSpan: Math.max(1, card.y + card.height)
+  readonly property real pullSpan: Math.max(1, card.y + card.follow)
   property real pullFrom: 0
 
   function beginPull() {
     spring.running = false
+    popupIn.stop()
+    popupOut.stop()
+    root.popupStyle = false
     if (!root.opened) {
+      root.closePopout()
       root.prepare()
       root.reveal = 0
       root.mapped = true
@@ -299,23 +458,63 @@ Item {
         root.reveal = root.springTarget
         root.springVelocity = 0
         running = false
-        if (!root.opened) root.mapped = false
+        if (!root.opened) { root.mapped = false; root.dropPage() }
       }
     }
   }
 
-  // Moving: the spring or a finger.
-  readonly property bool moving: spring.running || root.pulling
+  // Open as a popup, the bar knows its card as it knows its other popups'
+  // (KeyboardPanel notes them): a popup taking over in the same section
+  // morphs from this card, not from an older one.
+  function notePopupCard() {
+    var bar = root.shell ? root.shell.bar : null
+    if (!root.popupStyle || !root.opened || !bar || typeof bar.notePopoutCard !== "function") return
+    bar.notePopoutCard({ screen: panel.screen ? panel.screen.name : "", x: card.x, y: card.y,
+                         width: card.width, height: card.height })
+  }
+  onPopupStyleChanged: Qt.callLater(notePopupCard)
+  Connections {
+    target: card
+    function onHeightChanged() { root.notePopupCard() }
+  }
+
+  // Moving: the spring, a finger, or a popup's fade.
+  readonly property bool moving: spring.running || root.pulling || popupIn.running || popupOut.running
 
   // While open, a note for the Home button (omarchy-home-button closes it).
   readonly property string openNote: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omarchy-control-center-open"
-  onOpenedChanged: Quickshell.execDetached(opened ? ["touch", openNote] : ["rm", "-f", openNote])
+  // One writer, run again until the note matches: two detached commands could
+  // finish out of order and leave the note behind a closed control center,
+  // and Home would then only ever "close" it. A note left from an earlier
+  // shell goes at start.
+  property bool noteWritten: true
+  function writeOpenNote() {
+    if (noteWriter.running || root.noteWritten === root.opened) return
+    noteWriter.writing = root.opened
+    noteWriter.command = root.opened ? ["touch", root.openNote] : ["rm", "-f", root.openNote]
+    noteWriter.running = true
+  }
+  Process {
+    id: noteWriter
+    property bool writing: false
+    onExited: {
+      root.noteWritten = writing
+      root.writeOpenNote()
+    }
+  }
+  Component.onCompleted: writeOpenNote()
+  onOpenedChanged: {
+    writeOpenNote()
+    Qt.callLater(notePopupCard)
+  }
 
   ShellIpc {
     target: "omarchy.controlcenter"
     function toggle(): void { root.toggle() }
     function open(): void { if (!root.opened) root.open() }
     function close(): void { root.close() }
+    // Open at a module's page: omarchy.monitor, …
+    function page(module: string): void { root.openPage(module) }
   }
 
   // ------------------------------------------------------------- window
@@ -324,10 +523,21 @@ Item {
     id: panel
     shown: root.mapped
     WlrLayershell.namespace: "omarchy-control-center"
+    // Where the bar shows above it (as a popup, and always on a phone) the
+    // bar stays the bar: a click on an item there reaches it, and its popup
+    // closes this one. Pulled down on an iPad, it dims and takes the screen.
+    mask: root.popupStyle || root.phone ? popupInput : null
+    Region { id: popupInput; item: popupInputArea }
+    Item {
+      id: popupInputArea
+      y: root.barInset
+      width: parent.width
+      height: Math.max(0, parent.height - root.barInset)
+    }
 
     onContentRevealedChanged: if (contentRevealed && root.opened && !root.pulling) {
       root.reveal = 0
-      root.settle(1, 0)
+      root.animateIn()
       keyCatcher.forceActiveFocus()
     }
 
@@ -339,7 +549,13 @@ Item {
       width: parent.width
       height: parent.height - y
       color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
-      opacity: Math.max(0, Math.min(1, root.reveal))
+      // Software rendering dims in one step rather than blending the whole
+      // screen again on every frame of a pull.
+      // A phone's sheet comes in quickly at first, easing out, and is opaque
+      // only as the pull arrives; it goes with its content.
+      opacity: root.popupStyle ? 0 : root.phone
+        ? (!root.gpu || root.leaving ? card.opacity : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal)), 2.5))
+        : (root.gpu ? Math.max(0, Math.min(1, root.reveal)) : (root.reveal > 0 ? 1 : 0))
       MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -354,7 +570,7 @@ Item {
       Keys.onPressed: function(event) {
         var cell = root.focusedCell()
         switch (event.key) {
-        case Qt.Key_Escape: root.close(); break
+        case Qt.Key_Escape: if (root.page) root.leavePage(root.page); else root.close(); break
         case Qt.Key_Tab: root.stepFocus(1); break
         case Qt.Key_Backtab: root.stepFocus(-1); break
         case Qt.Key_Up: root.moveFocus(0, -1); break
@@ -425,12 +641,21 @@ Item {
       id: card
       // While it moves, drawn once into a texture that is only scaled, moved
       // and faded (cheap on any GPU); at rest drawn directly, sharp.
-      layer.enabled: root.moving
+      layer.enabled: root.moving && root.gpu
       layer.smooth: true
       x: root.phone ? 0 : parent.width - width - Style.gapsOut
       y: root.phone ? root.barInset : root.barInset + Style.gapsOut
       width: root.phone ? parent.width : root.cardWidth
-      height: root.phone ? parent.height - root.barInset : content.implicitHeight + root.pad * 2
+      // The main view's height, the page's, and the push between them.
+      readonly property real mainHeight: content.implicitHeight + root.pad * 2
+      readonly property real pageHeight: pageView.implicitHeight + root.pad * 2
+      readonly property real contentHeight: mainHeight + (pageHeight - mainHeight) * root.pageShift
+      height: root.phone ? parent.height - root.barInset : contentHeight
+      // What the finger holds: the card's bottom, or on a phone (where the
+      // card is the screen) the bottom of its content; the empty sheet below
+      // comes in under the thumb.
+      readonly property real follow: root.phone ? Style.space(12) + contentHeight : height
+      clip: true
       color: root.phone ? "transparent" : Commons.Color.popups.background
       // The bar's popups' own border (KeyboardPanel): the theme's spec.
       borderSpec: root.phone ? Border.none()
@@ -439,21 +664,24 @@ Item {
       // Its bottom edge is where the finger is: reveal is the finger's way
       // down as a share of the card's bottom. On the way it grows out of its
       // own top centre and fades in; the slide is what keeps the scaled bottom under the finger.
-      readonly property real grow: 0.86 + 0.14 * root.reveal
+      // As a popup: it grows from 97 % toward its button and fades.
+      // Software rendering only moves it (its bottom still under the finger):
+      // no scaling or fading for the CPU to redraw each frame.
+      readonly property real grow: !root.gpu ? 1 : (root.popupStyle ? 0.97 + 0.03 * root.reveal : 0.86 + 0.14 * root.reveal)
       transform: [
         Scale {
-          origin.x: card.width / 2
+          origin.x: root.popupStyle ? card.width : card.width / 2
           origin.y: 0
           xScale: card.grow
           yScale: card.grow
         },
-        Translate { y: root.reveal * root.pullSpan - card.y - card.height * card.grow }
+        Translate { y: root.popupStyle ? 0 : root.reveal * root.pullSpan - card.y - card.follow * card.grow }
       ]
       // Coming in: solid within the first quarter of the way, most of it at
       // once. Going out (let go to close, or pushed up from open): it fades
       // with its way up, gone as its bottom edge reaches the status bar.
       readonly property real barShare: Math.min(0.9, root.barInset / root.pullSpan)
-      opacity: root.leaving
+      opacity: !root.gpu ? (root.reveal > 0 ? 1 : 0) : root.popupStyle ? root.reveal : root.leaving
         ? Math.max(0, Math.min(1, (root.reveal - barShare) / (1 - barShare)))
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.25)), 2)
 
@@ -461,7 +689,8 @@ Item {
 
       Column {
         id: content
-        x: root.pad
+        x: root.pad - root.pageShift * card.width
+        visible: root.pageShift < 1
         y: root.pad + (root.phone ? Style.space(12) : 0)
         width: parent.width - root.pad * 2
         spacing: root.gap
@@ -549,24 +778,48 @@ Item {
           }
         }
 
-        // Battery line and the session actions (iPad: here; phone: at the foot).
+        // The battery line (iPad: here; phone: at the foot).
         Item {
           id: footer
           width: content.width
           height: root.touchMin
-          visible: !root.phone
+          // Only with a battery to show: nothing else lives here.
+          visible: !root.phone && root.batteryLine !== ""
           FooterParts { anchors.fill: parent }
         }
       }
 
       Item {
-        visible: root.phone
-        x: root.pad
+        visible: root.phone && root.pageShift < 1 && root.batteryLine !== ""
+        x: root.pad - root.pageShift * card.width
         width: parent.width - root.pad * 2
         height: root.touchMin
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Style.space(24)
         FooterParts { anchors.fill: parent }
+      }
+
+      // The page: the panel's content, whose own title row is the header (its
+      // icon turns into the way back when hosted).
+      Column {
+        id: pageView
+        visible: root.page !== null
+        x: root.pad + (1 - root.pageShift) * card.width
+        y: root.pad + (root.phone ? Style.space(12) : 0)
+        width: parent.width - root.pad * 2
+        spacing: root.gap
+
+        Loader {
+          id: pageLoader
+          width: parent.width
+          active: root.page !== null
+          sourceComponent: root.page ? root.page.pageContent : null
+          // As tall as its content, within the screen; the content scrolls
+          // beyond that.
+          readonly property real header: 0
+          readonly property real room: root.screenHeight - card.y - root.pad * 2 - header - Style.gapsOut
+          height: item ? Math.min(item.implicitHeight, root.phone ? card.height - root.pad * 2 - header - Style.space(12) : room) : 0
+        }
       }
     }
   }
@@ -639,7 +892,7 @@ Item {
         }
       }
     }
-    // Tap toggles; a right click opens the page. Held still (0.2 s), the
+    // Tap toggles; a right click opens the page. Held still (0.4 s), the
     // touch arms the page as on a slider: the tile shows it is held, lifting
     // opens the page, sliding off cancels. One rule for every control: a tap
     // never opens another level.
@@ -647,7 +900,7 @@ Item {
       id: tileMouse
       anchors.fill: parent
       acceptedButtons: Qt.LeftButton | Qt.RightButton
-      pressAndHoldInterval: 200
+      pressAndHoldInterval: 400
       // A button keeps its touch: sliding off cancels, and the control center
       // is not dragged away.
       preventStealing: true
@@ -745,6 +998,8 @@ Item {
     property bool pageArrow: false
     signal moved(real value)
     signal longPressed()
+    // Left and right move it; Enter opens its page.
+    onActivated: slider.longPressed()
     function adjust(delta) { if (slider.available) slider.moved(Math.max(0, Math.min(1, slider.value + delta))) }
     color: Style.controlFill(false, false, root.text, Commons.Color.accent)
     clip: true
@@ -787,12 +1042,12 @@ Item {
       enabled: slider.available
       preventStealing: true
       // The level goes where the finger is: on a tap when it lifts, on a
-      // drag as soon as it moves and from then on. Held still (0.2 s), the
+      // drag as soon as it moves and from then on. Held still (0.4 s), the
       // touch arms the page instead and changes nothing: the slider shows it
       // is held, lifting opens the page, sliding off cancels (and back on
       // arms it again). Nothing happens on the touch itself before it is
       // known which it is.
-      pressAndHoldInterval: 200
+      pressAndHoldInterval: 400
       property point pressedAt
       property bool moving: false
       property bool held: false
@@ -890,7 +1145,8 @@ Item {
   }
 
   component FooterParts: Item {
-    // Battery line: opens the battery page; the power button the session.
+    // Battery line: opens the battery page. Ending the session is the
+    // launcher's (its footer, a phone's System tab), not the control center's.
     Cell {
       id: batteryCell
       visible: root.batteryLine !== ""
@@ -910,23 +1166,6 @@ Item {
         Text { anchors.verticalCenter: parent.verticalCenter; text: "󰅂"; color: root.text; opacity: 0.6; font.family: Style.font.family; font.pixelSize: Style.font.caption }
       }
       MouseArea { anchors.fill: parent; onClicked: batteryCell.activate() }
-    }
-    Cell {
-      id: powerCell
-      anchors.right: parent.right
-      width: root.touchMin
-      height: parent.height
-      color: "transparent"
-      border.width: focused ? Math.max(1, Style.space(1)) : 0
-      onActivated: root.sessionActions()
-      Text {
-        anchors.centerIn: parent
-        text: "󰐥"
-        color: Commons.Color.urgent
-        font.family: Style.font.family
-        font.pixelSize: Style.font.title
-      }
-      MouseArea { anchors.fill: parent; onClicked: powerCell.activate() }
     }
   }
 }

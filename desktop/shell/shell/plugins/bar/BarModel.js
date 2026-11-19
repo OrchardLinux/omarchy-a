@@ -396,7 +396,9 @@ function layoutWidgets(layout, memo) {
 // widgets of a tablet's bar run into the clock. It is made from the one layout
 // in shell.json by each entry's `narrow` setting: false takes the widget
 // off the first page, a section's name moves it to the end of that section,
-// and an entry without the setting stays where it is. The entries themselves
+// "hidden" leaves it out of a narrow bar altogether (Orchard: a phone reaches
+// it through the control center instead), and an entry without the setting
+// stays where it is. The entries themselves
 // are passed on untouched, so a widget keeps its settings in either layout.
 //
 // No widget is dropped for good: when some are off the first page, the right
@@ -417,6 +419,7 @@ function narrowOverflow(layout) {
     var list = Array.isArray(source[sections[r]]) ? source[sections[r]] : []
     for (var i = 0; i < list.length; i++) {
       var hint = isPlainObject(list[i]) ? list[i].narrow : undefined
+      if (hint === "hidden") continue
       if (hint === false) held.push(list[i])
       else if (sections[r] === "left" && (hint === undefined || hint === "left")) ownLeft++
     }
@@ -454,7 +457,7 @@ function narrowLayout(layout, page) {
     var list = Array.isArray(source[sections[r]]) ? source[sections[r]] : []
     for (var i = 0; i < list.length; i++) {
       var hint = isPlainObject(list[i]) ? list[i].narrow : undefined
-      if (hint === false) continue
+      if (hint === false || hint === "hidden") continue
       var target = sections.indexOf(hint) !== -1 ? hint : sections[r]
       if (shown > 0 && (target === "right" || (target === "left" && target !== sections[r]))) continue
       out[target].push(list[i])

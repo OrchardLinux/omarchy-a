@@ -552,7 +552,17 @@ Item {
     }
   }
 
-  Component.onCompleted: wallpaperProc.running = true
+  Component.onCompleted: { wallpaperProc.running = true; opaqueProc.running = true }
+
+  // Orchard: Trigger > Toggle > Opaque Launcher shows it on the theme's
+  // plain background instead of the frosted wallpaper (no blurred copy is
+  // made then). Read as it opens.
+  property bool opaque: false
+  Process {
+    id: opaqueProc
+    command: ["omarchy-toggle-enabled", "launcher-opaque"]
+    onExited: function(code) { root.opaque = code === 0 }
+  }
 
   // The background plugin names the new wallpaper the moment a theme or
   // background switch sets it, before its own fade: the blurred copy is made
@@ -572,7 +582,7 @@ Item {
   readonly property real backdropTint: 0.8
   readonly property color backdropColor: Commons.Color.menu.background
   // Everything but the size: what makes a background outdated.
-  readonly property string backdropLook: wallpaper
+  readonly property string backdropLook: wallpaper && !opaque
     ? ["frosted4", wallpaper, Math.round(backdropColor.r * 255), Math.round(backdropColor.g * 255), Math.round(backdropColor.b * 255), backdropTint].join("|") : ""
   readonly property string backdropKey: backdropKeyFor(backdropWidth, backdropHeight)
   readonly property string backdropPath: backdropPathFor(backdropKey)
@@ -650,12 +660,18 @@ Item {
   }
 
   function open() {
+    // A bar popup, or the control center, goes first: the launcher is never
+    // shown over one.
+    var bar = root.shell ? root.shell.bar : null
+    if (bar && bar.activePopout && typeof bar.activePopout.close === "function") bar.activePopout.close()
+    if (root.shell && root.shell.controlCenter && root.shell.controlCenter.opened) root.shell.controlCenter.close()
     if (root.appLibrary) root.appLibrary.refreshIcons()
     if (root.appsStale || root.apps.length === 0) root.rebuild()
     // Stop Screenrecording and the session list follow what is true now.
     if (root.menu) root.menu.evaluateGuards()
     // A wallpaper changed since: the next open shows it.
     wallpaperProc.running = true
+    opaqueProc.running = true
     root.endSearch()
     root.pageIndex = 0
     root.zone = ""
@@ -685,6 +701,14 @@ Item {
   function toggle() {
     if (root.opened) root.close()
     else root.open()
+  }
+
+  // A bar item's popup opening puts the launcher away.
+  Connections {
+    target: root.shell ? root.shell.bar : null
+    function onActivePopoutChanged() {
+      if (root.opened && root.shell.bar.activePopout) root.close()
+    }
   }
 
   function rebuild() {
@@ -986,12 +1010,15 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       }
     }
 
-    // The bar's strip closes the launcher, as the bar's logo would.
-    MouseArea {
+    // The bar is not dimmed, so it stays the bar: its strip is outside
+    // the launcher's input, and a click there reaches the bar's own item (a
+    // popup it opens puts the launcher away, see below).
+    mask: Region { item: launcherInput }
+    Item {
+      id: launcherInput
+      y: root.barInset
       width: parent.width
-      height: root.barInset
-      acceptedButtons: Qt.LeftButton | Qt.RightButton
-      onClicked: root.close()
+      height: Math.max(0, parent.height - root.barInset)
     }
 
     // Anywhere else that nothing takes: put search away, never close.
@@ -1081,8 +1108,9 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
         Scale {
           origin.x: content.width / 2
           origin.y: 0
-          xScale: 0.98 + 0.02 * root.reveal
-          yScale: 0.98 + 0.02 * root.reveal
+          // Comes in settling from just over its size (and goes the same way).
+          xScale: 1.03 - 0.03 * root.reveal
+          yScale: 1.03 - 0.03 * root.reveal
         },
         Translate { y: Style.space(10) * (1 - root.reveal) }
       ]
@@ -1096,12 +1124,15 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       BorderSurface {
         id: searchBox
         readonly property bool hot: searchHover.hovered
-        width: parent.width - (content.trailing > 0 ? content.trailing + Style.spacing.lg : 0)
-        height: root.searchHeight
-        Behavior on width {
+        // Only Cancel coming and going animates the field; the launcher's
+        // own size (set as its window maps on open) takes effect at once.
+        property real cancelShare: root.searching ? 1 : 0
+        Behavior on cancelShare {
           enabled: root.gpu && root.opened
           NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic }
         }
+        width: parent.width - searchBox.cancelShare * (cancelButton.width + Style.spacing.lg)
+        height: root.searchHeight
         radius: Style.cornerRadius
         // Focus in the shipped [controls] mirrors hover, whose border is
         // fainter than idle's, so a focused field would read as less active
@@ -1313,6 +1344,9 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
         // finger gets 44 points, more than the highlight shows.
         Item {
           id: settingsButton
+          // In the inactive tabs' colour, brighter only while focused, as a
+          // tab is.
+          readonly property bool lit: root.keyFocus("tabs", root.settingsStop)
           anchors.right: parent.right
           height: parent.height
           width: settingsRow.implicitWidth + Style.space(16)
@@ -1332,7 +1366,7 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
             Text {
               anchors.verticalCenter: parent.verticalCenter
               text: "\uf013"
-              color: root.text
+              color: settingsButton.lit ? root.text : root.faint
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
             }
@@ -1340,7 +1374,7 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
               text: Commons.I18n.t("launcher.settings")
-              color: root.text
+              color: settingsButton.lit ? root.text : root.faint
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.subtitle
             }

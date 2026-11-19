@@ -33,6 +33,7 @@ ShellRoot {
   ControlCenter { id: controlCenter; shell: shell }
   // The bar pulls it down from the top edge's right third (Bar.qml).
   readonly property var controlCenter: controlCenter
+  readonly property var launcher: appGrid
   ShellIpc {
     target: "omarchy.dock"
     function apps(): void { appGrid.toggle() }

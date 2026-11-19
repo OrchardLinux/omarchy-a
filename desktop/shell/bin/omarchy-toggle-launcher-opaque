@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# omarchy:summary=Show the launcher on the theme's plain background, or on the frosted wallpaper
+# Frosted by default. Turned on, the launcher-opaque flag says so; the
+# launcher reads it each time it opens.
+set -euo pipefail
+[[ $# == 0 ]] || { echo 'Usage: omarchy-toggle-launcher-opaque' >&2; exit 2; }
+toggles=$HOME/.local/state/omarchy/toggles
+mkdir -p "$toggles"
+if [[ -e $toggles/launcher-opaque ]]; then rm -f "$toggles/launcher-opaque"; else : >"$toggles/launcher-opaque"; fi

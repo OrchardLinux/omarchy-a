@@ -45,8 +45,8 @@ apps need Chromium).
 **Taken unchanged** for the launcher's Uninstall: `omarchy-remove-launcher-entry`.
 
 **Changed for touch and the tablet in the shell.**
-The Display panel is upstream's with three more rows (auto-brightness,
-rotation lock, Stay Awake); its commands run on labwc (`omarchy-monitor-state`
+The Display panel is upstream's with one more row (auto-brightness;
+rotation lock and Stay Awake are the control center's); its commands run on labwc (`omarchy-monitor-state`
 reads wlr-randr, `omarchy-brightness-display` takes upstream's `--monitor`),
 the iPad's `Unknown-1` connector counts as the built-in display, and the
 rotate menu stays shut (the screen turns with the iPad), as do the resolution
@@ -72,7 +72,7 @@ boot cover or theme intro videos, software decode at panel size, no startup
 signal of its own when the session starts locked), the lock (taken at session
 start, lifting Labwc's startup cover; `plugins/lock/Service.qml`), wallpaper
 readiness (`LockView.qml`),
-`Style.qml` (a larger bar target), `config/omarchy/shell.json` (the tablet's bar
+`config/omarchy/shell.json` (the tablet's bar
 and the plugins it turns off).
 
 **Menu.** `default/omarchy/omarchy-menu.jsonc`: Activity opens Omactivity, Setup > Monitors opens the Display panel, Maximize
@@ -85,7 +85,7 @@ charger PM readiness.
 shipped here; `shell.json` adds the auto-brightness and captive-portal keys.
 
 **Our own files** (no upstream counterpart): the control center
-(`shell/controlcenter/`), the status cluster (`shell/plugins/status/`), the launcher
+(`shell/controlcenter/`, its bar button `shell/plugins/control-center/`), the status cluster (`shell/plugins/status/`), the launcher
 (`shell/launcher/`, `bin/omarchy-launcher-recent-files`,
 `bin/omarchy-launcher-backdrop`), the labwc config, theme renderer
 and window buttons (`labwc-*`, `render-labwc-*.py`), the on-screen keyboard
