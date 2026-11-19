@@ -605,7 +605,7 @@ Item {
       // Held on armed a while longer, it opens without waiting for the lift.
       Timer {
         id: tileHoldOpen
-        interval: 600
+        interval: 400
         onTriggered: if (tileMouse.holding) {
           tileMouse.held = false
           tileMouse.used = true
@@ -749,7 +749,7 @@ Item {
       // Held on armed a while longer, it opens without waiting for the lift.
       Timer {
         id: sliderHoldOpen
-        interval: 600
+        interval: 400
         onTriggered: if (drag.holding) { drag.held = false; drag.used = true; slider.longPressed() }
       }
       function valueAt(mouse) {
