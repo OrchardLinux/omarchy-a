@@ -1097,8 +1097,9 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
         Scale {
           origin.x: content.width / 2
           origin.y: 0
-          xScale: 0.98 + 0.02 * root.reveal
-          yScale: 0.98 + 0.02 * root.reveal
+          // Comes in settling from just over its size (and goes the same way).
+          xScale: 1.03 - 0.03 * root.reveal
+          yScale: 1.03 - 0.03 * root.reveal
         },
         Translate { y: Style.space(10) * (1 - root.reveal) }
       ]
