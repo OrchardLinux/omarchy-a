@@ -352,7 +352,8 @@ Item {
     color: Qt.rgba(plain.r, plain.g, plain.b, 1)
     // The theme's outline for idle controls (normal-border), as on the
     // banner's own buttons and reply field.
-    border.width: Math.max(1, Style.normalBorderWidth)
+    // One device pixel: a whole point read as a frame rather than an edge.
+    border.width: Style.normalBorderWidth > 0 ? 1 / Screen.devicePixelRatio : 0
     border.color: Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
 
     Column {

@@ -903,7 +903,9 @@ Item {
       // Under the cards closing in, so the one taking its place covers it on
       // the way up. Its text goes first, or it would read through them; the
       // last card keeps its words, with nothing to cover it.
-      gone[keys[j]] = { y: from.y - travel, scale: from.scale, opacity: 0, height: from.height,
+      // Orchard: a banner slides up out of sight as it fades.
+      var away = bannerMode ? (from.height || 0) + Style.space(8) : travel
+      gone[keys[j]] = { y: from.y - away, scale: from.scale, opacity: 0, height: from.height,
                         z: 0, front: staying === 0, hidden: place ? place.hidden === true : true,
                         leaving: true, until: Date.now() + Style.duration(leaveDuration) }
     }
@@ -1735,7 +1737,11 @@ Item {
           ? Math.max(0, Math.min(Style.space(28), surface.screen.width - service.notificationWidth - surface.margins.right))
           : Style.spacing.sm
         width: service.notificationWidth + motionInset + surface.margins.right
-        height: deck.y + deck.height + Math.max(motionInset, shadowBelow)
+        // The cards drawn, a leaving one included: the deck stops counting
+        // a card the moment it leaves, and clipping to it cut the card away
+        // instead of letting it go.
+        height: deck.y + Math.max(deck.height, deck.childrenRect.y + deck.childrenRect.height)
+          + Math.max(motionInset, shadowBelow)
         clip: true
 
         Item {
