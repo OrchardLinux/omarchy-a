@@ -650,13 +650,14 @@ Item {
           id: footer
           width: content.width
           height: root.touchMin
-          visible: !root.phone
+          // Only with a battery to show: nothing else lives here.
+          visible: !root.phone && root.batteryLine !== ""
           FooterParts { anchors.fill: parent }
         }
       }
 
       Item {
-        visible: root.phone && root.pageShift < 1
+        visible: root.phone && root.pageShift < 1 && root.batteryLine !== ""
         x: root.pad - root.pageShift * card.width
         width: parent.width - root.pad * 2
         height: root.touchMin
