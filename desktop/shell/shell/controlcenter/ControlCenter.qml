@@ -354,14 +354,15 @@ Item {
   NumberAnimation {
     id: popupIn
     target: root; property: "reveal"; to: 1
-    duration: Style.duration(180)
+    // Software rendering: at once, as the launcher does there.
+    duration: root.gpu ? Style.duration(180) : 0
     easing.type: Easing.Bezier
     easing.bezierCurve: Style.easeOut
   }
   NumberAnimation {
     id: popupOut
     target: root; property: "reveal"; to: 0
-    duration: Style.duration(120)
+    duration: root.gpu ? Style.duration(120) : 0
     easing.type: Easing.Bezier
     easing.bezierCurve: Style.easeOut
     onFinished: if (!root.opened) { root.mapped = false; root.dropPage() }
@@ -452,12 +453,30 @@ Item {
     }
   }
 
+  // Open as a popup, the bar knows its card as it knows its other popups'
+  // (KeyboardPanel notes them): a popup taking over in the same section
+  // morphs from this card, not from an older one.
+  function notePopupCard() {
+    var bar = root.shell ? root.shell.bar : null
+    if (!root.popupStyle || !root.opened || !bar || typeof bar.notePopoutCard !== "function") return
+    bar.notePopoutCard({ screen: panel.screen ? panel.screen.name : "", x: card.x, y: card.y,
+                         width: card.width, height: card.height })
+  }
+  onPopupStyleChanged: Qt.callLater(notePopupCard)
+  Connections {
+    target: card
+    function onHeightChanged() { root.notePopupCard() }
+  }
+
   // Moving: the spring, a finger, or a popup's fade.
   readonly property bool moving: spring.running || root.pulling || popupIn.running || popupOut.running
 
   // While open, a note for the Home button (omarchy-home-button closes it).
   readonly property string openNote: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omarchy-control-center-open"
-  onOpenedChanged: Quickshell.execDetached(opened ? ["touch", openNote] : ["rm", "-f", openNote])
+  onOpenedChanged: {
+    Quickshell.execDetached(opened ? ["touch", openNote] : ["rm", "-f", openNote])
+    Qt.callLater(notePopupCard)
+  }
 
   ShellIpc {
     target: "omarchy.controlcenter"
@@ -500,7 +519,9 @@ Item {
       width: parent.width
       height: parent.height - y
       color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
-      opacity: root.popupStyle ? 0 : Math.max(0, Math.min(1, root.reveal))
+      // Software rendering dims in one step rather than blending the whole
+      // screen again on every frame of a pull.
+      opacity: root.popupStyle ? 0 : (root.gpu ? Math.max(0, Math.min(1, root.reveal)) : (root.reveal > 0 ? 1 : 0))
       MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -586,7 +607,7 @@ Item {
       id: card
       // While it moves, drawn once into a texture that is only scaled, moved
       // and faded (cheap on any GPU); at rest drawn directly, sharp.
-      layer.enabled: root.moving
+      layer.enabled: root.moving && root.gpu
       layer.smooth: true
       x: root.phone ? 0 : parent.width - width - Style.gapsOut
       y: root.phone ? root.barInset : root.barInset + Style.gapsOut
@@ -605,7 +626,9 @@ Item {
       // down as a share of the card's bottom. On the way it grows out of its
       // own top centre and fades in; the slide is what keeps the scaled bottom under the finger.
       // As a popup: it grows from 97 % toward its button and fades.
-      readonly property real grow: root.popupStyle ? 0.97 + 0.03 * root.reveal : 0.86 + 0.14 * root.reveal
+      // Software rendering only moves it (its bottom still under the finger):
+      // no scaling or fading for the CPU to redraw each frame.
+      readonly property real grow: !root.gpu ? 1 : (root.popupStyle ? 0.97 + 0.03 * root.reveal : 0.86 + 0.14 * root.reveal)
       transform: [
         Scale {
           origin.x: root.popupStyle ? card.width : card.width / 2
@@ -619,7 +642,7 @@ Item {
       // once. Going out (let go to close, or pushed up from open): it fades
       // with its way up, gone as its bottom edge reaches the status bar.
       readonly property real barShare: Math.min(0.9, root.barInset / root.pullSpan)
-      opacity: root.popupStyle ? root.reveal : root.leaving
+      opacity: !root.gpu ? (root.reveal > 0 ? 1 : 0) : root.popupStyle ? root.reveal : root.leaving
         ? Math.max(0, Math.min(1, (root.reveal - barShare) / (1 - barShare)))
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.25)), 2)
 
