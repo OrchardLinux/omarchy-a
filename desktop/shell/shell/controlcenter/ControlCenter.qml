@@ -699,20 +699,18 @@ Item {
       anchors.fill: parent
       enabled: slider.available
       preventStealing: true
-      // As on iOS: the level moves with the finger from wherever it lands,
-      // never to where it lands. A touch alone changes nothing, so a tap or
-      // a long press (the page) leaves the level as it is.
+      // The level goes where the finger is: on a tap when it lifts, on a
+      // drag as soon as it moves and from then on. A long press (the page)
+      // is caught instead and changes nothing, so nothing happens on the
+      // touch itself before it is known which of the three it is.
       property point pressedAt
-      property real startValue: 0
       property bool moving: false
-      // A long press uses the touch up: nothing after it moves the level.
       property bool held: false
-      function along(mouse) {
-        return slider.vertical ? (pressedAt.y - mouse.y) / slider.height : (mouse.x - pressedAt.x) / slider.width
+      function valueAt(mouse) {
+        return Math.max(0, Math.min(1, slider.vertical ? 1 - mouse.y / slider.height : mouse.x / slider.width))
       }
       onPressed: function(mouse) {
         pressedAt = Qt.point(mouse.x, mouse.y)
-        startValue = slider.value
         moving = false
         held = false
       }
@@ -720,9 +718,9 @@ Item {
         if (!pressed || held) return
         if (!moving && Math.abs(mouse.x - pressedAt.x) + Math.abs(mouse.y - pressedAt.y) <= Style.space(10)) return
         moving = true
-        slider.moved(Math.max(0, Math.min(1, startValue + along(mouse))))
+        slider.moved(valueAt(mouse))
       }
-      // A long press is a finger held still: once it moved, it is a drag.
+      onReleased: function(mouse) { if (!moving && !held) slider.moved(valueAt(mouse)) }
       onPressAndHold: if (!moving) { held = true; slider.longPressed() }
     }
     Rectangle {
