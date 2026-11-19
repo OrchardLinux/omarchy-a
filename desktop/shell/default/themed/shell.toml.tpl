@@ -224,7 +224,7 @@ selection        = "{{ accent }}"
 selection-alpha  = 0.45
 # scrim lies over the wallpaper, under the clock and the PIN keys.
 scrim            = "{{ background }}"
-scrim-alpha      = 0.25
+scrim-alpha      = 0.7
 
 [image-picker]
 # Carousel-style picker shown directly over the desktop, with no card

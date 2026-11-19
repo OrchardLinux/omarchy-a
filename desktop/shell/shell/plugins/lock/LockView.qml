@@ -51,10 +51,10 @@ Item {
   readonly property bool phone: Math.min(width, height) < 600
   readonly property bool landscape: width > height
   readonly property var metrics: phone
-    ? { lockIcon: 16, time: 72, date: 14, slot: 12, slotGap: 14, slotRow: 24, message: 28, gap: 12,
-        keyWidth: 94, keyHeight: landscape ? 56 : 64, keyGap: 12, digit: 26, backspace: 22, failure: 13, between: landscape ? 48 : 36, stack: landscape ? 28 : 36 }
-    : { lockIcon: 18, time: landscape ? 112 : 120, date: 18, slot: 14, slotGap: 18, slotRow: 24, message: 40, gap: 16,
-        keyWidth: 112, keyHeight: 84, keyGap: 18, digit: 30, backspace: 26, failure: 15, between: landscape ? 120 : 56, stack: 56 }
+    ? { lockIcon: 14, time: 60, date: 13, slot: 12, slotGap: 14, slotRow: 24, message: 28, gap: 12,
+        keyWidth: 72, keyHeight: landscape ? 44 : 48, keyGap: 8, keyColumnGap: 16, digit: 24, backspace: 22, failure: 13, between: landscape ? 48 : 32, stack: landscape ? 24 : 32 }
+    : { lockIcon: 16, time: landscape ? 90 : 96, date: 16, slot: 12, slotGap: 14, slotRow: 24, message: 40, gap: 16,
+        keyWidth: 80, keyHeight: 56, keyGap: 10, keyColumnGap: 20, digit: 26, backspace: 24, failure: 15, between: landscape ? 160 : 48, stack: 48 }
   function pt(name) { return Style.space(root.metrics[name]) }
   readonly property bool pinBusy: !root.inputEnabled || root.authenticatingPassword
   // A wrong PIN is drawn in the theme's red: some themes (Tokyo Night) give
@@ -64,14 +64,16 @@ Item {
   // the failure: readable on any wallpaper without darkening all of it. The
   // GPU draws it; software rendering goes without.
   readonly property bool gpu: Quickshell.env("QT_QUICK_BACKEND") !== "software"
+  // A soft dark shadow (the theme background at 80 %, about 8 px of blur,
+  // 1 px down): text stays readable over busy parts of the wallpaper.
   component Shade: MultiEffect {
     shadowEnabled: true
     shadowColor: Commons.Color.background
-    shadowOpacity: 0.55
+    shadowOpacity: 0.8
     shadowBlur: 1.0
-    blurMax: 64
+    blurMax: Style.space(8)
     shadowHorizontalOffset: 0
-    shadowVerticalOffset: 0
+    shadowVerticalOffset: Style.space(1)
     autoPaddingEnabled: true
   }
 
@@ -179,11 +181,16 @@ Item {
       decodeSize: Qt.size(width, height)
     }
 
-    // The wallpaper stays sharp under the theme's scrim, which keeps the
-    // clock and keys readable on a bright one.
+    // One even scrim over the whole wallpaper: the theme's lock.scrim (its
+    // background at 70 %). A gradient was tried and rejected. On a dark
+    // theme the colour is taken almost to black: it darkens the wallpaper
+    // and keeps its colours, where the background itself (Tokyo Night's
+    // navy, say) turned warm wallpapers a muddy grey-purple.
     Rectangle {
       anchors.fill: parent
-      color: Commons.Color.lock.scrim
+      readonly property color scrim: Commons.Color.lock.scrim
+      readonly property bool darkTheme: (0.2126 * scrim.r + 0.7152 * scrim.g + 0.0722 * scrim.b) < 0.5
+      color: darkTheme ? Qt.rgba(scrim.r * 0.42, scrim.g * 0.42, scrim.b * 0.42, scrim.a) : scrim
     }
 
     // The status bar's right-hand cluster only: no logo (the launcher is not
@@ -395,32 +402,28 @@ Item {
           Grid {
             id: keypad
             visible: root.touchPin
+            layer.enabled: root.gpu
+            layer.effect: Shade {}
             columns: 3
             rowSpacing: root.pt("keyGap")
-            columnSpacing: root.pt("keyGap")
+            columnSpacing: root.pt("keyColumnGap")
             Repeater {
               model: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"]
-              BorderSurface {
+              // A bare digit in a full cell, nothing drawn around it at rest;
+              // pressed, a faint square behind it. Backspace the same.
+              Item {
                 id: pinKey
                 required property string modelData
                 readonly property bool backspaceKey: modelData === "⌫"
                 width: root.pt("keyWidth")
                 height: root.pt("keyHeight")
-                radius: Style.cornerRadius
-                // The lock's background at its theme opacity. Backspace has no
-                // surface, only its press.
-                color: modelData === "" || backspaceKey ? "transparent" : Commons.Color.lock.background
-                borderSpec: backspaceKey || modelData === "" ? Border.none()
-                  : Border.controlSpec("normal", Commons.Color.lock.text, Commons.Color.accent)
                 opacity: modelData === "" ? 0 : (root.pinBusy ? 0.55 : 1)
-                // Pressed: the shell's pressed fill and a slight squeeze, at once.
-                scale: pinMouse.pressed ? 0.96 : 1
 
                 Rectangle {
                   anchors.fill: parent
-                  radius: parent.radius
+                  radius: Style.cornerRadius
                   visible: pinMouse.pressed
-                  color: Style.pressedFillFor(Commons.Color.lock.text, Commons.Color.accent)
+                  color: Util.alpha(Commons.Color.lock.text, 0.12)
                 }
                 Text {
                   anchors.centerIn: parent
@@ -477,9 +480,10 @@ Item {
                 width: root.pt("slot")
                 height: width
                 radius: Math.min(Style.cornerRadius, width / 2)
-                color: filled ? Commons.Color.lock.text : "transparent"
+                // Empty: a faint dark fill behind the outline, for busy wallpapers.
+                color: filled ? Commons.Color.lock.text : Util.alpha(Commons.Color.background, 0.35)
                 border.width: filled ? 0 : Math.max(1, Style.space(1.5))
-                border.color: root.errorState ? root.failureColor : Commons.Color.lock.text
+                border.color: root.errorState ? root.failureColor : Commons.Color.lock.placeholder
               }
             }
           }

@@ -29,6 +29,7 @@ is missing or empty.
   the PIN. Logout starts a fresh desktop behind the lock.
 - The lock screen shows the status icons in its corner: Wi-Fi, battery, and
   Bluetooth, a muted microphone, rotation lock and Stay Awake when they're on.
+- The lock screen's keypad is cleaner: digits only, without key backgrounds.
 
 ## [0.3.2] - 2026-11-19
 
