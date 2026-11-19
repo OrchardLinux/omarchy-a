@@ -277,7 +277,8 @@ Item {
     id: spring
     onTriggered: {
       var dt = Math.min(frameTime, 1 / 30)
-      var stiffness = 260
+      // Softer going out: it is seen to travel up rather than vanish.
+      var stiffness = root.springTarget > 0 ? 260 : 140
       var damping = 2 * Math.sqrt(stiffness) * (root.springTarget > 0 ? 0.78 : 1.0)
       var force = -stiffness * (root.reveal - root.springTarget) - damping * root.springVelocity
       root.springVelocity += force * dt
