@@ -549,6 +549,7 @@ Item {
 
   component Tile: Cell {
     id: tile
+    pressed: tileMouse.pressed && tileMouse.containsMouse
     property string glyph: ""
     property string title: ""
     property string subtitle: ""
@@ -599,9 +600,9 @@ Item {
       anchors.fill: parent
       acceptedButtons: Qt.LeftButton | Qt.RightButton
       pressAndHoldInterval: 400
-      // Armed, the touch is the tile's: moving the finger cancels and never
-      // drags the control center away (before that, it still may).
-      preventStealing: held
+      // A button keeps its touch: sliding off cancels, and the control center
+      // is not dragged away.
+      preventStealing: true
       property bool held: false
       property bool used: false
       readonly property bool holding: held && containsMouse
@@ -612,18 +613,16 @@ Item {
         onTriggered: if (tileMouse.holding) {
           tileMouse.held = false
           tileMouse.used = true
-          tile.pressed = false
           root.openPage(tile.page)
         }
       }
-      onPressed: { tile.pressed = true; held = false; used = false }
+      onPressed: { held = false; used = false }
       onReleased: {
         tileHoldOpen.stop()
-        tile.pressed = false
         if (!used && held && containsMouse && tile.page) root.openPage(tile.page)
         held = false
       }
-      onCanceled: { tile.pressed = false; held = false; used = false; tileHoldOpen.stop() }
+      onCanceled: { held = false; used = false; tileHoldOpen.stop() }
       onPressAndHold: if (tile.page) { held = true; tileHoldOpen.restart() }
       onClicked: function(mouse) {
         if (held || used) return
@@ -672,12 +671,14 @@ Item {
         font.pixelSize: Style.font.caption
       }
     }
+    // A button keeps its touch: sliding off cancels (the press look goes),
+    // sliding back on arms it again; the control center is not dragged.
+    pressed: toggleMouse.pressed && toggleMouse.containsMouse
     MouseArea {
+      id: toggleMouse
       anchors.fill: parent
       enabled: toggle.available
-      onPressed: toggle.pressed = true
-      onReleased: toggle.pressed = false
-      onCanceled: toggle.pressed = false
+      preventStealing: true
       onClicked: toggle.activate()
     }
   }
