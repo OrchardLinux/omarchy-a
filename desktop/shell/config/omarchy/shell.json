@@ -11,12 +11,12 @@
       "centerEnd": [],
       "right": [
         { "id": "omarchy.indicators", "items": ["StayAwake"] },
-        { "id": "omarchy.audio", "narrow": "hidden" },
-        { "id": "omarchy.bluetooth", "narrow": "hidden" },
+        { "id": "omarchy.audio" },
+        { "id": "omarchy.bluetooth" },
         { "id": "omarchy.network" },
-        { "id": "omarchy.monitor", "narrow": "hidden" },
+        { "id": "omarchy.monitor" },
         { "id": "omarchy.power" },
-        { "id": "ipadlinux.controlcenter", "narrow": "hidden" }
+        { "id": "ipadlinux.controlcenter" }
       ]
     }
   },

@@ -1,8 +1,7 @@
 echo "A phone's bar: logo and time on the left, status icons on the right"
 
-# On a phone (a narrow bar) the clock joins the logo, and Audio, Bluetooth,
-# Display and the control center's button leave the bar for the control
-# center ("hidden"), with no overflow pages. A user's own layout
+# On a phone (a narrow bar) the clock joins the logo and every icon stays on
+# the bar, with no overflow pages. A user's own layout
 # (~/.config/omarchy-ipad/shell.json) changes only where an entry still has
 # the setting the package gave it.
 config="$HOME/.config/omarchy-ipad/shell.json"
@@ -18,11 +17,11 @@ missing = object()
 changes = {
     "omarchy.clock": (missing, "left"),
     "omarchy.indicators": ("left", missing),
-    "omarchy.audio": (False, "hidden"),
-    "omarchy.bluetooth": (False, "hidden"),
+    "omarchy.audio": (False, missing),
+    "omarchy.bluetooth": (False, missing),
     "omarchy.network": ("left", missing),
-    "omarchy.monitor": (False, "hidden"),
-    "ipadlinux.controlcenter": (False, "hidden"),
+    "omarchy.monitor": (False, missing),
+    "ipadlinux.controlcenter": (False, missing),
 }
 changed = False
 for section in layout.values():

@@ -31,12 +31,12 @@ console.log(JSON.stringify({narrow, pages: model.narrowPages(layout)}));
         # (SHELL-SPEC), and no overflow pages.
         self.assertEqual(ids['left'], ['omarchy.menu', 'omarchy.clock'])
         self.assertEqual(ids['center'], [])
-        self.assertEqual(ids['right'], ['omarchy.indicators', 'omarchy.network', 'omarchy.power'])
+        self.assertEqual(ids['right'], ['omarchy.indicators', 'omarchy.audio', 'omarchy.bluetooth', 'omarchy.network',
+                                        'omarchy.monitor', 'omarchy.power', 'ipadlinux.controlcenter'])
         self.assertEqual(narrow['pages'], 1)
-        # What a phone's bar leaves out, it reaches through the control center.
+        # Every icon stays on a phone's bar for now: nothing is hidden there.
         configured = [entry for entries in json.loads(CONFIG.read_text())['bar']['layout'].values() for entry in entries]
-        hidden = {entry['id'] for entry in configured if entry.get('narrow') == 'hidden'}
-        self.assertEqual(hidden, {'omarchy.audio', 'omarchy.bluetooth', 'omarchy.monitor', 'ipadlinux.controlcenter'})
+        self.assertFalse([entry['id'] for entry in configured if entry.get('narrow') == 'hidden'])
 
     @unittest.skipUnless(shutil.which('node'), 'node is required for bar model validation')
     def test_a_narrow_bar_drops_no_widget_it_was_not_told_to(self):
