@@ -80,8 +80,6 @@ class KeyboardShortcutTests(unittest.TestCase):
         self.assertLess(home.index('== wake'), home.index('omarchy-overview-open'))
         self.assertIn('omarchy-overview-open"', changed)
         self.assertIn('omarchy-overview-open', (PROJECT / 'desktop/shell/default/labwc/autostart').read_text())
-        # The greeter has nothing to switch between.
-        self.assertNotIn('overview', (PROJECT / 'desktop/greeter/labwc/rc.xml').read_text())
 
     def test_super_tap_release_bindings_are_unchanged(self):
         for key in ('Super_L', 'Super_R'):

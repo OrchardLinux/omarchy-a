@@ -18,7 +18,7 @@ fi
 
 action=${1:-}
 case $action in
-  # Labwc port: login-session execs labwc, and greetd starts the greeter when it exits.
+  # Labwc port: login-session starts Labwc again when it exits, behind the lock.
   logout) command=(labwc --exit) ;;
   reboot) command=(systemctl reboot --no-wall) ;;
   firmware) command=(systemctl reboot --firmware-setup --no-wall) ;;

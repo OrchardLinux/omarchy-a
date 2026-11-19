@@ -34,14 +34,3 @@ if [[ $(omarchy-shell shell switchBackground "$BACKGROUND" "$INTRO" 2>/dev/null)
   ln -nsf "$BACKGROUND" "$CURRENT_BACKGROUND_LINK"
   omarchy-shell -q background set "$BACKGROUND"
 fi
-
-# Orchard: the greeter shows the same background. The shell repoints the link
-# once its transition is done, so publish after that (bounded: a stuck shell
-# still publishes).
-if command -v omarchy-greeter-theme-publish >/dev/null; then
-  for _ in {1..100}; do
-    [[ $(readlink "$CURRENT_BACKGROUND_LINK") != "$BACKGROUND" ]] || break
-    sleep 0.1
-  done
-  omarchy-greeter-theme-publish || true
-fi

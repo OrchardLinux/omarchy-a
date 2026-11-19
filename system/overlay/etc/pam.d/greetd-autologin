@@ -1,0 +1,9 @@
+#%PAM-1.0
+# greetd's sessions (/etc/greetd/config.toml names this service): the tablet's
+# session at boot, without a prompt. It starts locked; the PIN is the lock's
+# (/etc/pam.d/omarchy-lock-password, written by the installer). No other user
+# gets a session through greetd this way.
+auth     required pam_succeed_if.so quiet user = tablet
+auth     required pam_permit.so
+account  include  system-local-login
+session  include  system-local-login

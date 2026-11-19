@@ -60,7 +60,7 @@ class Migrate(unittest.TestCase):
         session = (PROJECT / 'desktop/configuration/login-session').read_text()
         self.assertIn('OMARCHY_MIGRATE_LOCK_WAIT=0 timeout 120 omarchy-migrate', session)
         self.assertLess(session.index('omarchy-migrate'), session.index('arch-ipad-first-theme'))
-        self.assertLess(session.index('omarchy-migrate'), session.index('exec /usr/bin/labwc'))
+        self.assertLess(session.index('omarchy-migrate'), session.index('/usr/bin/labwc -m'))
 
 
 class Shipped(unittest.TestCase):

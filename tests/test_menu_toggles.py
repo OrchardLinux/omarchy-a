@@ -77,14 +77,17 @@ class MenuToggleTests(unittest.TestCase):
 
     def test_login_writes_the_maximize_rule_before_labwc_starts(self):
         session = (PROJECT / 'desktop/configuration/login-session').read_text()
-        self.assertLess(session.index('omarchy-toggle-maximize-windows --apply'), session.index('exec /usr/bin/labwc -m'))
+        self.assertLess(session.index('omarchy-toggle-maximize-windows --apply'), session.index('/usr/bin/labwc -m'))
 
     def test_session_merges_the_toggle_config_into_labwc(self):
         # Releases replace ~/.config/labwc/rc.xml, so toggle rules must come from the
         # state directory via labwc's XDG merge, never from edits to rc.xml.
         session = (PROJECT / 'desktop/configuration/login-session').read_text()
         self.assertIn('export XDG_CONFIG_DIRS="$HOME/.local/state/omarchy/xdg-config:', session)
-        self.assertEqual(session.rstrip().splitlines()[-1], 'exec /usr/bin/labwc -m')
+        # Labwc is the last thing the login starts, again after each logout.
+        loop = session[session.index('\nwhile :; do\n'):]
+        self.assertIn('  /usr/bin/labwc -m || true\n', loop)
+        self.assertEqual(session.rstrip().splitlines()[-1], 'done')
         toggle = (BIN / 'omarchy-toggle-maximize-windows').read_text()
         self.assertIn('$HOME/.local/state/omarchy/xdg-config/labwc/rc.xml', toggle)
         code = [line for line in toggle.splitlines() if not line.lstrip().startswith('#')]

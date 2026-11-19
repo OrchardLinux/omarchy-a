@@ -109,8 +109,8 @@ release tags.
   release's, and one built in between is newer than its version says until
   the next release replaces it.
 - The layout is upstream Omarchy's: the Omarchy tree in `/usr/share/omarchy`
-  (`OMARCHY_PATH`) with its commands in `/usr/bin`, the greeter in
-  `/usr/share/omarchy-greeter`, session helpers in `/usr/libexec`, the tablet
+  (`OMARCHY_PATH`) with its commands in `/usr/bin`, session helpers in
+  `/usr/libexec`, the tablet
   user's defaults in `/etc/skel` (and in `/usr/share/omarchy/config`, where
   `omarchy-refresh-config` copies them from), `system/overlay` where it says.
   Files another package owns (filesystem's `/etc/os-release`, bluez's

@@ -497,9 +497,6 @@ class Integration(unittest.TestCase):
         self.assertIsNone(home.get('allowWhenLocked'))
         for key in ('XF86AudioRaiseVolume', 'XF86AudioLowerVolume', 'XF86AudioMute'):
             self.assertEqual(tree.find(f"./keyboard/keybind[@key='{key}']").get('allowWhenLocked'), 'yes')
-        greeter = ET.fromstring((PROJECT / 'desktop/greeter/labwc/rc.xml').read_bytes())
-        for key in ('XF86PowerOff', 'XF86HomePage'):
-            self.assertEqual(greeter.findall(f"./keyboard/keybind[@key='{key}']"), [])
 
     def test_a_held_key_on_the_lock_screen_wakes_once(self):
         view = (PROJECT / 'desktop/shell/shell/plugins/lock/LockView.qml').read_text()
@@ -514,12 +511,9 @@ class Integration(unittest.TestCase):
         client = '/usr/libexec/omarchy-powerctl'
         lock = (PROJECT / 'desktop/shell/shell/plugins/lock/Service.qml').read_text()
         idle = (PROJECT / 'desktop/shell/shell/plugins/services/idle/Service.qml').read_text()
-        greeter = (PROJECT / 'desktop/greeter/shell.qml').read_text()
         self.assertIn(f'{client} idle', lock)
         self.assertIn(f'{client} idle', idle)
-        self.assertIn(f'["{client}", "idle"]', greeter)
         self.assertIn('"1" ? 30000 : 5000', lock)
-        self.assertRegex(greeter, r'IdleMonitor \{[^}]*timeout: 30\b')
         self.assertEqual(powerd.SETTLE_SECONDS, 10.0)
 
     def test_the_daemon_is_enabled_and_executable(self):

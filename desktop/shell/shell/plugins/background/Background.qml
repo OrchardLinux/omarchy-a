@@ -425,7 +425,9 @@ Item {
       // shell has drawn (Labwc's startup cover) names a file to create once
       // the wallpaper is on screen.
       // Once: the compositor removes the file after its fade.
-      readonly property string startupReadyFile: Quickshell.env("LABWC_STARTUP_READY") || ""
+      // A session that starts locked lifts it from the lock instead
+      // (plugins/lock/Service.qml): the desktop is not to be seen first.
+      readonly property string startupReadyFile: Quickshell.env("OMARCHY_START_LOCKED") === "1" ? "" : (Quickshell.env("LABWC_STARTUP_READY") || "")
       property bool startupSignalled: false
       onBackgroundReadyChanged: {
         if (!backgroundReady || startupSignalled || startupReadyFile === "") return
