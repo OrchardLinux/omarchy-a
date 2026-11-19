@@ -196,12 +196,19 @@ Item {
       readonly property bool darkTheme: (0.2126 * base.r + 0.7152 * base.g + 0.0722 * base.b) < 0.5
       readonly property color ink: darkTheme ? Qt.rgba(base.r * 0.42, base.g * 0.42, base.b * 0.42, 1) : base
       function at(share) { return Util.alpha(shade.ink, share) }
+      // One long, gentle fade over the whole screen: a little shade by the
+      // clock, a little more by the keypad, eased so no edge shows.
       gradient: Gradient {
         orientation: shade.across ? Gradient.Horizontal : Gradient.Vertical
-        GradientStop { position: 0.0; color: shade.at(shade.reversed ? 0.95 : 0.25) }
-        GradientStop { position: shade.reversed ? 0.4 : 0.35; color: shade.at(shade.reversed ? 0.9 : 0.6) }
-        GradientStop { position: shade.reversed ? 0.65 : 0.6; color: shade.at(shade.reversed ? 0.6 : 0.9) }
-        GradientStop { position: 1.0; color: shade.at(shade.reversed ? 0.25 : 0.95) }
+        GradientStop { position: 0.0; color: shade.at(shade.reversed ? 0.55 : 0.12) }
+        GradientStop { position: 0.125; color: shade.at(shade.reversed ? 0.532 : 0.138) }
+        GradientStop { position: 0.25; color: shade.at(shade.reversed ? 0.483 : 0.187) }
+        GradientStop { position: 0.375; color: shade.at(shade.reversed ? 0.414 : 0.256) }
+        GradientStop { position: 0.5; color: shade.at(shade.reversed ? 0.335 : 0.335) }
+        GradientStop { position: 0.625; color: shade.at(shade.reversed ? 0.256 : 0.414) }
+        GradientStop { position: 0.75; color: shade.at(shade.reversed ? 0.187 : 0.483) }
+        GradientStop { position: 0.875; color: shade.at(shade.reversed ? 0.138 : 0.532) }
+        GradientStop { position: 1.0; color: shade.at(shade.reversed ? 0.12 : 0.55) }
       }
     }
 
