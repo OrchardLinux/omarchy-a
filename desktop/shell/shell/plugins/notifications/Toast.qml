@@ -242,14 +242,7 @@ Item {
   ]
   property real exit: 0
   readonly property bool exiting: banner && place.leaving === true
-  // While it leaves it is drawn once, shadow and all, into a texture that is
-  // only faded and scaled, as the control center when it moves: faded part
-  // by part, its shadow would show through the card halfway, and redrawn
-  // every frame it would stutter in software OpenGL.
   readonly property real exitPad: Style.space(40)
-  layer.enabled: exiting && gpu
-  layer.smooth: true
-  layer.sourceRect: Qt.rect(-exitPad, -exitPad, width + 2 * exitPad, height + 2 * exitPad)
   // A sender updating it on its way out brings it back.
   onExitingChanged: {
     if (exiting) { if (gpu) exitRun.restart(); else exit = 1 }
@@ -356,254 +349,272 @@ Item {
   // Only the sender's own non-default actions as buttons, and its inline
   // reply when it takes one.
   readonly property bool bannerHasIcon: thumb.pictured || thumb.glyphed
-  Rectangle {
-    id: bannerShadow
-    visible: card.banner && card.gpu
-    anchors.fill: bannerBox
-    color: "black"
-    layer.enabled: visible
-    layer.effect: MultiEffect {
-      shadowEnabled: true
-      shadowColor: Qt.rgba(0, 0, 0, 0.35)
-      shadowVerticalOffset: Style.space(10)
-      shadowBlur: 1.0
-      blurMax: Style.space(28)
-    }
-  }
-  Rectangle {
-    id: bannerBox
+  // While it leaves the banner is drawn once, shadow and all, into a texture
+  // that is only faded and scaled, as the control center when it moves:
+  // faded part by part, its shadow would show through the card halfway, and
+  // redrawn every frame it would stutter in software OpenGL. The layer has
+  // the shadow's room around the card, so nothing is squeezed into it.
+  Item {
+    id: bannerLayer
     visible: card.banner
-    width: card.width
-    implicitHeight: bannerColumn.implicitHeight + Style.space(24)
-    height: implicitHeight
-    readonly property color plain: Commons.Color.notifications.background
-    color: Qt.rgba(plain.r, plain.g, plain.b, 1)
-    // The theme's outline for idle controls (normal-border), as on the
-    // banner's own buttons and reply field.
-    // One device pixel: a whole point read as a frame rather than an edge.
-    border.width: Style.normalBorderWidth > 0 ? 1 / Screen.devicePixelRatio : 0
-    border.color: Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
+    x: -card.exitPad
+    y: -card.exitPad
+    width: card.width + 2 * card.exitPad
+    height: bannerBox.height + 2 * card.exitPad
+    layer.enabled: card.exiting && card.gpu
+    layer.smooth: true
 
-    Column {
-      id: bannerColumn
-      x: Style.space(12)
-      y: Style.space(12)
-      width: parent.width - Style.space(26)
-      spacing: Style.space(10)
+    Rectangle {
+      id: bannerShadow
+      visible: card.banner && card.gpu
+      anchors.fill: bannerBox
+      color: "black"
+      layer.enabled: visible
+      layer.effect: MultiEffect {
+        shadowEnabled: true
+        shadowColor: Qt.rgba(0, 0, 0, 0.35)
+        shadowVerticalOffset: Style.space(10)
+        shadowBlur: 1.0
+        blurMax: Style.space(28)
+      }
+    }
+    Rectangle {
+      id: bannerBox
+      visible: card.banner
+      x: card.exitPad
+      y: card.exitPad
+      width: card.width
+      implicitHeight: bannerColumn.implicitHeight + Style.space(24)
+      height: implicitHeight
+      readonly property color plain: Commons.Color.notifications.background
+      color: Qt.rgba(plain.r, plain.g, plain.b, 1)
+      // The theme's outline for idle controls (normal-border), as on the
+      // banner's own buttons and reply field.
+      // One device pixel: a whole point read as a frame rather than an edge.
+      border.width: Style.normalBorderWidth > 0 ? 1 / Screen.devicePixelRatio : 0
+      border.color: Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
 
-      Row {
-        width: parent.width
-        spacing: Style.space(12)
-        readonly property real iconSize: card.width < Style.space(380) ? Style.space(36) : Style.space(40)
+      Column {
+        id: bannerColumn
+        x: Style.space(12)
+        y: Style.space(12)
+        width: parent.width - Style.space(26)
+        spacing: Style.space(10)
 
-        Item {
-          id: bannerIcon
-          width: card.bannerHasIcon ? parent.iconSize : 0
-          height: width
-          visible: card.bannerHasIcon
-          Image {
-            anchors.fill: parent
-            visible: thumb.pictured
-            source: card.banner && thumb.pictured ? thumb.best : ""
-            fillMode: thumb.photo ? Image.PreserveAspectCrop : Image.PreserveAspectFit
-            sourceSize.width: width * Screen.devicePixelRatio
-            sourceSize.height: height * Screen.devicePixelRatio
-            asynchronous: true
+        Row {
+          width: parent.width
+          spacing: Style.space(12)
+          readonly property real iconSize: card.width < Style.space(380) ? Style.space(36) : Style.space(40)
+
+          Item {
+            id: bannerIcon
+            width: card.bannerHasIcon ? parent.iconSize : 0
+            height: width
+            visible: card.bannerHasIcon
+            Image {
+              anchors.fill: parent
+              visible: thumb.pictured
+              source: card.banner && thumb.pictured ? thumb.best : ""
+              fillMode: thumb.photo ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+              sourceSize.width: width * Screen.devicePixelRatio
+              sourceSize.height: height * Screen.devicePixelRatio
+              asynchronous: true
+            }
+            Text {
+              anchors.centerIn: parent
+              visible: !thumb.pictured && thumb.glyphed
+              textFormat: Text.PlainText
+              text: String(card.row.glyph || "")
+              color: Commons.Color.notifications.text
+              font.family: Delivery.omarchyGlyph(card.row.glyph) ? "omarchy" : Style.font.family
+              font.pixelSize: Style.font.displayLarge
+            }
           }
-          Text {
-            anchors.centerIn: parent
-            visible: !thumb.pictured && thumb.glyphed
-            textFormat: Text.PlainText
-            text: String(card.row.glyph || "")
-            color: Commons.Color.notifications.text
-            font.family: Delivery.omarchyGlyph(card.row.glyph) ? "omarchy" : Style.font.family
-            font.pixelSize: Style.font.displayLarge
+
+          Column {
+            width: parent.width - (bannerIcon.visible ? bannerIcon.width + parent.spacing : 0)
+            spacing: Style.space(3)
+
+            Item {
+              width: parent.width
+              height: bannerTitle.implicitHeight
+              Text {
+                id: bannerTitle
+                width: parent.width - bannerWhen.width - Style.space(8)
+                textFormat: Text.PlainText
+                text: card.redacted ? I18n.t("notifications.redactedSummary") : String(card.row.summary || "")
+                color: Commons.Color.notifications.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.title
+                font.bold: true
+                elide: Text.ElideRight
+              }
+              Row {
+                id: bannerWhen
+                anchors.right: parent.right
+                anchors.verticalCenter: bannerTitle.verticalCenter
+                spacing: Style.space(6)
+                Text {
+                  visible: !card.bannerHasIcon && !card.anonymous
+                  textFormat: Text.PlainText
+                  text: String(card.row.source || card.row.app || "")
+                  color: card.dimColor
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  visible: !bannerClose.visible
+                  textFormat: Text.PlainText
+                  text: card.ago() || I18n.t("agents.durationNow")
+                  color: card.dimColor
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+                // With a mouse: the close mark over the card, in the time's place.
+                Text {
+                  id: bannerClose
+                  visible: card.hovered && !(card.scene && card.scene.keyboardMode)
+                  textFormat: Text.PlainText
+                  text: "✕"
+                  color: bannerCloseArea.containsMouse ? Commons.Color.notifications.text : card.dimColor
+                  font.pixelSize: Style.font.subtitle
+                  MouseArea {
+                    id: bannerCloseArea
+                    anchors.fill: parent
+                    anchors.margins: -Style.space(6)
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: card.dismissed()
+                  }
+                }
+              }
+            }
+
+            Text {
+              width: parent.width
+              visible: card.hasBody
+              textFormat: Text.StyledText
+              text: card.redacted ? I18n.t("notifications.redactedBody") : String(card.row.bodyRich || "")
+              color: card.bodyColor
+              linkColor: Commons.Color.accent
+              font.family: Style.font.family
+              font.pixelSize: Style.font.subtitle
+              wrapMode: Text.Wrap
+              maximumLineCount: 3
+              elide: Text.ElideRight
+              onLinkActivated: function(url) { card.linkOpened(); Security.openExternalUrl(url) }
+            }
           }
         }
 
-        Column {
-          width: parent.width - (bannerIcon.visible ? bannerIcon.width + parent.spacing : 0)
-          spacing: Style.space(3)
+        // The sender's own buttons, under the text.
+        Row {
+          visible: card.actions.length > 0
+          x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
+          width: parent.width - x
+          spacing: Style.space(8)
+          Repeater {
+            model: card.banner ? card.actions : []
+            Rectangle {
+              required property var modelData
+              width: (parent.width - parent.spacing * (card.actions.length - 1)) / card.actions.length
+              height: Style.space(34)
+              color: "transparent"
+              border.width: 1
+              border.color: Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
+              scale: actionArea.pressed ? 0.96 : 1
+              Text {
+                anchors.centerIn: parent
+                width: parent.width - Style.space(12)
+                horizontalAlignment: Text.AlignHCenter
+                textFormat: Text.PlainText
+                text: String(parent.modelData.text || "")
+                color: Commons.Color.notifications.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.subtitle
+                elide: Text.ElideRight
+              }
+              MouseArea {
+                id: actionArea
+                anchors.fill: parent
+                onClicked: card.actionInvoked(String(parent.modelData.id))
+              }
+            }
+          }
+        }
 
-          Item {
-            width: parent.width
-            height: bannerTitle.implicitHeight
-            Text {
-              id: bannerTitle
-              width: parent.width - bannerWhen.width - Style.space(8)
-              textFormat: Text.PlainText
-              text: card.redacted ? I18n.t("notifications.redactedSummary") : String(card.row.summary || "")
+        // The inline reply, when the sender takes one.
+        Row {
+          visible: card.reply !== ""
+          x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
+          width: parent.width - x
+          spacing: Style.space(8)
+          Rectangle {
+            width: parent.width - sendBox.width - parent.spacing
+            height: Style.space(34)
+            color: Util.alpha(Commons.Color.background, 0.7)
+            border.width: 1
+            border.color: replyInput.activeFocus && card.scene && card.scene.replying ? Commons.Color.accent : Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
+            TextInput {
+              id: replyInput
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(10)
+              anchors.rightMargin: Style.space(10)
+              verticalAlignment: TextInput.AlignVCenter
               color: Commons.Color.notifications.text
               font.family: Style.font.family
-              font.pixelSize: Style.font.title
-              font.bold: true
-              elide: Text.ElideRight
+              font.pixelSize: Style.font.body
+              clip: true
+              Connections {
+                target: card.scene
+                function onReplyingChanged() {
+                  if (!card.scene.replying && !card.scene.replyPaused && replyInput.activeFocus) replyInput.focus = false
+                }
+              }
+              onAccepted: if (text.trim() !== "") card.replySent(text)
+              Keys.onEscapePressed: { text = ""; if (card.scene) card.scene.endReply() }
+              Component.onDestruction: if (activeFocus && card.scene) card.scene.endReply()
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: parent.text === ""
+                textFormat: Text.PlainText
+                text: card.reply
+                color: card.dimColor
+                font: parent.font
+              }
             }
-            Row {
-              id: bannerWhen
-              anchors.right: parent.right
-              anchors.verticalCenter: bannerTitle.verticalCenter
-              spacing: Style.space(6)
-              Text {
-                visible: !card.bannerHasIcon && !card.anonymous
-                textFormat: Text.PlainText
-                text: String(card.row.source || card.row.app || "")
-                color: card.dimColor
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-              }
-              Text {
-                visible: !bannerClose.visible
-                textFormat: Text.PlainText
-                text: card.ago() || I18n.t("agents.durationNow")
-                color: card.dimColor
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-              }
-              // With a mouse: the close mark over the card, in the time's place.
-              Text {
-                id: bannerClose
-                visible: card.hovered && !(card.scene && card.scene.keyboardMode)
-                textFormat: Text.PlainText
-                text: "✕"
-                color: bannerCloseArea.containsMouse ? Commons.Color.notifications.text : card.dimColor
-                font.pixelSize: Style.font.subtitle
-                MouseArea {
-                  id: bannerCloseArea
-                  anchors.fill: parent
-                  anchors.margins: -Style.space(6)
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: card.dismissed()
+            // A finger's tap opens the on-screen keyboard as well; a mouse
+            // click does not (there is a keyboard then).
+            Item {
+              anchors.fill: parent
+              visible: !(card.scene && card.scene.replying)
+              TapHandler {
+                onTapped: function(point) {
+                  if (card.scene) card.scene.beginReply(point.device.type === PointerDevice.TouchScreen)
+                  replyInput.forceActiveFocus()
                 }
               }
             }
           }
-
-          Text {
-            width: parent.width
-            visible: card.hasBody
-            textFormat: Text.StyledText
-            text: card.redacted ? I18n.t("notifications.redactedBody") : String(card.row.bodyRich || "")
-            color: card.bodyColor
-            linkColor: Commons.Color.accent
-            font.family: Style.font.family
-            font.pixelSize: Style.font.subtitle
-            wrapMode: Text.Wrap
-            maximumLineCount: 3
-            elide: Text.ElideRight
-            onLinkActivated: function(url) { card.linkOpened(); Security.openExternalUrl(url) }
-          }
-        }
-      }
-
-      // The sender's own buttons, under the text.
-      Row {
-        visible: card.actions.length > 0
-        x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
-        width: parent.width - x
-        spacing: Style.space(8)
-        Repeater {
-          model: card.banner ? card.actions : []
           Rectangle {
-            required property var modelData
-            width: (parent.width - parent.spacing * (card.actions.length - 1)) / card.actions.length
+            id: sendBox
+            width: Style.space(34)
             height: Style.space(34)
-            color: "transparent"
-            border.width: 1
-            border.color: Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
-            scale: actionArea.pressed ? 0.96 : 1
+            color: Commons.Color.accent
+            scale: sendArea.pressed ? 0.96 : 1
             Text {
               anchors.centerIn: parent
-              width: parent.width - Style.space(12)
-              horizontalAlignment: Text.AlignHCenter
               textFormat: Text.PlainText
-              text: String(parent.modelData.text || "")
-              color: Commons.Color.notifications.text
+              text: "\uf1d8"
+              color: Commons.Color.background
               font.family: Style.font.family
-              font.pixelSize: Style.font.subtitle
-              elide: Text.ElideRight
+              font.pixelSize: Style.font.title
             }
             MouseArea {
-              id: actionArea
+              id: sendArea
               anchors.fill: parent
-              onClicked: card.actionInvoked(String(parent.modelData.id))
+              onClicked: if (replyInput.text.trim() !== "") card.replySent(replyInput.text)
             }
-          }
-        }
-      }
-
-      // The inline reply, when the sender takes one.
-      Row {
-        visible: card.reply !== ""
-        x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
-        width: parent.width - x
-        spacing: Style.space(8)
-        Rectangle {
-          width: parent.width - sendBox.width - parent.spacing
-          height: Style.space(34)
-          color: Util.alpha(Commons.Color.background, 0.7)
-          border.width: 1
-          border.color: replyInput.activeFocus && card.scene && card.scene.replying ? Commons.Color.accent : Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
-          TextInput {
-            id: replyInput
-            anchors.fill: parent
-            anchors.leftMargin: Style.space(10)
-            anchors.rightMargin: Style.space(10)
-            verticalAlignment: TextInput.AlignVCenter
-            color: Commons.Color.notifications.text
-            font.family: Style.font.family
-            font.pixelSize: Style.font.body
-            clip: true
-            Connections {
-              target: card.scene
-              function onReplyingChanged() {
-                if (!card.scene.replying && !card.scene.replyPaused && replyInput.activeFocus) replyInput.focus = false
-              }
-            }
-            onAccepted: if (text.trim() !== "") card.replySent(text)
-            Keys.onEscapePressed: { text = ""; if (card.scene) card.scene.endReply() }
-            Component.onDestruction: if (activeFocus && card.scene) card.scene.endReply()
-            Text {
-              anchors.verticalCenter: parent.verticalCenter
-              visible: parent.text === ""
-              textFormat: Text.PlainText
-              text: card.reply
-              color: card.dimColor
-              font: parent.font
-            }
-          }
-          // A finger's tap opens the on-screen keyboard as well; a mouse
-          // click does not (there is a keyboard then).
-          Item {
-            anchors.fill: parent
-            visible: !(card.scene && card.scene.replying)
-            TapHandler {
-              onTapped: function(point) {
-                if (card.scene) card.scene.beginReply(point.device.type === PointerDevice.TouchScreen)
-                replyInput.forceActiveFocus()
-              }
-            }
-          }
-        }
-        Rectangle {
-          id: sendBox
-          width: Style.space(34)
-          height: Style.space(34)
-          color: Commons.Color.accent
-          scale: sendArea.pressed ? 0.96 : 1
-          Text {
-            anchors.centerIn: parent
-            textFormat: Text.PlainText
-            text: "\uf1d8"
-            color: Commons.Color.background
-            font.family: Style.font.family
-            font.pixelSize: Style.font.title
-          }
-          MouseArea {
-            id: sendArea
-            anchors.fill: parent
-            onClicked: if (replyInput.text.trim() !== "") card.replySent(replyInput.text)
           }
         }
       }
