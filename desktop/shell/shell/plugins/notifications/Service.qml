@@ -1681,13 +1681,22 @@ Item {
       // the cards drawn in it: the deck's height follows a card that grew
       // after it arrived (a banner's reply row) only later, and taps on the
       // new part fell through to the desktop meanwhile.
+      // The bar stays the bar's: a pull from it opens the control center.
+      readonly property real barStrip: service.barPosition === "top"
+        ? Delivery.barThickness(service.barRef, String(modelData.name), service.defaultBarSize) : 0
       MouseArea {
         anchors.fill: parent
+        anchors.topMargin: surface.barStrip
         visible: service.replying
         acceptedButtons: Qt.AllButtons
         onPressed: service.endReply()
       }
-      mask: service.replying ? null : deckRegion
+      mask: service.replying ? outsideRegion : deckRegion
+      property Region outsideRegion: Region {
+        y: surface.barStrip
+        width: surface.width
+        height: Math.max(0, surface.height - surface.barStrip)
+      }
       property Region deckRegion: Region {
         x: surface.showingNotifications ? clipper.x + deck.x : 0
         y: surface.showingNotifications ? clipper.y + deck.y : 0
