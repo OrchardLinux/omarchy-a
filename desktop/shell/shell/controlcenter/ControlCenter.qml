@@ -599,6 +599,9 @@ Item {
       anchors.fill: parent
       acceptedButtons: Qt.LeftButton | Qt.RightButton
       pressAndHoldInterval: 400
+      // Armed, the touch is the tile's: moving the finger cancels and never
+      // drags the control center away (before that, it still may).
+      preventStealing: held
       property bool held: false
       property bool used: false
       readonly property bool holding: held && containsMouse
