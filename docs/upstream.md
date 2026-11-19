@@ -72,7 +72,7 @@ boot cover or theme intro videos, software decode at panel size, no startup
 signal of its own when the session starts locked), the lock (taken at session
 start, lifting Labwc's startup cover; `plugins/lock/Service.qml`), wallpaper
 readiness (`LockView.qml`),
-`Style.qml` (a larger bar target), `config/omarchy/shell.json` (the tablet's bar
+`config/omarchy/shell.json` (the tablet's bar
 and the plugins it turns off).
 
 **Menu.** `default/omarchy/omarchy-menu.jsonc`: Activity opens Omactivity, Setup > Monitors opens the Display panel, Maximize

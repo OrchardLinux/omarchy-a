@@ -341,8 +341,7 @@ QtObject {
   }
 
   readonly property QtObject bar: QtObject {
-    // Tablet port: a larger top-bar target without scaling menus or theme text.
-    readonly property int sizeHorizontal: Math.max(38, root.barToken("size-horizontal", 26))
+    readonly property int sizeHorizontal: root.barToken("size-horizontal", 26)
     readonly property int sizeVertical:   root.barToken("size-vertical",   28)
     // Calibrated notch cutout height in logical px, for panels whose real
     // cutout differs from the derived default (see BarModel.notchHeight).
@@ -351,11 +350,11 @@ QtObject {
       var v = Number(root.barOverrides["notch-height"])
       return (isFinite(v) && v > 0) ? Math.round(v) : 0
     }
-    readonly property int iconSlot:       Math.max(40, root.barToken("icon-slot", 27))
-    readonly property int iconCanvas:     Math.max(22, root.barToken("icon-canvas", 16))
-    readonly property int iconFont:       Math.max(19, root.barToken("icon-font", 13))
-    readonly property int iconSize:       Math.min(iconCanvas, Math.max(18, root.barToken("icon-size", 12)))
-    readonly property int statusSlot:     Math.max(28, root.barToken("status-slot", 21))
+    readonly property int iconSlot:       root.barToken("icon-slot",       27)
+    readonly property int iconCanvas:     root.barToken("icon-canvas",     16)
+    readonly property int iconFont:       root.barToken("icon-font",       13)
+    readonly property int iconSize:       Math.min(iconCanvas, root.barToken("icon-size", 12))
+    readonly property int statusSlot:     root.barToken("status-slot",     21)
   }
 
   // Off with Hyprland's own animations, as `omarchy toggle animations` turns
