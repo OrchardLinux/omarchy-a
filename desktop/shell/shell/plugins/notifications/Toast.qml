@@ -27,6 +27,13 @@ Item {
   property double now: Date.now()
   property real cardWidth: Style.space(380)
   property var actions: []                   // what the sender put on the wire
+  // Orchard: the banner (one notification at a time, the default): the
+  // same card, drawn as the shell spec's banner instead of upstream's deck
+  // card. The deck (the Stack setting) keeps upstream's look.
+  property bool banner: false
+  // The sender takes an inline reply: its placeholder, else "".
+  property string reply: ""
+  signal replySent(string text)
 
   // The pointer in the deck's coordinates: the deck owns hover, so cards and
   // their buttons work out what is under it themselves.
@@ -173,7 +180,7 @@ Item {
   }
 
   width: cardWidth
-  height: body.height
+  height: banner ? bannerBox.height : body.height
 
   LayoutMirroring.enabled: Commons.I18n.rightToLeft
   LayoutMirroring.childrenInherit: true
@@ -200,7 +207,7 @@ Item {
 
   // The height this card's *state* implies, a step function the deck lays out
   // from. Feeding a mid-animation height back into the layout stalls the stack.
-  readonly property real targetHeight: fixedHeight + deedArea.wanted
+  readonly property real targetHeight: banner ? bannerBox.implicitHeight : fixedHeight + deedArea.wanted
 
   // The height the scene says it is right now, on the way there.
   property real drawnHeight: targetHeight
@@ -294,6 +301,7 @@ Item {
   // inset by those exact widths.
   BorderSurface {
     id: plate
+    visible: !card.banner
     width: body.width
     height: body.height
     radius: Style.cornerRadius
@@ -307,12 +315,261 @@ Item {
     anchors.fill: plate
     anchors { leftMargin: plate.borderLeft; rightMargin: plate.borderRight
               topMargin: plate.borderTop; bottomMargin: plate.borderBottom }
-    visible: card.selected
+    visible: card.selected && !card.banner
     color: Style.hoverFillFor(Commons.Color.notifications.text, Commons.Color.accent)
+  }
+
+  // ----------------------------------------------------------- the banner
+  //
+  // Square, opaque (without blur translucency only muddies the text, and
+  // opaque is cheaper to draw in software), a thin outline and a soft
+  // shadow. The app's icon, a bold title with the time at its end, the body;
+  // the app's name only when there is no icon to tell where it came from.
+  // Only the sender's own non-default actions as buttons, and its inline
+  // reply when it takes one.
+  readonly property bool bannerHasIcon: thumb.pictured || thumb.glyphed
+  Rectangle {
+    id: bannerShadow
+    visible: card.banner && card.gpu
+    anchors.fill: bannerBox
+    color: "black"
+    layer.enabled: visible
+    layer.effect: MultiEffect {
+      shadowEnabled: true
+      shadowColor: Qt.rgba(0, 0, 0, 0.45)
+      shadowVerticalOffset: Style.space(10)
+      shadowBlur: 1.0
+      blurMax: Style.space(28)
+    }
+  }
+  Rectangle {
+    id: bannerBox
+    visible: card.banner
+    width: card.width
+    implicitHeight: bannerColumn.implicitHeight + Style.space(24)
+    height: implicitHeight
+    readonly property color plain: Commons.Color.notifications.background
+    color: Qt.rgba(plain.r, plain.g, plain.b, 1)
+    border.width: 1
+    border.color: Util.alpha(Commons.Color.notifications.text, 0.2)
+
+    Column {
+      id: bannerColumn
+      x: Style.space(12)
+      y: Style.space(12)
+      width: parent.width - Style.space(26)
+      spacing: Style.space(10)
+
+      Row {
+        width: parent.width
+        spacing: Style.space(12)
+        readonly property real iconSize: card.width < Style.space(380) ? Style.space(36) : Style.space(40)
+
+        Item {
+          id: bannerIcon
+          width: card.bannerHasIcon ? parent.iconSize : 0
+          height: width
+          visible: card.bannerHasIcon
+          Image {
+            anchors.fill: parent
+            visible: thumb.pictured
+            source: card.banner && thumb.pictured ? thumb.best : ""
+            fillMode: thumb.photo ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+            sourceSize.width: width * Screen.devicePixelRatio
+            sourceSize.height: height * Screen.devicePixelRatio
+            asynchronous: true
+          }
+          Text {
+            anchors.centerIn: parent
+            visible: !thumb.pictured && thumb.glyphed
+            textFormat: Text.PlainText
+            text: String(card.row.glyph || "")
+            color: Commons.Color.notifications.text
+            font.family: Delivery.omarchyGlyph(card.row.glyph) ? "omarchy" : Style.font.family
+            font.pixelSize: Style.font.displayLarge
+          }
+        }
+
+        Column {
+          width: parent.width - (bannerIcon.visible ? bannerIcon.width + parent.spacing : 0)
+          spacing: Style.space(3)
+
+          Item {
+            width: parent.width
+            height: bannerTitle.implicitHeight
+            Text {
+              id: bannerTitle
+              width: parent.width - bannerWhen.width - Style.space(8)
+              textFormat: Text.PlainText
+              text: card.redacted ? I18n.t("notifications.redactedSummary") : String(card.row.summary || "")
+              color: Commons.Color.notifications.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+              font.bold: true
+              elide: Text.ElideRight
+            }
+            Row {
+              id: bannerWhen
+              anchors.right: parent.right
+              anchors.verticalCenter: bannerTitle.verticalCenter
+              spacing: Style.space(6)
+              Text {
+                visible: !card.bannerHasIcon && !card.anonymous
+                textFormat: Text.PlainText
+                text: String(card.row.source || card.row.app || "")
+                color: card.dimColor
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                visible: !bannerClose.visible
+                textFormat: Text.PlainText
+                text: card.ago() || I18n.t("agents.durationNow")
+                color: card.dimColor
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+              // With a mouse: the close mark over the card, in the time's place.
+              Text {
+                id: bannerClose
+                visible: card.hovered && !(card.scene && card.scene.keyboardMode)
+                textFormat: Text.PlainText
+                text: "✕"
+                color: bannerCloseArea.containsMouse ? Commons.Color.notifications.text : card.dimColor
+                font.pixelSize: Style.font.subtitle
+                MouseArea {
+                  id: bannerCloseArea
+                  anchors.fill: parent
+                  anchors.margins: -Style.space(6)
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: card.dismissed()
+                }
+              }
+            }
+          }
+
+          Text {
+            width: parent.width
+            visible: card.hasBody
+            textFormat: Text.StyledText
+            text: card.redacted ? I18n.t("notifications.redactedBody") : String(card.row.bodyRich || "")
+            color: card.bodyColor
+            linkColor: Commons.Color.accent
+            font.family: Style.font.family
+            font.pixelSize: Style.font.subtitle
+            wrapMode: Text.Wrap
+            maximumLineCount: 3
+            elide: Text.ElideRight
+            onLinkActivated: function(url) { card.linkOpened(); Security.openExternalUrl(url) }
+          }
+        }
+      }
+
+      // The sender's own buttons, under the text.
+      Row {
+        visible: card.actions.length > 0
+        x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
+        width: parent.width - x
+        spacing: Style.space(8)
+        Repeater {
+          model: card.banner ? card.actions : []
+          Rectangle {
+            required property var modelData
+            width: (parent.width - parent.spacing * (card.actions.length - 1)) / card.actions.length
+            height: Style.space(34)
+            color: "transparent"
+            border.width: 1
+            border.color: Util.alpha(Commons.Color.notifications.text, 0.2)
+            scale: actionArea.pressed ? 0.96 : 1
+            Text {
+              anchors.centerIn: parent
+              width: parent.width - Style.space(12)
+              horizontalAlignment: Text.AlignHCenter
+              textFormat: Text.PlainText
+              text: String(parent.modelData.text || "")
+              color: Commons.Color.notifications.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.subtitle
+              elide: Text.ElideRight
+            }
+            MouseArea {
+              id: actionArea
+              anchors.fill: parent
+              onClicked: card.actionInvoked(String(parent.modelData.id))
+            }
+          }
+        }
+      }
+
+      // The inline reply, when the sender takes one.
+      Row {
+        visible: card.reply !== ""
+        x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
+        width: parent.width - x
+        spacing: Style.space(8)
+        Rectangle {
+          width: parent.width - sendBox.width - parent.spacing
+          height: Style.space(34)
+          color: Util.alpha(Commons.Color.background, 0.7)
+          border.width: 1
+          border.color: replyInput.activeFocus ? Commons.Color.accent : Util.alpha(Commons.Color.notifications.text, 0.2)
+          TextInput {
+            id: replyInput
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(10)
+            anchors.rightMargin: Style.space(10)
+            verticalAlignment: TextInput.AlignVCenter
+            color: Commons.Color.notifications.text
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            clip: true
+            onActiveFocusChanged: if (card.scene) card.scene.replying = activeFocus
+            onAccepted: if (text.trim() !== "") card.replySent(text)
+            Keys.onEscapePressed: { text = ""; focus = false; if (card.scene) card.scene.replying = false }
+            Component.onDestruction: if (activeFocus && card.scene) card.scene.replying = false
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              visible: parent.text === ""
+              textFormat: Text.PlainText
+              text: card.reply
+              color: card.dimColor
+              font: parent.font
+            }
+          }
+          MouseArea {
+            anchors.fill: parent
+            visible: !replyInput.activeFocus
+            onClicked: { if (card.scene) card.scene.replying = true; replyInput.forceActiveFocus() }
+          }
+        }
+        Rectangle {
+          id: sendBox
+          width: Style.space(34)
+          height: Style.space(34)
+          color: Commons.Color.accent
+          scale: sendArea.pressed ? 0.96 : 1
+          Text {
+            anchors.centerIn: parent
+            textFormat: Text.PlainText
+            text: "\uf1d8"
+            color: Commons.Color.background
+            font.family: Style.font.family
+            font.pixelSize: Style.font.title
+          }
+          MouseArea {
+            id: sendArea
+            anchors.fill: parent
+            onClicked: if (replyInput.text.trim() !== "") card.replySent(replyInput.text)
+          }
+        }
+      }
+    }
   }
 
   Item {
     id: body
+    visible: !card.banner
     width: parent.width
     height: card.drawnHeight
 

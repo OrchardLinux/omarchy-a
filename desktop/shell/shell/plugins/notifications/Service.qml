@@ -80,19 +80,59 @@ Item {
   readonly property string barPosition: barRef ? String(barRef.position || "top") : "top"
   readonly property bool barVertical: barPosition === "left" || barPosition === "right"
   readonly property int defaultBarSize: barVertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
-  function marginsFor(screenName) {
-    return Delivery.deckMargins(barPosition, Delivery.barThickness(barRef, screenName, defaultBarSize), Style.gapsOut)
+  // Orchard: one notification at a time as a banner (the default), or
+  // upstream's deck (Trigger > Toggle > Stack Notifications, the
+  // notifications-stack toggle). The notification center holds them all
+  // either way.
+  property bool stackMode: false
+  readonly property bool bannerMode: !stackMode
+  Process {
+    id: stackModeProc
+    command: ["omarchy-toggle-enabled", "notifications-stack"]
+    onExited: function(code) { service.stackMode = code === 0 }
   }
-  // Orchard: never wider than the narrowest screen allows with the same gap
-  // on both sides: a phone (375 wide) had the card run off its left edge.
-  readonly property int notificationWidth: {
+
+  readonly property int narrowestScreen: {
     var narrowest = 0
     for (var i = 0; i < Quickshell.screens.length; i++) {
       var w = Quickshell.screens[i].width
       if (w > 0 && (narrowest === 0 || w < narrowest)) narrowest = w
     }
-    var room = narrowest > 0 ? narrowest - 2 * Style.gapsOut : Style.space(380)
-    return Math.min(Style.space(380), room)
+    return narrowest
+  }
+  // A phone (a screen narrower than the bar's narrow limit) has the banner
+  // full width with an 8 px margin; an iPad has it 380 wide, top right.
+  readonly property bool narrowScreens: narrowestScreen > 0 && narrowestScreen < 480
+  function marginsFor(screenName) {
+    var bar = Delivery.barThickness(barRef, screenName, defaultBarSize)
+    if (bannerMode && barPosition === "top")
+      return { top: bar + Style.space(8), right: narrowScreens ? Style.space(8) : Style.space(12) }
+    return Delivery.deckMargins(barPosition, bar, Style.gapsOut)
+  }
+  // Never wider than the narrowest screen allows with the same gap on both
+  // sides: a phone (375 wide) had upstream's card run off its left edge.
+  readonly property int notificationWidth: {
+    var gap = bannerMode ? Style.space(8) : Style.gapsOut
+    var room = narrowestScreen > 0 ? narrowestScreen - 2 * gap : Style.space(380)
+    return bannerMode && narrowScreens ? room : Math.min(Style.space(380), room)
+  }
+
+  // A reply field has the keyboard from its tap until the reply is sent,
+  // Escape, or the card goes (labwc does not hand an overlay the keyboard on
+  // demand, so it is taken outright, as keyboard mode does). Its card does
+  // not time out meanwhile.
+  property bool replying: false
+  function replyOf(key, revision) {
+    var ref = refs[key]
+    if (!ref || !ref.hasInlineReply) return ""
+    return String(ref.inlineReplyPlaceholder || "") || I18n.t("notifications.reply")
+  }
+  function sendReply(key, text) {
+    var ref = refs[key]
+    replying = false
+    if (!ref || !ref.hasInlineReply) return
+    try { ref.sendInlineReply(String(text)) } catch (e) {}
+    closeToast(key, "activated")
   }
 
   // ---------------------------------------------------- fullscreen windows
@@ -745,6 +785,16 @@ Item {
         Store.applyTo(toasts, at, row)      // an update, in place
         service.retarget(snap, deckNow)
       } else {
+        // One at a time: the new card takes the place of what is on screen,
+        // which is in the history (the notification center) already.
+        if (service.bannerMode) {
+          var shown = []
+          for (var t = 0; t < toasts.count; t++) {
+            var other = String(toasts.get(t).key)
+            if (other !== key && !service.leaving[other]) shown.push(other)
+          }
+          if (shown.length) service.closeToasts(shown, "replaced", true)
+        }
         service.pinDeckDisplay()
         // Before the insert: the delegate measures itself while it is built.
         service.fresh[key] = true
@@ -773,7 +823,8 @@ Item {
     refsRevision += 1
     try {
       if (reason === "expired") ref.expire()
-      else if (reason) ref.dismiss()
+      // Orchard: a banner replaced by a newer one was not dismissed.
+      else if (reason && reason !== "replaced") ref.dismiss()
       else ref.tracked = false
     } catch (e) {}
   }
@@ -1393,7 +1444,7 @@ Item {
     onExited: function(code) { service.storeReady = code === 0 }
   }
 
-  Component.onCompleted: storePrepare.running = true
+  Component.onCompleted: { storePrepare.running = true; stackModeProc.running = true }
   // A reload or a clean exit inside the save delay still writes.
   Component.onDestruction: flushStore()
 
@@ -1424,6 +1475,7 @@ Item {
     bodyMarkupSupported: true
     bodyHyperlinksSupported: true
     persistenceSupported: true
+    inlineReplySupported: true
 
     onNotification: function(notification) { service.handleNotification(notification) }
   }
@@ -1466,6 +1518,13 @@ Item {
     function ping(): string { return "ok" }
 
     function isDnd(): string { return service.doNotDisturb ? "on" : "off" }
+
+    // Orchard: one banner at a time, or upstream's stack (the toggle runs this).
+    function setStack(value: string): string {
+      var v = String(value || "").toLowerCase()
+      service.stackMode = v === "true" || v === "1" || v === "on" || v === "yes"
+      return service.stackMode ? "on" : "off"
+    }
 
     function toggleDnd(): string {
       service.setDoNotDisturb(!service.doNotDisturb)
@@ -1581,14 +1640,25 @@ Item {
       WlrLayershell.namespace: "omarchy-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
       readonly property bool takesKeyboard: service.keyboardMode && service.targetDisplayName === String(modelData.name)
-      WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive
+        : service.replying ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
 
       // Constant width and full height, so the buffer is allocated once.
       anchors { top: true; bottom: true; right: true }
-      implicitWidth: clipper.width + Style.space(10)
+      implicitWidth: Math.min(clipper.width + Style.space(10), screen.width)
 
-      mask: Region { item: surface.showingNotifications ? deck : null }
+      // Orchard: the deck's rectangle by its numbers, at least as tall as
+      // the cards drawn in it: the deck's height follows a card that grew
+      // after it arrived (a banner's reply row) only later, and taps on the
+      // new part fell through to the desktop meanwhile.
+      mask: Region {
+        x: surface.showingNotifications ? clipper.x + deck.x : 0
+        y: surface.showingNotifications ? clipper.y + deck.y : 0
+        width: surface.showingNotifications ? deck.width : 0
+        height: surface.showingNotifications
+          ? Math.max(deck.height, deck.childrenRect.y + deck.childrenRect.height) : 0
+      }
 
       Item {
         focus: surface.takesKeyboard
@@ -1603,8 +1673,12 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.topMargin: surface.margins.top
-        // Room for the arrival's scale animation, and the gap from the edge.
-        readonly property int motionInset: Style.spacing.sm
+        // Room for the arrival's scale animation, and the gap from the edge;
+        // a banner's shadow needs more, as far as the screen has room for it
+        // (the window must not be wider than the screen).
+        readonly property int motionInset: service.bannerMode
+          ? Math.max(0, Math.min(Style.space(28), surface.screen.width - service.notificationWidth - surface.margins.right))
+          : Style.spacing.sm
         width: service.notificationWidth + motionInset + surface.margins.right
         height: deck.y + deck.height + motionInset
         clip: true
@@ -1718,7 +1792,7 @@ Item {
                         && service.openDeck === Layout.groupKeyFor(model)
               // Hover opens the body only when there is nothing else to open.
               sole: toasts.count === 1
-              paused: service.expanded
+              paused: service.expanded || service.replying
 
               drawnHeight: service.at(model.key, "height")
               // A hidden output collapses child visibility; its measurements
@@ -1729,6 +1803,9 @@ Item {
               onExpired: service.closeToast(model.key, "expired")
               onActivated: { service.stopKeyboard(); service.activate(model.key) }
               onDismissed: { service.stopKeyboard(); service.closeToast(model.key, "dismissed") }
+              banner: service.bannerMode
+              reply: service.replyOf(model.key, service.refsRevision)
+              onReplySent: function(text) { service.sendReply(model.key, text) }
             }
           }
         }

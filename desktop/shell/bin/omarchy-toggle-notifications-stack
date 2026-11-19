@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# omarchy:summary=Show notifications one at a time as a banner, or stacked as upstream's deck
+# One at a time by default. Turned on, the notifications-stack flag says so;
+# the running shell is told at once and reads the flag when it starts.
+set -euo pipefail
+[[ $# == 0 ]] || { echo 'Usage: omarchy-toggle-notifications-stack' >&2; exit 2; }
+toggles=$HOME/.local/state/omarchy/toggles
+mkdir -p "$toggles"
+if [[ -e $toggles/notifications-stack ]]; then
+  rm -f "$toggles/notifications-stack"
+  omarchy-shell notifications setStack off >/dev/null 2>&1 || true
+else
+  : >"$toggles/notifications-stack"
+  omarchy-shell notifications setStack on >/dev/null 2>&1 || true
+fi
