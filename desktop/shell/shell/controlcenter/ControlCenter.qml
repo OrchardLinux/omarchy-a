@@ -334,7 +334,10 @@ Item {
     // iPad: the rest of the screen dims, and a tap there closes. Phone: the
     // control center is the screen.
     Rectangle {
-      anchors.fill: parent
+      // A phone keeps its status bar above it.
+      y: root.phone ? root.barInset : 0
+      width: parent.width
+      height: parent.height - y
       color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
       opacity: Math.max(0, Math.min(1, root.reveal))
       MouseArea {
