@@ -551,10 +551,10 @@ Item {
       color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
       // Software rendering dims in one step rather than blending the whole
       // screen again on every frame of a pull.
-      // A phone's sheet comes in easing out, opaque at 60 % of a pull, and
-      // goes with its content.
+      // A phone's sheet comes in quickly at first, easing out, and is opaque
+      // only as the pull arrives; it goes with its content.
       opacity: root.popupStyle ? 0 : root.phone
-        ? (!root.gpu || root.leaving ? card.opacity : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.6)), 2))
+        ? (!root.gpu || root.leaving ? card.opacity : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal)), 2.5))
         : (root.gpu ? Math.max(0, Math.min(1, root.reveal)) : (root.reveal > 0 ? 1 : 0))
       MouseArea {
         anchors.fill: parent
