@@ -1344,6 +1344,9 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
         // finger gets 44 points, more than the highlight shows.
         Item {
           id: settingsButton
+          // In the inactive tabs' colour, brighter only while focused, as a
+          // tab is.
+          readonly property bool lit: root.keyFocus("tabs", root.settingsStop)
           anchors.right: parent.right
           height: parent.height
           width: settingsRow.implicitWidth + Style.space(16)
@@ -1363,7 +1366,7 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
             Text {
               anchors.verticalCenter: parent.verticalCenter
               text: "\uf013"
-              color: root.text
+              color: settingsButton.lit ? root.text : root.faint
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
             }
@@ -1371,7 +1374,7 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
               anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
               text: Commons.I18n.t("launcher.settings")
-              color: root.text
+              color: settingsButton.lit ? root.text : root.faint
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.subtitle
             }
