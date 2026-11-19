@@ -1779,16 +1779,17 @@ Item {
             z: 5000
             anchors.fill: parent
             anchors.margins: -Style.space(4)
-            readonly property bool containsMouse: hoverHandler.hovered && !touchedAt
+            readonly property bool containsMouse: hoverHandler.hovered && !touchedAt && !touch.active
             readonly property real mouseX: hoverHandler.point.position.x
             readonly property real mouseY: hoverHandler.point.position.y
             HoverHandler {
               id: hoverHandler
               acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
               onPointChanged: {
-                if (!hovered) return
-                // labwc puts the cursor where a finger touched: a pointer that
-                // only stands at the last touch is no mouse hovering.
+                if (!hovered || touch.active) return
+                // labwc puts the cursor where a finger touches, and moves it
+                // along a drag: a pointer while a finger is down, or one that
+                // only stands where the last touch ended, is no mouse hovering.
                 var p = point.position
                 if (hoverArea.touchedAt && Math.abs(p.x - hoverArea.touchedAt.x) < 4
                     && Math.abs(p.y - hoverArea.touchedAt.y) < 4) return
@@ -1799,11 +1800,10 @@ Item {
             // Where the last touch was; a touch also ends any hover.
             property var touchedAt: null
             PointHandler {
+              id: touch
               acceptedDevices: PointerDevice.TouchScreen
-              onActiveChanged: if (active) {
-                hoverArea.touchedAt = { x: point.position.x, y: point.position.y }
-                if (service.hoverKey !== "") service.hoverKey = ""
-              }
+              onActiveChanged: if (active && service.hoverKey !== "") service.hoverKey = ""
+              onPointChanged: if (active) hoverArea.touchedAt = { x: point.position.x, y: point.position.y }
             }
 
             // The cards cannot see hover under this region, so they are told.
