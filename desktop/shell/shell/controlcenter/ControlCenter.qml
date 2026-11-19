@@ -215,6 +215,7 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
   function close() {
+    root.touchSpent = false
     if (!root.opened) return
     root.closingFromOpen = true
     root.opened = false
@@ -381,8 +382,16 @@ Item {
       // the control lets go of it (its view hides), nothing else takes it.
       // The next touch counts again.
       PointHandler {
+        id: anyTouch
         acceptedDevices: PointerDevice.TouchScreen
         onActiveChanged: if (!active) root.touchSpent = false
+      }
+      // Never stuck: no finger down any more, the touch is over.
+      Timer {
+        interval: 250
+        repeat: true
+        running: root.touchSpent
+        onTriggered: if (!anyTouch.active) root.touchSpent = false
       }
     }
 
