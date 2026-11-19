@@ -467,7 +467,6 @@ Item {
             available: !!(root.sink && root.sink.audio)
             chip: root.outputName
             onMoved: function(v) { root.setVolume(v) }
-            onChipClicked: root.openPage("omarchy.audio")
             onLongPressed: root.openPage("omarchy.audio")
           }
         }
@@ -589,15 +588,29 @@ Item {
         }
       }
     }
-    // Tap toggles; the chevron, a long press or a right click opens the page.
+    // Tap toggles; a right click opens the page. Held still (0.4 s), the
+    // touch arms the page as on a slider: the tile shows it is held, lifting
+    // opens the page, sliding off cancels. One rule for every control: a tap
+    // never opens another level.
+    scale: tileMouse.holding ? 0.96 : 1
+    Behavior on scale { NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic } }
     MouseArea {
+      id: tileMouse
       anchors.fill: parent
       acceptedButtons: Qt.LeftButton | Qt.RightButton
-      onPressed: tile.pressed = true
-      onReleased: tile.pressed = false
-      onCanceled: tile.pressed = false
-      onPressAndHold: { tile.pressed = false; if (tile.page) root.openPage(tile.page) }
+      pressAndHoldInterval: 400
+      property bool held: false
+      readonly property bool holding: held && containsMouse
+      onPressed: { tile.pressed = true; held = false }
+      onReleased: {
+        tile.pressed = false
+        if (held && containsMouse && tile.page) root.openPage(tile.page)
+        held = false
+      }
+      onCanceled: { tile.pressed = false; held = false }
+      onPressAndHold: if (tile.page) held = true
       onClicked: function(mouse) {
+        if (held) return
         if (mouse.button === Qt.RightButton) { if (tile.page) root.openPage(tile.page) }
         else tile.activate()
       }
@@ -610,11 +623,12 @@ Item {
       Text {
         anchors.centerIn: parent
         text: "󰅂"
-        color: tile.ink
+        color: tileMouse.holding ? Commons.Color.accent : tile.ink
         font.family: Style.font.family
         font.pixelSize: Style.font.body
       }
-      MouseArea { anchors.fill: parent; onClicked: root.openPage(tile.page) }
+      // A hint only: a tap toggles anywhere on the tile, a long press (or a
+      // right click) opens the page.
     }
   }
 
@@ -664,7 +678,6 @@ Item {
     // A page with no chip of its own shows the arrow alone.
     property bool pageArrow: false
     signal moved(real value)
-    signal chipClicked()
     signal longPressed()
     function adjust(delta) { if (slider.available) slider.moved(Math.max(0, Math.min(1, slider.value + delta))) }
     color: Style.controlFill(false, false, root.text, Commons.Color.accent)
@@ -799,14 +812,8 @@ Item {
           font.pixelSize: chipBox.arrowOnly ? Style.font.body : Style.font.caption
         }
       }
-      // The arrow alone only shows there is a page (a long press opens
-      // it): the slider's end stays the slider's. A named chip is a button.
-      MouseArea {
-        anchors.fill: parent
-        anchors.margins: -Style.space(8)
-        enabled: !chipBox.arrowOnly
-        onClicked: slider.chipClicked()
-      }
+      // Only a hint that there is a page: a long press opens it, and a tap
+      // here sets the level like anywhere else on the slider.
     }
   }
 
