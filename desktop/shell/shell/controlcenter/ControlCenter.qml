@@ -231,8 +231,6 @@ Item {
 
   function beginPull() {
     spring.running = false
-    leaveFade.stop()
-    root.leave = 1
     if (!root.opened) {
       root.prepare()
       root.reveal = 0
@@ -267,21 +265,10 @@ Item {
     root.springTarget = target
     root.springVelocity = velocity
     spring.running = true
-    if (target > 0) { leaveFade.stop(); root.leave = 1 }
-    else leaveFade.restart()
   }
 
-  // The card's own fade on the way out (1 while it stays).
-  property real leave: 1
-  NumberAnimation {
-    id: leaveFade
-    target: root
-    property: "leave"
-    from: 1
-    to: 0
-    duration: Style.duration(120)
-    easing.type: Easing.OutQuad
-  }
+  // Going out: closing, or a finger pushing it up from open.
+  readonly property bool leaving: root.pulling ? root.pullFrom > 0.5 : !root.opened
   FrameAnimation {
     id: spring
     onTriggered: {
@@ -404,9 +391,13 @@ Item {
         },
         Translate { y: root.reveal * root.pullSpan - card.y - card.height * card.grow }
       ]
-      // Solid within the first quarter of the way, most of it at once;
-      // on the way out it fades on its own, quicker than it moves.
-      opacity: root.leave * (1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.25)), 2))
+      // Coming in: solid within the first quarter of the way, most of it at
+      // once. Going out (let go to close, or pushed up from open): it fades
+      // with its way up, gone as its bottom edge reaches the status bar.
+      readonly property real barShare: Math.min(0.9, root.barInset / root.pullSpan)
+      opacity: root.leaving
+        ? Math.max(0, Math.min(1, (root.reveal - barShare) / (1 - barShare)))
+        : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.25)), 2)
 
       MouseArea { anchors.fill: parent }  // taps inside never close
 
