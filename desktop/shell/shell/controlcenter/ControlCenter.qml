@@ -764,8 +764,17 @@ Item {
       y: slider.vertical ? Style.space(10) : (parent.height - height) / 2
       width: Math.min(chipRow.implicitWidth + Style.space(16), parent.width - Style.space(20))
       height: Style.space(26)
-      color: drag.holding ? root.onFill : Commons.Color.popups.background
-      border.width: Math.max(1, Style.space(1))
+      // The arrow alone is only a glyph in the slider's own ink: dark on the
+      // fill, light beside it.
+      readonly property bool arrowOnly: slider.chip === ""
+      readonly property bool onFillPart: slider.vertical
+        ? (1 - (y + height / 2) / slider.height) < slider.value
+        : (x + width / 2) / slider.width < slider.value
+      readonly property color ink: drag.holding
+        ? (arrowOnly ? Commons.Color.accent : root.onText)
+        : (arrowOnly && onFillPart ? Commons.Color.background : root.text)
+      color: arrowOnly ? "transparent" : (drag.holding ? root.onFill : Commons.Color.popups.background)
+      border.width: arrowOnly ? 0 : Math.max(1, Style.space(1))
       border.color: drag.holding ? root.onFill : Style.normalBorderColor
       radius: Style.cornerRadius
       Row {
@@ -777,7 +786,7 @@ Item {
           width: Math.min(implicitWidth, chipBox.parent.width - Style.space(48))
           textFormat: Text.PlainText
           text: slider.chip
-          color: drag.holding ? root.onText : root.text
+          color: chipBox.ink
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
           font.bold: true
@@ -785,9 +794,10 @@ Item {
         }
         Text {
           text: "󰅂"
-          color: drag.holding ? root.onText : root.text
+          color: chipBox.ink
+          opacity: chipBox.arrowOnly && !drag.holding ? 0.7 : 1
           font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          font.pixelSize: chipBox.arrowOnly ? Style.font.body : Style.font.caption
         }
       }
       MouseArea {
