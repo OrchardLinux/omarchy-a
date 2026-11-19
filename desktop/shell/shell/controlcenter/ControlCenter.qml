@@ -702,9 +702,21 @@ Item {
       function valueAt(mouse) {
         return slider.vertical ? 1 - mouse.y / slider.height : mouse.x / slider.width
       }
-      onPressed: function(mouse) { slider.moved(Math.max(0, Math.min(1, valueAt(mouse)))) }
-      onPositionChanged: function(mouse) { if (pressed) slider.moved(Math.max(0, Math.min(1, valueAt(mouse)))) }
-      onPressAndHold: slider.longPressed()
+      // A long press is a finger held still: once it moved, it is a drag,
+      // however long it lasts.
+      property point pressedAt
+      property bool moving: false
+      onPressed: function(mouse) {
+        pressedAt = Qt.point(mouse.x, mouse.y)
+        moving = false
+        slider.moved(Math.max(0, Math.min(1, valueAt(mouse))))
+      }
+      onPositionChanged: function(mouse) {
+        if (!pressed) return
+        if (Math.abs(mouse.x - pressedAt.x) + Math.abs(mouse.y - pressedAt.y) > Style.space(6)) moving = true
+        slider.moved(Math.max(0, Math.min(1, valueAt(mouse))))
+      }
+      onPressAndHold: if (!moving) slider.longPressed()
     }
     Rectangle {
       id: chipBox
