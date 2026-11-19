@@ -538,8 +538,10 @@ Item {
     Component.onCompleted: root.registerCell(cell)
     radius: Style.cornerRadius
     color: !available ? "transparent"
-      : (pressed ? Style.pressedFillFor(root.text, Commons.Color.accent)
-      : (on ? root.onFill : Style.controlFill(false, false, root.text, Commons.Color.accent)))
+      : (on ? root.onFill : Style.controlFill(false, false, root.text, Commons.Color.accent))
+    // Pressed, it only shrinks a little: no tint.
+    scale: pressed ? 0.96 : 1
+    Behavior on scale { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
     border.width: Math.max(1, Style.space(1))
     border.color: focused ? Commons.Color.accent : (on && available ? root.onFill : Style.normalBorderColor)
     opacity: available ? 1 : 0.45
@@ -592,8 +594,6 @@ Item {
     // touch arms the page as on a slider: the tile shows it is held, lifting
     // opens the page, sliding off cancels. One rule for every control: a tap
     // never opens another level.
-    scale: tileMouse.holding ? 0.96 : 1
-    Behavior on scale { NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic } }
     MouseArea {
       id: tileMouse
       anchors.fill: parent
@@ -706,13 +706,7 @@ Item {
       color: root.text
       opacity: 0.85
     }
-    // The pressed tint while held.
-    Rectangle {
-      anchors.fill: parent
-      color: Style.pressedFillFor(root.text, Commons.Color.accent)
-      opacity: drag.holding ? 1 : 0
-      Behavior on opacity { NumberAnimation { duration: Style.duration(140) } }
-    }
+
     Text {
       x: slider.vertical ? (parent.width - width) / 2 : Style.space(12)
       y: slider.vertical ? parent.height - height - Style.space(12) : (parent.height - height) / 2
