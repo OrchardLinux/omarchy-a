@@ -4,6 +4,7 @@ import Quickshell
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "../status" as Status
 
 Item {
   id: root
@@ -19,6 +20,8 @@ Item {
   property bool inputEnabled: true
   property bool loadBackground: true
   property string passwordText: ""
+  // Stay Awake, for the status cluster (the shell's idle service knows it).
+  property bool stayAwake: false
   property bool syncingPasswordText: false
 
   readonly property bool touchPin: Quickshell.env("OMARCHY_TOUCH_MODE") === "1"
@@ -181,6 +184,17 @@ Item {
     Rectangle {
       anchors.fill: parent
       color: Commons.Color.lock.scrim
+    }
+
+    // The status bar's right-hand cluster only: no logo (the launcher is not
+    // reachable while locked) and no clock (the big one shows the time).
+    Status.StatusCluster {
+      // Centred in the status bar's 24-point band.
+      y: Math.round((Style.space(24) - height) / 2)
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(root.phone ? 12 : 16)
+      stayAwake: root.stayAwake
+      color: Commons.Color.lock.text
     }
 
     MouseArea {

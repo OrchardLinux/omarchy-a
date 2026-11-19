@@ -59,12 +59,10 @@ Panel {
   readonly property var knownDevices: deviceGroups.known || []
   readonly property var discoveredDevices: deviceGroups.discovered || []
 
-  readonly property string icon: {
-    if (!adapter) return ""
-    if (!adapter.enabled) return "󰂲"
-    if (connectedDevices.length > 0) return "󰂱"
-    return "󰂯"
-  }
+  // Orchard: the bar's glyph lives in Status.qml, which the status cluster
+  // and the lock share.
+  Status { id: status }
+  readonly property string icon: status.icon
 
   property int phraseIndex: 0
   readonly property var activePhrases: [

@@ -14,8 +14,11 @@ Panel {
   // manageIpc: false so this panel can own the single IpcHandler the target
   // permits — needed for the togglePercentage method below.
   manageIpc: false
-  property var batteryInfo: ({})
-  readonly property bool externalPower: batteryInfo.external_power === "connected"
+  // Orchard: the battery state lives in Status.qml, which the status cluster
+  // and the lock share; these names stay the panel's.
+  Status { id: status }
+  readonly property var batteryInfo: status.batteryInfo
+  readonly property bool externalPower: status.externalPower
   property var profiles: []
   property string activeProfile: ""
   property int profileIndex: 0
@@ -25,15 +28,9 @@ Panel {
   // icon, so the open-panel mark takes the painted width instead of the
   // icon-sized fraction of the slot the fallback assumes.
   readonly property real openPanelIndicatorWidth: showPercentage && !button.vertical ? button.glyphPaintedWidth : 0
-  readonly property var batteryDevice: {
-    var device = UPower.displayDevice
-    if (device && device.isPresent) return device
-    var measured = Model.batteryPercentage(null, root.batteryInfo)
-    // Do not invent a charging/discharging state when only capacity is known.
-    return measured === null ? null : { isPresent: true, percentage: measured / 100, state: 0 }
-  }
-  readonly property bool batteryPresent: batteryDevice !== null
-  readonly property var displayedPercentage: Model.batteryPercentage(batteryDevice, batteryInfo)
+  readonly property var batteryDevice: status.batteryDevice
+  readonly property bool batteryPresent: status.batteryPresent
+  readonly property var displayedPercentage: status.displayedPercentage
 
   function upowerStates() {
     return {
@@ -158,16 +155,8 @@ Panel {
   readonly property string heroStatusText: modeLabel()
 
   function refresh() {
-    if (!batteryProc.running) batteryProc.running = true
+    status.refresh()
     if (!profilesProc.running) profilesProc.running = true
-  }
-
-  function updateKeyValue(raw) {
-    var next = Model.parseKeyValue(raw)
-    // Keep last known good data if a refresh briefly returns nothing — happens
-    // around AC plug/unplug events. Avoids the section collapsing mid-transition.
-    if (Object.keys(next).length > 0) batteryInfo = next
-    else batteryInfo = Object.assign({}, batteryInfo, { external_power: "unknown" })
   }
 
   function updateProfiles(raw) {
@@ -237,12 +226,6 @@ Panel {
   implicitHeight: batteryPresent ? button.implicitHeight : 0
 
   Process {
-    id: batteryProc
-    command: ["omarchy-battery-status", "--shell"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateKeyValue(text) }
-  }
-
-  Process {
     id: profilesProc
     command: ["omarchy-powerprofiles-list", "--active-state"]
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateProfiles(text) }
@@ -255,14 +238,11 @@ Panel {
 
   Timer {
     interval: 1000
-    // Discovery must not depend on a charger event or UPower.isPresent.
-    running: true
+    // The battery reading is Status.qml's own; open, the profiles too.
+    running: root.opened
     repeat: true
     triggeredOnStart: true
-    onTriggered: {
-      if (root.opened) root.refresh()
-      else if (!batteryProc.running) batteryProc.running = true
-    }
+    onTriggered: root.refresh()
   }
 
   // Rotate the status phrase while the panel is open and we're in a

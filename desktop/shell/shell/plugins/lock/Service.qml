@@ -32,6 +32,8 @@ Item {
   readonly property bool startLocked: Quickshell.env("OMARCHY_START_LOCKED") === "1"
   property bool startLockTaken: false
   property bool startupLifted: false
+  readonly property var idleService: shell ? shell.firstPartyServiceFor("omarchy.idle") : null
+  readonly property bool stayAwake: idleService ? idleService.stayAwake === true : false
   property bool fingerprintConfigured: false
   property int fingerprintUnreachedStreak: 0
   property bool fingerprintAttemptReachedDevice: false
@@ -536,6 +538,7 @@ Item {
         inputEnabled: root.lockRequested
         loadBackground: root.locked
         passwordText: root.enteredPassword
+        stayAwake: root.stayAwake
         onPasswordTextEdited: function(password) { root.enteredPassword = password }
         onSubmitPassword: function(password) { root.submitPassword(password) }
         onClearFailureRequested: root.failureMessage = ""
@@ -582,6 +585,7 @@ Item {
       inputEnabled: false
       loadBackground: root.previewVisible
       passwordText: ""
+      stayAwake: root.stayAwake
     }
 
     MouseArea {
