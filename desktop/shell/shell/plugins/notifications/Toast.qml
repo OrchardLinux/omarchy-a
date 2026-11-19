@@ -350,8 +350,10 @@ Item {
     height: implicitHeight
     readonly property color plain: Commons.Color.notifications.background
     color: Qt.rgba(plain.r, plain.g, plain.b, 1)
-    border.width: 1
-    border.color: Util.alpha(Commons.Color.notifications.text, 0.2)
+    // The theme's outline for idle controls (normal-border), as on the
+    // banner's own buttons and reply field.
+    border.width: Math.max(1, Style.normalBorderWidth)
+    border.color: Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
 
     Column {
       id: bannerColumn
@@ -480,7 +482,7 @@ Item {
             height: Style.space(34)
             color: "transparent"
             border.width: 1
-            border.color: Util.alpha(Commons.Color.notifications.text, 0.2)
+            border.color: Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
             scale: actionArea.pressed ? 0.96 : 1
             Text {
               anchors.centerIn: parent
@@ -513,7 +515,7 @@ Item {
           height: Style.space(34)
           color: Util.alpha(Commons.Color.background, 0.7)
           border.width: 1
-          border.color: replyInput.activeFocus && card.scene && card.scene.replying ? Commons.Color.accent : Util.alpha(Commons.Color.notifications.text, 0.2)
+          border.color: replyInput.activeFocus && card.scene && card.scene.replying ? Commons.Color.accent : Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
           TextInput {
             id: replyInput
             anchors.fill: parent
