@@ -1,4 +1,4 @@
-"""The package's layout (desktop/install-tree): the greeter, the Omarchy tree, the user's defaults."""
+"""The package's layout (desktop/install-tree): the login, the Omarchy tree, the user's defaults."""
 import os
 from pathlib import Path
 import shutil
@@ -12,7 +12,7 @@ HERE = PROJECT / 'desktop'
 
 
 @unittest.skipUnless(shutil.which('bash'), 'bash runs desktop/install-tree')
-class GreeterStagingTests(unittest.TestCase):
+class PackageStagingTests(unittest.TestCase):
     def test_modes_whatever_the_umask(self):
         target = tree()
         skel = target / 'etc/skel'
@@ -31,7 +31,7 @@ class GreeterStagingTests(unittest.TestCase):
         # greetd owns its config: the package's goes there through its etc-overrides.
         overrides = omarchy / 'etc-overrides'
         self.assertFalse((target / 'etc/greetd').exists())
-        self.assertEqual((overrides / 'etc/greetd/config.toml').read_bytes(), (HERE / 'greeter/greetd.toml').read_bytes())
+        self.assertEqual((overrides / 'etc/greetd/config.toml').read_bytes(), (HERE / 'login/greetd.toml').read_bytes())
         self.assertEqual((overrides / 'etc/skel/.bashrc').read_bytes(), (HERE / 'configuration/bashrc').read_bytes())
         self.assertEqual(mode(target / 'usr/libexec/arch-ipad-login-session'), 0o755)
         menu = (omarchy / 'default/omarchy/omarchy-menu.jsonc').read_text()
@@ -45,16 +45,11 @@ class GreeterStagingTests(unittest.TestCase):
                         'omarchy-migrate', 'omarchy-launch-floating-terminal-with-presentation'):
             self.assertEqual(os.readlink(target / 'usr/bin' / command), '/usr/share/omarchy/bin/' + command)
             self.assertTrue(mode(omarchy / 'bin' / command) & 0o111, command)
-        greeter = target / 'usr/share/omarchy-greeter'
-        self.assertEqual((greeter / 'plugins/lock/LockView.qml').read_bytes(),
-                         (HERE / 'shell/shell/plugins/lock/LockView.qml').read_bytes())
-        self.assertTrue((greeter / 'Commons/Color.qml').is_file())
-        # Upstream's Jade Horse is the default theme and the greeter's fallback.
+        # No login screen of its own: the session's lock is the PIN screen.
+        self.assertFalse((target / 'usr/share/omarchy-greeter').exists())
+        # Upstream's Jade Horse is the default theme.
         themes = omarchy / 'themes'
-        jade = themes / 'jade-horse'
-        self.assertEqual((greeter / 'default-theme/background').read_bytes(),
-                         (jade / 'backgrounds/01-mountain-horses.webp').read_bytes())
-        self.assertEqual((greeter / 'default-theme/colors.toml').read_bytes(), (jade / 'colors.toml').read_bytes())
+        self.assertTrue((themes / 'jade-horse/colors.toml').is_file())
         self.assertTrue((themes / 'tokyo-night/colors.toml').is_file())
         # Upstream's app icon sets, drawn in the theme's colors at login and on every switch.
         self.assertTrue((omarchy / 'icons/papercraft/folio.svg.tpl').is_file())
@@ -66,13 +61,19 @@ class GreeterStagingTests(unittest.TestCase):
         first_theme = (target / 'usr/libexec/arch-ipad-first-theme').read_text()
         self.assertIn('themes/jade-horse', first_theme)
         self.assertIn("'jade-horse' >", first_theme)
-        self.assertIn('tablet tablet', (target / 'usr/lib/tmpfiles.d/omarchy-greeter-theme.conf').read_text())
-        self.assertTrue((omarchy / 'bin/omarchy-greeter-theme-publish').is_file())
-        # Boot login is the PIN greeter on VT1, not a tty1 autologin.
+        self.assertFalse((omarchy / 'bin/omarchy-greeter-theme-publish').exists())
+        # Boot logs the tablet in through greetd on VT1, without a prompt and
+        # once (its initial session), not a tty1 autologin; the session starts
+        # locked. greetd's default session only says the session is not running.
         greetd = (overrides / 'etc/greetd/config.toml').read_text()
         self.assertIn('vt = 1', greetd)
-        self.assertIn('command = "/usr/libexec/omarchy-greeter-session"', greetd)
-        self.assertTrue(mode(target / 'usr/libexec/omarchy-greeter-session') & 0o111)
+        initial = greetd[greetd.index('[initial_session]'):greetd.index('[default_session]')]
+        self.assertIn('command = "/usr/libexec/arch-ipad-login-session"', initial)
+        self.assertIn('user = "tablet"', initial)
+        self.assertIn('command = "/usr/libexec/omarchy-session-failed"', greetd[greetd.index('[default_session]'):])
+        self.assertTrue(mode(target / 'usr/libexec/omarchy-session-failed') & 0o111)
+        session = (target / 'usr/libexec/arch-ipad-login-session').read_text()
+        self.assertIn('export OMARCHY_START_LOCKED=1', session)
         self.assertTrue((target / 'etc/systemd/system/greetd.service.d/seatd.conf').is_file())
         self.assertFalse((target / 'etc/systemd/system/getty@tty1.service.d').exists())
         self.assertFalse((skel / '.bash_profile').exists())

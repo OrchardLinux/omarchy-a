@@ -1,0 +1,6 @@
+#!/bin/sh
+# greetd's default session: it runs only when the tablet's session is not
+# running (it refused to start, or its desktop kept ending at once). There is
+# no login screen to show instead; serial and SSH still log in.
+logger -t omarchy-session 'The tablet session is not running; see journalctl -b -t omarchy-session -t greetd. Serial and SSH are available.'
+exec sleep infinity

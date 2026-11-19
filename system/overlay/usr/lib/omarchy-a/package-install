@@ -32,7 +32,9 @@ post_install() {
 }
 
 post_upgrade() {
-  :
+  # The login screen is gone (the session starts locked): its copies of the
+  # theme, which the tablet user published for it, have no reader any more.
+  rm -rf -- /var/lib/omarchy-greeter-theme
 }
 
 case "${1:-}" in

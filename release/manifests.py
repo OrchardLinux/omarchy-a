@@ -45,10 +45,10 @@ def write(output, version, root, offered, orchard, *, architecture='aarch64'):
                 'boot_method = ' + json.dumps(boot_method) + '\nmin_orchard = "0.2.0"\nprotocol = 1\n')
     document += table('orchard', orchard)
     # The tablet user gets the password and the lock-screen PIN at install. The
-    # installer waits over this boot's SSH for the greeter's ready record: the
-    # PIN screen is on.
+    # installer waits over this boot's SSH for the session's ready record: its
+    # lock, the PIN screen, is on.
     document += table('install', {'default_root': '/omarchy',
-                                  'ready': '/run/omarchy-greeter/ready.json'})
+                                  'ready': '/run/omarchy-session/ready.json'})
     document += table('install.account', {'user': 'tablet', 'password': True, 'pin': True,
                                           'passwordless_sudo': False})
     document += table('root', {key: value for key, value in root.items() if key != 'map'})

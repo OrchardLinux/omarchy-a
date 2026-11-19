@@ -48,7 +48,6 @@ colors_payload=$(base64 -w0 "$state/theme/colors.toml")
 shell_payload=$(base64 -w0 "$state/theme/shell.toml")
 omarchy-shell -q shell applyTheme "$colors_payload" "$shell_payload"
 omarchy-shell -q background set "$state/theme/backgrounds/$selected"
-if command -v omarchy-greeter-theme-publish >/dev/null; then omarchy-greeter-theme-publish || true; fi
 kill -HUP "$(pgrep -x labwc | head -n1)"
 omarchy-theme-set-foot || true
 # Upstream's icon set, drawn in the new colors after the switch so it never holds it up.

@@ -51,7 +51,7 @@ class Publication(unittest.TestCase):
             self.assertNotIn('boards', doc['platforms']['apple-4k']['layer'])
             self.assertNotIn('boot', doc['platforms']['apple-4k'])
             self.assertEqual(doc['orchard'], ORCHARD)
-            self.assertEqual(doc['install'], {'default_root': '/omarchy', 'ready': '/run/omarchy-greeter/ready.json', 'account': {
+            self.assertEqual(doc['install'], {'default_root': '/omarchy', 'ready': '/run/omarchy-session/ready.json', 'account': {
                 'user': 'tablet', 'password': True, 'pin': True, 'passwordless_sudo': False}})
             self.assertEqual(doc['root']['sha256'], hashlib.sha256(b'root.blocks.zst').hexdigest())
             self.assertEqual(doc['min_orchard'], '0.2.0')

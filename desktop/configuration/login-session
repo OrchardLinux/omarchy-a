@@ -1,5 +1,6 @@
 #!/bin/bash
-# Started by greetd on VT1 once PAM accepted the PIN, never from SSH.
+# Started by greetd on VT1 at boot, without a prompt (its initial session),
+# never from SSH. The session starts locked: the PIN is the lock's.
 set -euo pipefail
 [[ ${XDG_VTNR:-} == 1 && ${USER:-} == tablet && -z ${SSH_CONNECTION:-} ]] || exit 1
 [[ -n ${XDG_SESSION_ID:-} && -d ${XDG_RUNTIME_DIR:-/nonexistent} && -O $XDG_RUNTIME_DIR ]] || {
@@ -11,8 +12,6 @@ set -euo pipefail
   exit 1
 }
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-# The user session must read its live theme, not the greeter's snapshot.
-unset OMARCHY_GREETER_THEME_DIR
 export OMARCHY_PATH=/usr/share/omarchy
 export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=labwc
 export WLR_RENDERER=pixman QT_QUICK_BACKEND=software QT_QPA_PLATFORM=wayland
@@ -108,4 +107,21 @@ omarchy-toggle-maximize-windows --apply || true
 session_config=$XDG_RUNTIME_DIR/omarchy-xdg-config
 /usr/libexec/arch-ipad-touch-output "$session_config/labwc/rc.xml" || true
 export XDG_CONFIG_DIRS="$HOME/.local/state/omarchy/xdg-config:$session_config:${XDG_CONFIG_DIRS:-/etc/xdg}"
-exec /usr/bin/labwc -m
+# The shell takes the lock before the desktop is seen: Labwc's startup cover
+# lifts only once the lock is drawn (plugins/lock/Service.qml).
+export OMARCHY_START_LOCKED=1
+# A logout ends Labwc; so does a crash. Either way the desktop starts again
+# here, behind the lock: there is no login screen to go back to. A desktop that
+# ends within 10 s three times in a row (a second apart) is not restarted: greetd then runs
+# omarchy-session-failed, and serial and SSH are there.
+quick=0
+while :; do
+  started=$SECONDS
+  /usr/bin/labwc -m || true
+  if (( SECONDS - started < 10 )); then
+    (( ++quick < 3 )) || { logger -t omarchy-session 'The desktop ended at once three times; not restarting it'; exit 1; }
+    sleep 1
+  else
+    quick=0
+  fi
+done

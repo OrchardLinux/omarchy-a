@@ -74,8 +74,8 @@ class MenuShutdownTests(unittest.TestCase):
             self.assertTrue(os.access(BIN / name, os.X_OK), name)
 
     def test_logout_shows_osd_closes_windows_then_ends_the_compositor(self):
-        # login-session execs labwc, so its exit ends the session and greetd
-        # brings the greeter back. Upstream's uwsm stop has no session here.
+        # login-session starts labwc again when it exits, behind the lock.
+        # Upstream's uwsm stop has no session here.
         result, calls = self.run_action(menu_action('logout'))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--setenv=LABWC_PID', calls[0])

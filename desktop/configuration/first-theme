@@ -41,7 +41,6 @@ if [[ ! -e "$state/icons.revision" ]]; then
 fi
 # Apply the same GTK light/dark and icon settings as upstream Omarchy.
 omarchy-theme-set-gnome || echo 'Warning: could not update GTK theme settings' >&2
-if command -v omarchy-greeter-theme-publish >/dev/null; then omarchy-greeter-theme-publish || true; fi
 # This only registers the user hook and queues local theme state; it does not
 # copy or reuse the VM's Firefox profile. Package installation is a separate step.
 if command -v omafox >/dev/null; then

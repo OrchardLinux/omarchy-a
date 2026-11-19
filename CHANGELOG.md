@@ -24,6 +24,9 @@ is missing or empty.
   in red without anything moving.
 - The Home button responds to every press: it no longer depends on what the
   keyboard is doing.
+- No more separate login screen: the tablet boots straight to the lock, the
+  same screen as after Power, and the desktop is ready the moment you enter
+  the PIN. Logout starts a fresh desktop behind the lock.
 
 ## [0.3.2] - 2026-11-19
 

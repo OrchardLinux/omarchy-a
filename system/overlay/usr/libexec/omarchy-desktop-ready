@@ -1,28 +1,29 @@
 #!/usr/bin/python3
-"""Called by the greeter's and the tablet session's shells once they are up: record readiness.
+"""Called by the tablet session's shell: record readiness.
 
-The greeter's record (/run/omarchy-greeter/ready.json) is what the installer
-waits for: the PIN screen is on. The tablet session keeps its own record in
-its runtime directory.
+Without an argument, once the shell is up: the desktop's own record in the
+session's runtime directory. With `pin-screen`, once the lock the session
+starts with is on screen: /run/omarchy-session/ready.json, which the installer
+waits for (the release manifest names it).
 """
 import json
 import os
 from pathlib import Path
 import pwd
+import sys
 
-user = pwd.getpwuid(os.getuid()).pw_name
-if user == 'greeter':
-    target = Path('/run/omarchy-greeter')
-elif user == 'tablet':
-    target = Path(os.environ['XDG_RUNTIME_DIR'])
-else:
-    raise SystemExit('Readiness comes from the greeter or the tablet session')
+if pwd.getpwuid(os.getuid()).pw_name != 'tablet':
+    raise SystemExit('Readiness comes from the tablet session')
+pin_screen = sys.argv[1:] == ['pin-screen']
+if sys.argv[1:] and not pin_screen:
+    raise SystemExit('Usage: omarchy-desktop-ready [pin-screen]')
+target = Path('/run/omarchy-session') if pin_screen else Path(os.environ['XDG_RUNTIME_DIR'])
 socket = Path(os.environ['XDG_RUNTIME_DIR']) / os.environ['WAYLAND_DISPLAY']
 if not socket.is_socket() or target.stat().st_uid != os.getuid():
     raise SystemExit('No owned Wayland session')
 record = {'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
           'shell_pid': os.getppid(), 'wayland_socket': str(socket)}
-name = 'ready.json' if user == 'greeter' else 'omarchy-desktop-ready.json'
+name = 'ready.json' if pin_screen else 'omarchy-desktop-ready.json'
 temporary = target / (name + '.pending')
 temporary.write_text(json.dumps(record))
 temporary.chmod(0o644)

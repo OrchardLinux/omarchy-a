@@ -1,0 +1,22 @@
+# No login screen: at boot greetd starts the tablet's session without a prompt,
+# and the session starts locked. The PIN is the lock's (/etc/pam.d/
+# omarchy-lock-password, written by the installer); a logout starts the desktop
+# again behind the lock, inside this same session (arch-ipad-login-session).
+[terminal]
+vt = 1
+
+# The sessions' PAM service: no password step, the tablet user only, the usual
+# account and session rules. greetd 0.10 takes the initial session's service
+# from here, not from that section.
+[general]
+service = "greetd-autologin"
+
+[initial_session]
+command = "/usr/libexec/arch-ipad-login-session"
+user = "tablet"
+
+# greetd runs this only when no session runs: the tablet's never came up or
+# gave up. It says so in the journal; serial and SSH are there as always.
+[default_session]
+command = "/usr/libexec/omarchy-session-failed"
+user = "greeter"

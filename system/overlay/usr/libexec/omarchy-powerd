@@ -1015,7 +1015,7 @@ class Daemon:
         Path(SOCKET).unlink(missing_ok=True)
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(SOCKET)
-        os.chown(SOCKET, 0, grp.getgrnam('video').gr_gid)  # the tablet user and the greeter
+        os.chown(SOCKET, 0, grp.getgrnam('video').gr_gid)  # the tablet user's session
         os.chmod(SOCKET, 0o660)
         server.listen(8)
         return server

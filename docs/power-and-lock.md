@@ -29,9 +29,24 @@ orchard `docs/bring-up/suspend.md`); this model decides when.
 9. Being plugged in lights the screen, as on any tablet, asleep or awake. Being
    unplugged wakes the kernel (orchard) but stays dark and sleeps again.
 
+## Login: the session starts locked
+
+There is no login screen. At boot greetd starts the tablet's session without a
+prompt (its `initial_session`), and the session starts locked: the shell takes
+the lock as soon as its PIN check (`/etc/pam.d/omarchy-lock-password`) is
+known, and Labwc's startup cover lifts only once the lock is drawn, so nothing
+of the desktop is seen before the PIN. Without a PIN check the lock cannot be
+taken and the cover stays. The lock's drawn first frame is also the installer's
+"ready" (`/run/omarchy-session/ready.json`).
+
+Logout ends Labwc, and `arch-ipad-login-session` starts it again behind the
+lock, in the same login session; so does a crash. A desktop that ends within
+10 s three times in a row is not restarted: greetd's default session
+(`omarchy-session-failed`) says so in the journal, and serial and SSH are there.
+
 ## One owner
 
-A system service, because it serves the greeter and the desktop alike, and
+A system service, because it serves the session from its first frame on, and
 because system services thaw with the kernel while `user.slice` stays frozen a
 little longer. No user-space code runs before the kernel's device resume
 finishes, so that time is the floor for press to lit: a driver that blocks its
@@ -60,7 +75,8 @@ measured as 3.36 s); the key timestamps can. It:
   brightness if nothing is remembered, never below 5%). `systemd-backlight` is
   disabled: it would save the dark 0 and start every later boot at its minimum;
 - asks the session's shell to lock (as the session's user: `omarchy-shell lock
-  lock`, then `status` until `secure`). The greeter has nothing to lock;
+  lock`, then `status` until `secure`). No session (or greetd's fallback)
+  has nothing to lock;
 - requests sleep through logind, and holds a logind delay inhibitor so that a
   suspend from anywhere else comes through here first (`PrepareForSleep`);
 - takes the session's inputs over `/run/omarchy-powerd.sock` (group `video`):
@@ -196,7 +212,6 @@ instant, and sleep only follows 10 s after the last one left it dark.
 | Settle (lock requested → sleep) | 10 s | After Power immediately, or after the idle grace expires |
 | Desktop idle → dark | 5 min | the shell's `idle.lock` |
 | Lock screen idle → dark | 30 s | the lock's blank timer, sent as `idle` |
-| Greeter idle → dark | 30 s | `IdleMonitor` in the greeter's `shell.qml` |
 | Playback check | 1 s, only while dark | `SETTLING` is longer, so it is seen first |
 | Suspend never began | 30 s awake | time the loop ran: a gap between two turns counts at most 1 s; once logind or the kernel began the sleep, only its end ends it (last resort: 120 s awake) |
 | Retry of a refused sleep | 60 s | `RETRY_SECONDS`; not when `CanSuspend` says the board cannot sleep |

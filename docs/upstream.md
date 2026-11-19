@@ -9,7 +9,7 @@ means moving both pins together.
 ## What comes from upstream, and how
 
 - **At build time, unchanged:** `themes/` (Jade Horse is the tablet's first
-  theme and the greeter's fallback), `icons/` (the app icon sets) and
+  theme), `icons/` (the app icon sets) and
   `applications/foot.desktop`, taken from the pinned tarball by
   `desktop/install-tree`. Our own drawings in `desktop/icons/` join upstream's sets
   (Firefox, which they do not draw), and Omactivity takes upstream's Activity
@@ -66,8 +66,10 @@ field for the on-screen keyboard, and no version under the selected app; the
 shell itself opens the launcher instead), the menu's bar logo (opens the
 launcher), the image picker (fits a phone's width), `Commons/Color.qml` (cyan, blue and yellow from the theme, `lock.scrim`), network rows (long press for Forget and
 Change passphrase), Bluetooth pairing feedback, the background (no Hyprland
-boot cover or theme intro videos, software decode at panel size), the greeter's data-only theme
-snapshot (`Commons/Color.qml`) and wallpaper readiness (`LockView.qml`),
+boot cover or theme intro videos, software decode at panel size, no startup
+signal of its own when the session starts locked), the lock (taken at session
+start, lifting Labwc's startup cover; `plugins/lock/Service.qml`), wallpaper
+readiness (`LockView.qml`),
 `Style.qml` (a larger bar target), `config/omarchy/shell.json` (the tablet's bar
 and the plugins it turns off).
 
@@ -87,8 +89,7 @@ and window buttons (`labwc-*`, `render-labwc-*.py`), the on-screen keyboard
 (`bin/omarchy-keyboard`, `shell/plugins/keyboard/`), the bar's Overflow widget,
 the screen flash, the Home button and overview, rotation lock, auto-brightness,
 volume keys, the background picker process, Bluetooth pairing window,
-`uwsm-app` (apps in their own systemd scope), KDE colours, greeter theme
-publishing, fastfetch/starship/foot/fontconfig defaults, the pinned Tokyo Night
+`uwsm-app` (apps in their own systemd scope), KDE colours, fastfetch/starship/foot/fontconfig defaults, the pinned Tokyo Night
 palette in `theme/` and our migrations.
 
 ## Moving the pin

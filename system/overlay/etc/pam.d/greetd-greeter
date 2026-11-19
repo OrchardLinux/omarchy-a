@@ -1,6 +1,7 @@
 #%PAM-1.0
-# The greeter itself (user greeter) needs no password; the PIN is checked in
-# /etc/pam.d/greetd, which the installer writes.
+# greetd's default session (user greeter, omarchy-session-failed) needs no
+# password. The tablet's session starts without a prompt through
+# /etc/pam.d/greetd, which the installer writes; its PIN is the lock's.
 auth     required pam_permit.so
 account  include  system-local-login
 session  include  system-local-login

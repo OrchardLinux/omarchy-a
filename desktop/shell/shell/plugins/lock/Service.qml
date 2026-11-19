@@ -23,6 +23,15 @@ Item {
   property bool authenticatingPassword: false
   property bool fingerprintAuthenticating: false
   property bool passwordPamConfigured: false
+  // Orchard: greetd logs the tablet in without a prompt and the session starts
+  // locked (arch-ipad-login-session sets OMARCHY_START_LOCKED). The lock is
+  // taken as soon as its PIN check is known; Labwc's startup cover lifts only
+  // once the lock is drawn, so nothing of the desktop is seen before the PIN.
+  // Without a PIN check the lock cannot be taken and the cover stays: closed,
+  // never open.
+  readonly property bool startLocked: Quickshell.env("OMARCHY_START_LOCKED") === "1"
+  property bool startLockTaken: false
+  property bool startupLifted: false
   property bool fingerprintConfigured: false
   property int fingerprintUnreachedStreak: 0
   property bool fingerprintAttemptReachedDevice: false
@@ -533,6 +542,16 @@ Item {
         onWakeRequested: root.runInputWake()
       }
 
+      // At session start: the lock is secure and its wallpaper drawn; a few
+      // frames on, the startup cover lifts onto it.
+      property int shownFrames: 0
+      FrameAnimation {
+        running: root.startLocked && !root.startupLifted && sessionLock.secure && lockView.backgroundDrawn
+        onTriggered: {
+          lockSurface.shownFrames += 1
+          if (lockSurface.shownFrames >= 3) root.liftStartup()
+        }
+      }
     }
   }
 
@@ -879,6 +898,7 @@ Item {
   // the failsafe can be cleared from a TTY -- so re-ask rather than act on it.
   onPasswordPamConfiguredChanged: {
     if (!passwordPamConfigured) return
+    takeStartLock()
 
     strandedLock = false
     strandedLockResolved = false
@@ -886,11 +906,35 @@ Item {
     checkStrandedLock()
   }
 
+  function takeStartLock() {
+    if (!startLocked || startLockTaken || !passwordPamConfigured) return
+    startLockTaken = beginLock()
+    if (startLockTaken) logEvent("start-locked")
+  }
+
+  // The lock is on screen: lift Labwc's startup cover, and record for the
+  // installer that the PIN screen is on (omarchy-desktop-ready pin-screen).
+  function liftStartup() {
+    if (startupLifted) return
+    startupLifted = true
+    var file = Quickshell.env("LABWC_STARTUP_READY") || ""
+    if (file !== "") Quickshell.execDetached(["touch", file])
+    pinScreenReadiness.running = true
+    logEvent("start-lock-shown")
+  }
+
+  // A child of the shell, so the record names the shell's process.
+  Process {
+    id: pinScreenReadiness
+    command: ["/usr/libexec/omarchy-desktop-ready", "pin-screen"]
+  }
+
   Component.onCompleted: {
     knownScreenCount = realScreenCount()
     refreshBackground()
     refreshFingerprintStatus()
     checkStrandedLock()
+    takeStartLock()
   }
 
   ShellIpc {

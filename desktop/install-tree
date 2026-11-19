@@ -6,8 +6,8 @@
 # BUILD holds the compiled keyboard and cursor helper (`make`), OMARCHY the
 # pinned upstream Omarchy (desktop/upstream.lock), DBUS_NEXT the unpacked
 # dbus-next wheel. The layout is upstream Omarchy's package's: the Omarchy
-# tree in /usr/share/omarchy (OMARCHY_PATH) with its commands in /usr/bin, the
-# greeter in /usr/share/omarchy-greeter, helpers in /usr/libexec, the tablet
+# tree in /usr/share/omarchy (OMARCHY_PATH) with its commands in /usr/bin,
+# helpers in /usr/libexec, the tablet
 # user's defaults in /etc/skel (and /usr/share/omarchy/config, where
 # omarchy-refresh-config copies them from), system/overlay where it says.
 # Files another package owns go to /usr/share/omarchy/etc-overrides; the
@@ -41,20 +41,8 @@ mkdir -p "$omarchy"
 cp -R "$shell/." "$omarchy/"
 find "$omarchy" \( -name __pycache__ -o -name '*.pyc' \) -prune -exec rm -rf {} +
 
-# The greeter, system-owned: never read from the user's home directory, with the
-# shell's shared UI code.
-greeter=$root/usr/share/omarchy-greeter
-mkdir -p "$greeter"
-cp -R "$here/greeter/." "$greeter/"
-cp -R "$shell/shell/Commons" "$shell/shell/Ui" "$greeter/"
-for name in LockView.qml; do
-  put "$shell/shell/plugins/lock/$name" "$greeter/plugins/lock/$name"
-done
-chmod 755 "$greeter/labwc/autostart"
-put "$here/greeter/greeter-session" "$root/usr/libexec/omarchy-greeter-session" 755
-
 # Upstream's themes at the pin. Jade Horse, upstream's default, is the tablet's
-# first theme and the greeter's fallback.
+# first theme.
 cp -RP "$upstream/themes" "$omarchy/themes"
 # Upstream's app icon sets (Papercraft, the default; Arcade; Original).
 cp -RP "$upstream/icons" "$omarchy/icons"
@@ -66,15 +54,6 @@ cp -R "$here/icons/." "$omarchy/icons/"
 for set in "$omarchy"/icons/*/; do
   if [[ -f $set/btop.svg.tpl && ! -e $set/omactivity.svg.tpl ]]; then ln -s btop.svg.tpl "$set/omactivity.svg.tpl"; fi
 done
-theme=$omarchy/themes/jade-horse
-put "$theme/colors.toml" "$greeter/default-theme/colors.toml"
-[[ ! -f $theme/shell.toml ]] || put "$theme/shell.toml" "$greeter/default-theme/shell.toml"
-background=$(find "$theme/backgrounds" -maxdepth 1 -type f \
-  \( -iname '*.webp' -o -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | LC_ALL=C sort | head -n 1)
-[[ -n $background ]] || { echo 'The default theme has no image background' >&2; exit 1; }
-put "$background" "$greeter/default-theme/background"
-mkdir -p "$root/usr/lib/tmpfiles.d"
-printf 'd /var/lib/omarchy-greeter-theme 0755 tablet tablet -\n' > "$root/usr/lib/tmpfiles.d/omarchy-greeter-theme.conf"
 
 # The keyboard and the startup cursor helper.
 put "$build/wvkbd-mobintl" "$omarchy/trials/wvkbd-mobintl-v0.20-font18-special15-state" 755
@@ -127,7 +106,7 @@ done
 # Files another package owns (bash's /etc/skel/.bashrc, greetd's config).
 overrides=$omarchy/etc-overrides
 put "$config/bashrc" "$overrides/etc/skel/.bashrc"
-put "$here/greeter/greetd.toml" "$overrides/etc/greetd/config.toml"
+put "$here/login/greetd.toml" "$overrides/etc/greetd/config.toml"
 
 # The session's helpers and system files.
 while read -r source name mode; do
@@ -139,7 +118,8 @@ $config/auto-brightness usr/libexec/arch-ipad-auto-brightness 755
 $config/rotate-output usr/libexec/arch-ipad-rotate-output 755
 $config/touch-output usr/libexec/arch-ipad-touch-output 755
 $config/login-session usr/libexec/arch-ipad-login-session 755
-$here/greeter/greetd-seatd.conf etc/systemd/system/greetd.service.d/seatd.conf 644
+$here/login/greetd-seatd.conf etc/systemd/system/greetd.service.d/seatd.conf 644
+$here/login/session-failed usr/libexec/omarchy-session-failed 755
 $config/networkmanager.rules etc/polkit-1/rules.d/40-arch-ipad-networkmanager.rules 644
 $config/firefox-policies.json usr/lib/firefox/distribution/policies.json 644
 $config/firefox-autoconfig.js usr/lib/firefox/defaults/pref/omarchy-a.js 644

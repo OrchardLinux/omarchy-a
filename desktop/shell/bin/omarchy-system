@@ -18,7 +18,7 @@ fi
 
 action=${1:-}
 case $action in
-  # Labwc port: login-session execs labwc, and greetd starts the greeter when it exits.
+  # Labwc port: login-session starts Labwc again when it exits, behind the lock.
   logout) command=(labwc --exit) ;;
   reboot) command=(systemctl reboot --no-wall) ;;
   firmware) command=(systemctl reboot --firmware-setup --no-wall) ;;
@@ -61,8 +61,15 @@ exit_session() {
   fi
 
   # Only show the OSD once the exit has taken 2 seconds, so a quick one doesn't flash it.
-  { sleep 2; omarchy-osd -i "${action/firmware/reboot}" -m "$message" -d 0; } &
-  local osd_pid=$!
+  # Orchard: a logout says so at once, until the desktop is gone; it is the
+  # only sign of it before the next desktop shows the lock.
+  local osd_pid=""
+  if [[ $action == "logout" ]]; then
+    omarchy-osd -i logout -m "$message" -d 0 || true
+  else
+    { sleep 2; omarchy-osd -i "${action/firmware/reboot}" -m "$message" -d 0; } &
+    osd_pid=$!
+  fi
 
   if [[ $action != "logout" ]]; then
     omarchy-state clear re*-required
@@ -71,11 +78,17 @@ exit_session() {
   # Proceed as soon as apps exit, with a bound for unresponsive windows.
   timeout 2s omarchy-hyprland-window-close-all --wait
   if "${command[@]}"; then
+    # Orchard: a logout ends only the desktop; arch-ipad-login-session starts
+    # the next one behind the lock in the same login session. Its OSD went
+    # with the old desktop; nothing is left to wait for.
+    if [[ $action == "logout" ]]; then
+      return 0
+    fi
     # The unit kills the delayed OSD when this script exits, so stay until the session goes down.
     wait "$osd_pid"
   else
     local status=$?
-    kill "$osd_pid" 2>/dev/null
+    [[ -z $osd_pid ]] || kill "$osd_pid" 2>/dev/null
     omarchy-shell -q osd close
     return "$status"
   fi
