@@ -391,7 +391,7 @@ Panel {
   }
 
   ShellIpc {
-    target: "omarchy.monitor"
+    target: root.hosted ? "" : "omarchy.monitor"
 
     function brightness(percent: string): string { return root.brightnessIpc(percent) }
     function state(): string { return root.stateIpc() }
@@ -888,12 +888,15 @@ Panel {
     }
   }
 
+  // The content, for a host that shows it as a page (the control center).
+  readonly property Component pageContent: panel.content
+
   KeyboardPanel {
     id: panel
     anchorItem: button
     owner: root
     bar: root.bar
-    open: root.opened
+    open: root.popupOpen
     focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
     contentHeight: panel.fittedContentHeight(panel.loadedContentHeight, Style.space(860))
@@ -1140,11 +1143,15 @@ Panel {
           }
 
           // ---------- Orchard: rotation lock and Stay Awake ----------
+          // Not on the control center's page: there they are toggles of
+          // their own on the main view.
           PanelSeparator {
+            visible: !root.hosted
             foreground: root.bar.foreground
           }
 
           Toggle {
+            visible: !root.hosted
             width: parent.width
             label: "Rotation lock"
             description: root.rotationLocked ? "Keep the current orientation" : "Turn the display with the iPad"
@@ -1159,6 +1166,7 @@ Panel {
           }
 
           Toggle {
+            visible: !root.hosted
             width: parent.width
             label: Commons.I18n.t("bar.stayAwake")
             description: root.stayAwake ? "The screen stays on; no automatic lock or sleep"

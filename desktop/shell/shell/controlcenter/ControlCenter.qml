@@ -12,6 +12,7 @@ import "../plugins/panels/bluetooth" as BluetoothStatus
 import "../plugins/panels/power" as Power
 import "../plugins/panels/bluetooth/Model.js" as BluetoothModel
 import "../plugins/status" as StatusParts
+import "../plugins/panels/monitor" as Monitor
 
 // The control center (SHELL-SPEC, step 2): the main view. States you flip
 // and the two sliders, over the same status objects the bar and the lock
@@ -88,10 +89,92 @@ Item {
   function run(argv) { Quickshell.execDetached(argv) }
   function omarchy(name) { return (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/bin/" + name }
 
-  // Until the pages exist: the bar's panel for that module.
+  // A module's page: its panel's content, pushed in from the right. A
+  // module without a page yet opens the bar's panel for it.
   function openPage(module) {
+    var panelForPage = root.modules[module]
+    if (panelForPage) { panelForPage.open(); return }
     root.close()
     run(["omarchy-shell", "shell", "toggle", module])
+  }
+
+  // ------------------------------------------------------------ pages
+  // Each page is a panel of its own (not the bar's), hosted: pageHost stands
+  // in for the bar it would read its colours and font from, and opening or
+  // closing it shows or leaves the page.
+
+  QtObject {
+    id: pageHost
+    readonly property color foreground: root.text
+    readonly property color barForeground: root.text
+    readonly property color urgent: Commons.Color.urgent
+    readonly property string fontFamily: Style.font.family
+    readonly property var shell: root.shell
+    readonly property string position: "top"
+    readonly property bool vertical: false
+    readonly property int barSize: Style.bar.sizeHorizontal
+    // The rest of what a panel's own bar button and popup ask of a bar,
+    // inert here: hosted, neither is ever shown.
+    readonly property var activePopout: null
+    readonly property bool foregroundAnimationEnabled: false
+    readonly property int sizeHorizontal: Style.bar.sizeHorizontal
+    readonly property int iconFont: Style.font.icon
+    readonly property int iconSize: Style.font.icon
+    readonly property int iconSlot: Style.space(28)
+    readonly property bool iconCanvas: false
+    readonly property var clickTargets: []
+    function barSizeFor() { return Style.bar.sizeHorizontal }
+    function showTooltip() {}
+    function hideTooltip() {}
+    function requestPopout() { return false }
+    function releasePopout() {}
+    function notePopoutCard() {}
+    function popoutCardFor() { return null }
+    function targetBelongsToWindow() { return false }
+    function run(command) { Quickshell.execDetached(["sh", "-c", command]) }
+    function switchPanelFrom(panel, direction) { return false }
+    function showPage(panel) { root.showPage(panel) }
+    function leavePage(panel) { root.leavePage(panel) }
+  }
+
+  Item {
+    visible: false
+    Monitor.Panel { id: displayModule; host: pageHost; bar: pageHost; moduleName: "omarchy.monitor" }
+  }
+  readonly property var modules: ({ "omarchy.monitor": displayModule })
+  readonly property var pageTitles: ({ "omarchy.monitor": Commons.I18n.t("monitor.display") })
+
+  property var page: null
+  // 0 on the main view, 1 on the page; the push in between.
+  property real pageShift: 0
+  NumberAnimation {
+    id: pageSlide
+    target: root
+    property: "pageShift"
+    duration: Style.duration(300)
+    easing.type: Easing.OutCubic
+    onFinished: if (root.pageShift === 0) root.dropPage()
+  }
+
+  function showPage(panelForPage) {
+    if (!root.opened) root.open()
+    if (root.page && root.page !== panelForPage) root.page.hostShown = false
+    root.page = panelForPage
+    panelForPage.hostShown = true
+    pageSlide.to = 1
+    pageSlide.restart()
+    Qt.callLater(function() { if (pageLoader.item) pageLoader.item.forceActiveFocus() })
+  }
+  function leavePage(panelForPage) {
+    if (root.page !== panelForPage) return
+    pageSlide.to = 0
+    pageSlide.restart()
+    keyCatcher.forceActiveFocus()
+  }
+  function dropPage() {
+    if (root.page) root.page.hostShown = false
+    root.page = null
+    root.pageShift = 0
   }
 
   function toggleWifi() { Networking.wifiEnabled = !Networking.wifiEnabled }
@@ -299,7 +382,7 @@ Item {
         root.reveal = root.springTarget
         root.springVelocity = 0
         running = false
-        if (!root.opened) root.mapped = false
+        if (!root.opened) { root.mapped = false; root.dropPage() }
       }
     }
   }
@@ -316,6 +399,8 @@ Item {
     function toggle(): void { root.toggle() }
     function open(): void { if (!root.opened) root.open() }
     function close(): void { root.close() }
+    // Open at a module's page: omarchy.monitor, omarchy.network, …
+    function page(module: string): void { root.openPage(module) }
   }
 
   // ------------------------------------------------------------- window
@@ -354,7 +439,7 @@ Item {
       Keys.onPressed: function(event) {
         var cell = root.focusedCell()
         switch (event.key) {
-        case Qt.Key_Escape: root.close(); break
+        case Qt.Key_Escape: if (root.page) root.leavePage(root.page); else root.close(); break
         case Qt.Key_Tab: root.stepFocus(1); break
         case Qt.Key_Backtab: root.stepFocus(-1); break
         case Qt.Key_Up: root.moveFocus(0, -1); break
@@ -430,7 +515,11 @@ Item {
       x: root.phone ? 0 : parent.width - width - Style.gapsOut
       y: root.phone ? root.barInset : root.barInset + Style.gapsOut
       width: root.phone ? parent.width : root.cardWidth
-      height: root.phone ? parent.height - root.barInset : content.implicitHeight + root.pad * 2
+      // The main view's height, the page's, and the push between them.
+      readonly property real mainHeight: content.implicitHeight + root.pad * 2
+      readonly property real pageHeight: pageView.implicitHeight + root.pad * 2
+      height: root.phone ? parent.height - root.barInset : mainHeight + (pageHeight - mainHeight) * root.pageShift
+      clip: true
       color: root.phone ? "transparent" : Commons.Color.popups.background
       // The bar's popups' own border (KeyboardPanel): the theme's spec.
       borderSpec: root.phone ? Border.none()
@@ -461,7 +550,8 @@ Item {
 
       Column {
         id: content
-        x: root.pad
+        x: root.pad - root.pageShift * card.width
+        visible: root.pageShift < 1
         y: root.pad + (root.phone ? Style.space(12) : 0)
         width: parent.width - root.pad * 2
         spacing: root.gap
@@ -560,13 +650,64 @@ Item {
       }
 
       Item {
-        visible: root.phone
-        x: root.pad
+        visible: root.phone && root.pageShift < 1
+        x: root.pad - root.pageShift * card.width
         width: parent.width - root.pad * 2
         height: root.touchMin
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Style.space(24)
         FooterParts { anchors.fill: parent }
+      }
+
+      // The page: a header with the way back, then the panel's content.
+      Column {
+        id: pageView
+        visible: root.page !== null
+        x: root.pad + (1 - root.pageShift) * card.width
+        y: root.pad + (root.phone ? Style.space(12) : 0)
+        width: parent.width - root.pad * 2
+        spacing: root.gap
+
+        Item {
+          width: parent.width
+          height: root.touchMin
+          Row {
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(8)
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "󰁍"
+              color: root.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+            }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: root.page ? (root.pageTitles[root.page.moduleName] || "") : ""
+              color: root.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+              font.bold: true
+            }
+          }
+          MouseArea {
+            width: Math.max(root.touchMin, parent.width / 2)
+            height: parent.height
+            onClicked: if (root.page) root.leavePage(root.page)
+          }
+        }
+
+        Loader {
+          id: pageLoader
+          width: parent.width
+          active: root.page !== null
+          sourceComponent: root.page ? root.page.pageContent : null
+          // As tall as its content, within the screen; the content scrolls
+          // beyond that.
+          readonly property real room: root.screenHeight - card.y - root.pad * 2 - root.touchMin - root.gap - Style.gapsOut
+          height: item ? Math.min(item.implicitHeight, root.phone ? card.height - root.pad * 2 - root.touchMin - root.gap - Style.space(12) : room) : 0
+        }
       }
     }
   }
@@ -745,6 +886,8 @@ Item {
     property bool pageArrow: false
     signal moved(real value)
     signal longPressed()
+    // Left and right move it; Enter opens its page.
+    onActivated: slider.longPressed()
     function adjust(delta) { if (slider.available) slider.moved(Math.max(0, Math.min(1, slider.value + delta))) }
     color: Style.controlFill(false, false, root.text, Commons.Color.accent)
     clip: true
