@@ -154,11 +154,6 @@ Item {
     NetworkPanel.Panel { id: networkModule; host: pageHost; bar: pageHost; moduleName: "omarchy.network" }
   }
   readonly property var modules: ({ "omarchy.monitor": displayModule, "omarchy.network": networkModule })
-  readonly property var pageTitles: ({
-    "omarchy.monitor": Commons.I18n.t("monitor.display"),
-    // Wired when that is the connection in use, as the page then shows it.
-    "omarchy.network": network.kind === "ethernet" ? Commons.I18n.t("controlCenter.network") : Commons.I18n.t("controlCenter.wifi")
-  })
 
   property var page: null
   // 0 on the main view, 1 on the page; the push in between.
@@ -302,7 +297,15 @@ Item {
     root.focusIndex = -1
   }
 
+  // A bar panel's popup goes first: the control center is never over one.
+  function closePopout() {
+    var bar = root.shell ? root.shell.bar : null
+    var popout = bar ? bar.activePopout : null
+    if (popout && typeof popout.close === "function") popout.close()
+  }
+
   function open() {
+    root.closePopout()
     root.prepare()
     root.opened = true
     root.mapped = true
@@ -331,6 +334,7 @@ Item {
   function beginPull() {
     spring.running = false
     if (!root.opened) {
+      root.closePopout()
       root.prepare()
       root.reveal = 0
       root.mapped = true
@@ -672,7 +676,8 @@ Item {
         FooterParts { anchors.fill: parent }
       }
 
-      // The page: a header with the way back, then the panel's content.
+      // The page: the panel's content, whose own title row is the header (its
+      // icon turns into the way back when hosted).
       Column {
         id: pageView
         visible: root.page !== null
@@ -681,36 +686,6 @@ Item {
         width: parent.width - root.pad * 2
         spacing: root.gap
 
-        Item {
-          width: parent.width
-          height: root.touchMin
-          Row {
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(8)
-            Text {
-              anchors.verticalCenter: parent.verticalCenter
-              text: "󰁍"
-              color: root.text
-              font.family: Style.font.family
-              font.pixelSize: Style.font.title
-            }
-            Text {
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: root.page ? (root.pageTitles[root.page.moduleName] || "") : ""
-              color: root.text
-              font.family: Style.font.family
-              font.pixelSize: Style.font.title
-              font.bold: true
-            }
-          }
-          MouseArea {
-            width: Math.max(root.touchMin, parent.width / 2)
-            height: parent.height
-            onClicked: if (root.page) root.leavePage(root.page)
-          }
-        }
-
         Loader {
           id: pageLoader
           width: parent.width
@@ -718,7 +693,7 @@ Item {
           sourceComponent: root.page ? root.page.pageContent : null
           // As tall as its content, within the screen; the content scrolls
           // beyond that.
-          readonly property real header: root.touchMin + root.gap
+          readonly property real header: 0
           readonly property real room: root.screenHeight - card.y - root.pad * 2 - header - Style.gapsOut
           height: item ? Math.min(item.implicitHeight, root.phone ? card.height - root.pad * 2 - header - Style.space(12) : room) : 0
         }

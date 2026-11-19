@@ -941,12 +941,19 @@ Panel {
             Text {
               id: heroIcon
               textFormat: Text.PlainText
-              text: root.displayGlyph(root.current)
+              // Orchard: as a control center page, the way back.
+              text: root.hosted ? "󰁍" : root.displayGlyph(root.current)
               color: root.bar.foreground
               font.family: root.bar.fontFamily
               font.pixelSize: Style.font.display
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
+              MouseArea {
+                anchors.fill: parent
+                anchors.margins: -Style.space(10)
+                enabled: root.hosted
+                onClicked: root.close()
+              }
             }
 
             Column {

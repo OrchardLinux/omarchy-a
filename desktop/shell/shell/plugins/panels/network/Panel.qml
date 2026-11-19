@@ -1220,13 +1220,20 @@ Panel {
         Text {
           id: heroIcon
           textFormat: Text.PlainText
-          text: root.icon
-          color: root.restricted ? root.bar.urgent : root.bar.foreground
+          // Orchard: as a control center page, the way back.
+          text: root.hosted ? "󰁍" : root.icon
+          color: !root.hosted && root.restricted ? root.bar.urgent : root.bar.foreground
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.display
-          opacity: root.networkManagerAvailable ? 1.0 : 0.5
+          opacity: root.hosted || root.networkManagerAvailable ? 1.0 : 0.5
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
+          MouseArea {
+            anchors.fill: parent
+            anchors.margins: -Style.space(10)
+            enabled: root.hosted
+            onClicked: root.close()
+          }
         }
 
         // Sharing belongs to the connected-network hero rather than the scan
