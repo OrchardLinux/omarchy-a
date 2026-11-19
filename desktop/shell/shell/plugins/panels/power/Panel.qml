@@ -187,7 +187,7 @@ Panel {
   }
 
   ShellIpc {
-    target: "omarchy.power"
+    target: root.hosted ? "" : "omarchy.power"
 
     function open() { root.open() }
     function close() { root.close() }
@@ -305,12 +305,15 @@ Panel {
     }
   }
 
+  // The content, for a host that shows it as a page (the control center).
+  readonly property Component pageContent: panel.content
+
   KeyboardPanel {
     id: panel
     anchorItem: button
     owner: root
     bar: root.bar
-    open: root.opened && root.batteryPresent
+    open: root.popupOpen && root.batteryPresent
     focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
     contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
@@ -354,7 +357,8 @@ Panel {
             Text {
               id: heroIcon
               textFormat: Text.PlainText
-              text: root.batteryIcon()
+              // Orchard: as a control center page, the way back.
+              text: root.hosted ? "󰁍" : root.batteryIcon()
               color: root.bar.foreground
               font.family: root.bar.fontFamily
               font.pixelSize: Style.font.display
@@ -362,6 +366,16 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
 
               Behavior on color { ColorAnimation { duration: Style.duration(200) } }
+              // Pressed, it shrinks, as the control center's controls do.
+              scale: backPress.pressed ? 0.85 : 1
+              Behavior on scale { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
+              MouseArea {
+                id: backPress
+                anchors.fill: parent
+                anchors.margins: -Style.space(10)
+                enabled: root.hosted
+                onClicked: root.close()
+              }
             }
 
             Column {

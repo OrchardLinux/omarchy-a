@@ -14,6 +14,7 @@ import "../plugins/panels/bluetooth/Model.js" as BluetoothModel
 import "../plugins/status" as StatusParts
 import "../plugins/panels/monitor" as Monitor
 import "../plugins/panels/network" as NetworkPanel
+import "../plugins/panels/audio" as AudioPanel
 
 // The control center (SHELL-SPEC, step 2): the main view. States you flip
 // and the two sliders, over the same status objects the bar and the lock
@@ -152,8 +153,17 @@ Item {
     visible: false
     Monitor.Panel { id: displayModule; host: pageHost; bar: pageHost; moduleName: "omarchy.monitor" }
     NetworkPanel.Panel { id: networkModule; host: pageHost; bar: pageHost; moduleName: "omarchy.network" }
+    AudioPanel.Panel { id: audioModule; host: pageHost; bar: pageHost; moduleName: "omarchy.audio" }
+    BluetoothStatus.Panel { id: bluetoothModule; host: pageHost; bar: pageHost; moduleName: "omarchy.bluetooth" }
+    Power.Panel { id: powerModule; host: pageHost; bar: pageHost; moduleName: "omarchy.power" }
   }
-  readonly property var modules: ({ "omarchy.monitor": displayModule, "omarchy.network": networkModule })
+  readonly property var modules: ({
+    "omarchy.monitor": displayModule,
+    "omarchy.network": networkModule,
+    "omarchy.audio": audioModule,
+    "omarchy.bluetooth": bluetoothModule,
+    "omarchy.power": powerModule
+  })
 
   property var page: null
   // 0 on the main view, 1 on the page; the push in between.
