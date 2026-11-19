@@ -687,6 +687,14 @@ Item {
     else root.open()
   }
 
+  // A bar item's popup opening puts the launcher away.
+  Connections {
+    target: root.shell ? root.shell.bar : null
+    function onActivePopoutChanged() {
+      if (root.opened && root.shell.bar.activePopout) root.close()
+    }
+  }
+
   function rebuild() {
     root.appsStale = false
     var rows = root.appLibrary ? root.appLibrary.sortedEntries("") : []
@@ -986,12 +994,15 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       }
     }
 
-    // The bar's strip closes the launcher, as the bar's logo would.
-    MouseArea {
+    // The bar is not dimmed, so it stays the bar: its strip is outside
+    // the launcher's input, and a click there reaches the bar's own item (a
+    // popup it opens puts the launcher away, see below).
+    mask: Region { item: launcherInput }
+    Item {
+      id: launcherInput
+      y: root.barInset
       width: parent.width
-      height: root.barInset
-      acceptedButtons: Qt.LeftButton | Qt.RightButton
-      onClicked: root.close()
+      height: Math.max(0, parent.height - root.barInset)
     }
 
     // Anywhere else that nothing takes: put search away, never close.

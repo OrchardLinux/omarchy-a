@@ -320,6 +320,7 @@ Item {
   }
   function show() {
     root.closePopout()
+    if (root.shell && root.shell.launcher && root.shell.launcher.opened) root.shell.launcher.close()
     root.prepare()
     root.opened = true
     root.mapped = true
@@ -451,8 +452,8 @@ Item {
     }
   }
 
-  // Moving: the spring or a finger.
-  readonly property bool moving: spring.running || root.pulling
+  // Moving: the spring, a finger, or a popup's fade.
+  readonly property bool moving: spring.running || root.pulling || popupIn.running || popupOut.running
 
   // While open, a note for the Home button (omarchy-home-button closes it).
   readonly property string openNote: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omarchy-control-center-open"
