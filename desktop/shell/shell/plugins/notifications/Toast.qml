@@ -513,7 +513,7 @@ Item {
           height: Style.space(34)
           color: Util.alpha(Commons.Color.background, 0.7)
           border.width: 1
-          border.color: replyInput.activeFocus ? Commons.Color.accent : Util.alpha(Commons.Color.notifications.text, 0.2)
+          border.color: replyInput.activeFocus && card.scene && card.scene.replying ? Commons.Color.accent : Util.alpha(Commons.Color.notifications.text, 0.2)
           TextInput {
             id: replyInput
             anchors.fill: parent

@@ -117,6 +117,13 @@ Item {
     return bannerMode && narrowScreens ? room : Math.min(Style.space(380), room)
   }
 
+  // Orchard: a banner waits while the control center or the launcher covers
+  // the screen, its time paused, and shows once that closes.
+  readonly property bool shellCovered: bannerMode && !!shell
+    && ((shell.controlCenter && shell.controlCenter.opened) || (shell.launcher && shell.launcher.opened))
+  // A reply being typed lets the keyboard go meanwhile; its text stays.
+  onShellCoveredChanged: if (shellCovered) replying = false
+
   // A reply field has the keyboard from its tap until the reply is sent,
   // Escape, or the card goes (labwc does not hand an overlay the keyboard on
   // demand, so it is taken outright, as keyboard mode does). Its card does
@@ -1634,7 +1641,7 @@ Item {
       readonly property var margins: service.marginsFor(String(modelData.name))
       readonly property bool stepAside: service.fullscreenOn(String(modelData.name))
       readonly property bool hasSomethingToShow: showingNotifications && toasts.count > 0
-      visible: !stepAside || hasSomethingToShow
+      visible: (!stepAside || hasSomethingToShow) && !service.shellCovered
       color: "transparent"
 
       WlrLayershell.namespace: "omarchy-notifications"
@@ -1792,7 +1799,7 @@ Item {
                         && service.openDeck === Layout.groupKeyFor(model)
               // Hover opens the body only when there is nothing else to open.
               sole: toasts.count === 1
-              paused: service.expanded || service.replying
+              paused: service.expanded || service.replying || service.shellCovered
 
               drawnHeight: service.at(model.key, "height")
               // A hidden output collapses child visibility; its measurements
