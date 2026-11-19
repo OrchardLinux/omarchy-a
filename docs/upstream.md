@@ -58,12 +58,13 @@ changes: the bar (narrow-bar pages, a hidden bar unmaps because labwc never
 brings back a parked layer surface, no drag-reorder by finger, and its surface
 is only the strip: upstream spans the screen so Hyprland cannot pull a dragged
 pointer off the bar, which costs a full-screen layer on every frame), indicators
-(no hover reveal on touch), the lock (6-digit PIN pad, a 30 s lit lock, wake
+(no hover reveal on touch), the lock (clock above or beside six PIN slots and the
+shell's keypad, the wallpaper sharp under a `lock.scrim`, a wrong PIN in the theme's red; a 30 s lit lock, wake
 only by Home and Power), the idle service (omarchy-powerd's idle), the keyboard
 panel, menu and overlays (below the on-screen keyboard), the app grid (a text
 field for the on-screen keyboard, and no version under the selected app; the
 shell itself opens the launcher instead), the menu's bar logo (opens the
-launcher), the image picker (fits a phone's width), `Commons/Color.qml` (cyan, blue and yellow from the theme), network rows (long press for Forget and
+launcher), the image picker (fits a phone's width), `Commons/Color.qml` (cyan, blue and yellow from the theme, `lock.scrim`), network rows (long press for Forget and
 Change passphrase), Bluetooth pairing feedback, the background (no Hyprland
 boot cover or theme intro videos, software decode at panel size), the greeter's data-only theme
 snapshot (`Commons/Color.qml`) and wallpaper readiness (`LockView.qml`),

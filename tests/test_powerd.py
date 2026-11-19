@@ -503,8 +503,10 @@ class Integration(unittest.TestCase):
 
     def test_a_held_key_on_the_lock_screen_wakes_once(self):
         view = (PROJECT / 'desktop/shell/shell/plugins/lock/LockView.qml').read_text()
-        keys = view[view.index('Keys.onPressed'):]
-        keys = keys[:keys.index('\n        }\n')]
+        start = view.index('Keys.onPressed')
+        indent = start - view.rindex('\n', 0, start) - 1
+        keys = view[start:]
+        keys = keys[:keys.index('\n' + ' ' * indent + '}\n')]
         self.assertIn('if (!event.isAutoRepeat) root.wakeRequested()', keys)
         self.assertEqual(keys.count('wakeRequested()'), 1)
 
