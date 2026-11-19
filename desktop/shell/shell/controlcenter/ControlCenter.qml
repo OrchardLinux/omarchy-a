@@ -551,7 +551,10 @@ Item {
       color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
       // Software rendering dims in one step rather than blending the whole
       // screen again on every frame of a pull.
-      opacity: root.popupStyle ? 0 : (root.gpu ? Math.max(0, Math.min(1, root.reveal)) : (root.reveal > 0 ? 1 : 0))
+      // A phone's sheet comes and goes with its content: opaque within the
+      // first quarter of a pull.
+      opacity: root.popupStyle ? 0 : root.phone ? card.opacity
+        : (root.gpu ? Math.max(0, Math.min(1, root.reveal)) : (root.reveal > 0 ? 1 : 0))
       MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
