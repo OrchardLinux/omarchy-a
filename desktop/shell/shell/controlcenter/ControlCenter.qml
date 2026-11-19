@@ -279,13 +279,22 @@ Item {
   FrameAnimation {
     id: spring
     onTriggered: {
-      var dt = Math.min(frameTime, 1 / 30)
+      // The real time since the last frame, in small fixed steps: a slow
+      // frame (software rendering) moves it further rather than slower.
+      var elapsed = Math.min(frameTime, 0.25)
       // Softer going out: it is seen to travel up rather than vanish.
       var stiffness = root.springTarget > 0 ? 260 : 195
       var damping = 2 * Math.sqrt(stiffness) * (root.springTarget > 0 ? 0.78 : 1.0)
-      var force = -stiffness * (root.reveal - root.springTarget) - damping * root.springVelocity
-      root.springVelocity += force * dt
-      root.reveal += root.springVelocity * dt
+      var steps = Math.max(1, Math.ceil(elapsed / (1 / 240)))
+      var dt = elapsed / steps
+      var reveal = root.reveal, velocity = root.springVelocity
+      for (var i = 0; i < steps; i++) {
+        var force = -stiffness * (reveal - root.springTarget) - damping * velocity
+        velocity += force * dt
+        reveal += velocity * dt
+      }
+      root.springVelocity = velocity
+      root.reveal = reveal
       if (Math.abs(root.reveal - root.springTarget) < 0.002 && Math.abs(root.springVelocity) < 0.02) {
         root.reveal = root.springTarget
         root.springVelocity = 0
@@ -294,6 +303,9 @@ Item {
       }
     }
   }
+
+  // Moving: the spring or a finger.
+  readonly property bool moving: spring.running || root.pulling
 
   // While open, a note for the Home button (omarchy-home-button closes it).
   readonly property string openNote: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omarchy-control-center-open"
@@ -408,6 +420,10 @@ Item {
 
     Rectangle {
       id: card
+      // While it moves, drawn once into a texture that is only scaled, moved
+      // and faded (cheap on any GPU); at rest drawn directly, sharp.
+      layer.enabled: root.moving
+      layer.smooth: true
       x: root.phone ? 0 : parent.width - width - Style.gapsOut
       y: root.phone ? root.barInset : root.barInset + Style.gapsOut
       width: root.phone ? parent.width : root.cardWidth
