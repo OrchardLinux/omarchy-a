@@ -948,7 +948,11 @@ Panel {
               font.pixelSize: Style.font.display
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
+              // Pressed, it shrinks, as the control center's controls do.
+              scale: backPress.pressed ? 0.85 : 1
+              Behavior on scale { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
               MouseArea {
+                id: backPress
                 anchors.fill: parent
                 anchors.margins: -Style.space(10)
                 enabled: root.hosted
