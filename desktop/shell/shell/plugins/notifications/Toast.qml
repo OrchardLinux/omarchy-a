@@ -412,6 +412,9 @@ Item {
 
       Column {
         id: bannerColumn
+        // Behind the front of a collapsed stack a card is a shape: its words
+        // fade as upstream's do (contentOpacity).
+        opacity: card.contentOpacity
         x: Style.space(12)
         y: Style.space(12)
         width: parent.width - Style.space(26)

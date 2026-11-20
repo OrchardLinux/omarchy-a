@@ -86,6 +86,9 @@ Item {
   // either way.
   property bool stackMode: false
   readonly property bool bannerMode: !stackMode
+  // The shell spec's banner card, its place and its exit, in either setting:
+  // the stack is upstream's deck behaviour with the same cards.
+  readonly property bool bannerLook: true
   Process {
     id: stackModeProc
     command: ["omarchy-toggle-enabled", "notifications-stack"]
@@ -105,16 +108,16 @@ Item {
   readonly property bool narrowScreens: narrowestScreen > 0 && narrowestScreen < 480
   function marginsFor(screenName) {
     var bar = Delivery.barThickness(barRef, screenName, defaultBarSize)
-    if (bannerMode && barPosition === "top")
+    if (bannerLook && barPosition === "top")
       return { top: bar + Style.space(8), right: narrowScreens ? Style.space(8) : Style.space(12) }
     return Delivery.deckMargins(barPosition, bar, Style.gapsOut)
   }
   // Never wider than the narrowest screen allows with the same gap on both
   // sides: a phone (375 wide) had upstream's card run off its left edge.
   readonly property int notificationWidth: {
-    var gap = bannerMode ? Style.space(8) : Style.gapsOut
+    var gap = bannerLook ? Style.space(8) : Style.gapsOut
     var room = narrowestScreen > 0 ? narrowestScreen - 2 * gap : Style.space(380)
-    return bannerMode && narrowScreens ? room : Math.min(Style.space(380), room)
+    return bannerLook && narrowScreens ? room : Math.min(Style.space(380), room)
   }
 
   // Orchard: the control center or the launcher opens over the screen as it
@@ -908,7 +911,7 @@ Item {
       // Orchard: a banner stays where it is and leaves on its own (Toast's
       // exit: a fade, a slight shrink and drift up, as the popups go); the
       // deck only waits for it.
-      gone[keys[j]] = bannerMode
+      gone[keys[j]] = bannerLook
         ? { y: from.y, scale: from.scale, opacity: from.opacity, height: from.height,
             // Not hidden: a leaving card has no place left in the layout, and
             // a hidden one is drawn at once at nothing, cutting its exit off.
@@ -1745,13 +1748,13 @@ Item {
         anchors.top: parent.top
         // A banner's shadow reaches above it (its blur less its drop) and
         // further below: the clip leaves room for both.
-        readonly property int shadowAbove: service.bannerMode ? Style.space(18) : 0
-        readonly property int shadowBelow: service.bannerMode ? Style.space(40) : 0
+        readonly property int shadowAbove: service.bannerLook ? Style.space(18) : 0
+        readonly property int shadowBelow: service.bannerLook ? Style.space(40) : 0
         anchors.topMargin: surface.margins.top - shadowAbove
         // Room for the arrival's scale animation, and the gap from the edge;
         // a banner's shadow needs more, as far as the screen has room for it
         // (the window must not be wider than the screen).
-        readonly property int motionInset: service.bannerMode
+        readonly property int motionInset: service.bannerLook
           ? Math.max(0, Math.min(Style.space(28), surface.screen.width - service.notificationWidth - surface.margins.right))
           : Style.spacing.sm
         width: service.notificationWidth + motionInset + surface.margins.right
@@ -1875,7 +1878,7 @@ Item {
               onExpired: service.closeToast(model.key, "expired")
               onActivated: { service.stopKeyboard(); service.activate(model.key) }
               onDismissed: { service.stopKeyboard(); service.closeToast(model.key, "dismissed") }
-              banner: service.bannerMode
+              banner: service.bannerLook
               reply: service.replyOf(model.key, service.refsRevision)
               onReplySent: function(text) { service.sendReply(model.key, text) }
             }
