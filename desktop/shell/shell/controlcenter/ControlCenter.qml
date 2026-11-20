@@ -449,7 +449,8 @@ Item {
       var elapsed = Math.min(frameTime, 0.25)
       // Softer going out: it is seen to travel up rather than vanish.
       var stiffness = root.springTarget > 0 ? 260 : 195
-      var damping = 2 * Math.sqrt(stiffness) * (root.springTarget > 0 ? 0.78 : 1.0)
+      // A touch under critical going in: it lands with a small swing, not a bounce.
+      var damping = 2 * Math.sqrt(stiffness) * (root.springTarget > 0 ? 0.86 : 1.0)
       var steps = Math.max(1, Math.ceil(elapsed / (1 / 240)))
       var dt = elapsed / steps
       var reveal = root.reveal, velocity = root.springVelocity
