@@ -231,7 +231,8 @@ Item {
   property bool swipeFromSet: false
   property real swipeX: 0
   property real swipeY: 0
-  readonly property real swipeFade: swipeAxis === "x" ? Math.max(0, 1 - Math.abs(swipeX) / width)
+  // Gone within half its width: a card thrown aside does not sweep the screen.
+  readonly property real swipeFade: swipeAxis === "x" ? Math.max(0, 1 - Math.abs(swipeX) / (width * 0.5))
     : swipeAxis === "y" ? Math.max(0, 1 + swipeY / Math.max(1, height)) : 1
   transform: [
     Translate { x: card.swipeX; y: card.swipeY },
@@ -277,7 +278,7 @@ Item {
       ? Math.abs(swipeX) > width * 0.35 || Math.abs(velocity.x) > flick
       : swipeAxis === "y" && (swipeY < -height * 0.4 || velocity.y < -flick)
     if (away) {
-      swipeOut.to = swipeAxis === "x" ? (swipeX + velocity.x * 0.05 >= 0 ? width * 1.2 : -width * 1.2) : -height * 1.5
+      swipeOut.to = swipeAxis === "x" ? (swipeX + velocity.x * 0.05 >= 0 ? width * 0.6 : -width * 0.6) : -height * 1.5
       swipeOut.property = swipeAxis === "x" ? "swipeX" : "swipeY"
       if (gpu) swipeOut.restart()
       else card.dismissed()
