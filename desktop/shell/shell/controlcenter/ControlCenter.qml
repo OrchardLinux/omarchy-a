@@ -258,10 +258,16 @@ Item {
     { key: "keyboard", glyph: "󰌌", label: Commons.I18n.t("controlCenter.keyboard"),
       on: root.keyboardShown, enabled: true, act: root.showKeyboard }
   ]
-  // Live once their backend exists (power profiles, Focus, Night Light, media).
+  // Live once their backend exists (power profiles, Night Light, media); Focus is.
+  // Focus is live: the notifications' Do Not Disturb, as the notification
+  // center's header switches it.
+  readonly property var notifications: shell ? shell.firstPartyServiceFor("omarchy.notifications") : null
+  readonly property bool focusOn: !!notifications && notifications.doNotDisturb === true
+  function toggleFocus() { if (notifications) notifications.setDoNotDisturb(!root.focusOn) }
   readonly property var later: [
     { glyph: "󰓅", label: Commons.I18n.t("controlCenter.balanced") },
-    { glyph: "󰖔", label: Commons.I18n.t("controlCenter.focus") },
+    { glyph: "󰖔", label: Commons.I18n.t("controlCenter.focus"),
+      on: root.focusOn, enabled: !!root.notifications, act: root.toggleFocus },
     { glyph: "󰽟", label: Commons.I18n.t("controlCenter.night") },
     { glyph: "󰝚", label: Commons.I18n.t("controlCenter.media") }
   ]
@@ -790,7 +796,10 @@ Item {
               height: root.phone ? width : Style.space(64)
               glyph: modelData.glyph
               label: modelData.label
-              available: false
+              // Dimmed until its backend exists; then live like the others.
+              on: modelData.on === true
+              available: !!modelData.act && modelData.enabled === true
+              onActivated: if (modelData.act) modelData.act()
             }
           }
         }

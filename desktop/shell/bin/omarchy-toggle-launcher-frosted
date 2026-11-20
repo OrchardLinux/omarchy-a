@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# omarchy:summary=Show the launcher on the frosted wallpaper, or on the theme's plain background
+# Opaque by default. Turned on, the launcher-frosted flag says so; the
+# launcher reads it each time it opens.
+set -euo pipefail
+[[ $# == 0 ]] || { echo 'Usage: omarchy-toggle-launcher-frosted' >&2; exit 2; }
+toggles=$HOME/.local/state/omarchy/toggles
+mkdir -p "$toggles"
+if [[ -e $toggles/launcher-frosted ]]; then rm -f "$toggles/launcher-frosted"; else : >"$toggles/launcher-frosted"; fi
