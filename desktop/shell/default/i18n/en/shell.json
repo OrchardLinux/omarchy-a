@@ -716,5 +716,6 @@
   "settings.aboutKernel": "Kernel",
   "settings.aboutMemory": "Memory",
   "settings.aboutStorage": "Storage",
-  "settings.noBackgrounds": "This theme has no backgrounds"
+  "settings.noBackgrounds": "This theme has no backgrounds",
+  "settings.learn": "Learn"
 }

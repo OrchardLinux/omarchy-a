@@ -10,7 +10,7 @@
       "center": [{ "id": "omarchy.clock", "format": "HH:mm", "narrow": "left" }],
       "centerEnd": [],
       "right": [
-        { "id": "omarchy.indicators", "items": ["StayAwake"] },
+        { "id": "omarchy.indicators", "items": ["Dnd", "StayAwake"] },
         { "id": "omarchy.audio" },
         { "id": "omarchy.bluetooth" },
         { "id": "omarchy.network" },

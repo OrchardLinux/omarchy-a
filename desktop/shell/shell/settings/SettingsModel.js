@@ -249,6 +249,11 @@ function choiceRows(ctx, entry) {
 function sectionGroups(section, ctx, providers, t) {
   var out = []
   if (!section) return out
+  // A section that is a menu's children (Learn).
+  if (section.menu) {
+    var own = resolveRows(menuSpecs(ctx, section.menu), ctx, providers, t)
+    if (own.length) out.push({ label: "", card: false, rows: own })
+  }
   for (var g = 0; g < section.groups.length; g++) {
     var group = section.groups[g]
     var rows = resolveRows(group.rows, ctx, providers, t)
@@ -272,6 +277,7 @@ function sectionFor(sections, ctx, id) {
           if (spec.entry === target || (spec.toggle && spec.toggle.indexOf(target) >= 0)) return sections[s].id
         }
       }
+      if (sections[s].menu === target) return sections[s].id
     }
     current = item(ctx, target)
     target = current ? current.parent : ""
@@ -299,6 +305,7 @@ function sectionForPlaced(sections, id) {
 // Every menu id the layout places, directly or as a pair.
 function placedIds(sections) {
   var ids = {}
+  for (var s0 = 0; s0 < sections.length; s0++) if (sections[s0].menu) ids[sections[s0].menu] = true
   for (var s = 0; s < sections.length; s++)
     for (var g = 0; g < sections[s].groups.length; g++)
       for (var r = 0; r < sections[s].groups[g].rows.length; r++) {

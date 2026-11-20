@@ -20,19 +20,35 @@
 // and may add `value: "<command>"`, whose first line is the row's current
 // value where the entry itself does not say it.
 //
-// A section is { id, label, icon or iconEntry, groups: [{ label, rows }] };
+// A section is { id, label, icon or iconEntry, groups: [{ label, rows }] },
+// or a menu's children as they are (`menu`, Learn); `startsGroup` puts a
+// gap before it in the list, as the sections fall into kinds;
 // a group's label is an i18n key, or "" for none. `card` puts the row at the
 // top of the section as a large card (the theme).
 
 var SECTIONS = [
   {
-    id: "notifications",
-    label: "settings.notifications",
-    icon: "󰂚",
+    id: "general",
+    label: "settings.general",
+    iconEntry: "setup",
     groups: [
       { label: "", rows: [
-        { toggle: ["trigger.toggle.notifications-stack", "trigger.toggle.notifications-one"], label: "settings.stackNotifications" },
-        { toggle: ["trigger.toggle.notifications-off", "trigger.toggle.notifications-on"], label: "settings.focus" }
+        { entry: "setup.language" },
+        { entry: "update.timezone" },
+        { entry: "update.time" }
+      ] },
+      { label: "settings.network", rows: [
+        { entry: "setup.network.dns" },
+        { entry: "setup.network.qr" },
+        { entry: "trigger.tests.network-speedtest" }
+      ] },
+      { label: "", rows: [
+        { entry: "setup.config" },
+        { entry: "trigger.tests.disk-speedtest" }
+      ] },
+      { label: "settings.advanced", rows: [
+        { entry: "setup.direct-boot" },
+        { entry: "setup.reset" }
       ] }
     ]
   },
@@ -93,17 +109,6 @@ var SECTIONS = [
     ]
   },
   {
-    id: "behaviour",
-    label: "settings.behaviour",
-    icon: "󰔡",
-    groups: [
-      { label: "", rows: [
-        { toggle: ["trigger.toggle.maximize-windows-on", "trigger.toggle.maximize-windows-off"], label: "settings.maximizeWindows" },
-        { toggle: ["trigger.toggle.screensaver-on", "trigger.toggle.screensaver-off"], label: "settings.screensaver" }
-      ] }
-    ]
-  },
-  {
     id: "keyboard",
     label: "settings.keyboard",
     iconEntry: "setup.keyboard",
@@ -123,9 +128,33 @@ var SECTIONS = [
     ]
   },
   {
+    id: "behaviour",
+    label: "settings.behaviour",
+    icon: "󰔡",
+    groups: [
+      { label: "", rows: [
+        { toggle: ["trigger.toggle.maximize-windows-on", "trigger.toggle.maximize-windows-off"], label: "settings.maximizeWindows" },
+        { toggle: ["trigger.toggle.screensaver-on", "trigger.toggle.screensaver-off"], label: "settings.screensaver" }
+      ] }
+    ]
+  },
+  {
+    id: "notifications",
+    label: "settings.notifications",
+    icon: "󰂚",
+    startsGroup: true,
+    groups: [
+      { label: "", rows: [
+        { toggle: ["trigger.toggle.notifications-stack", "trigger.toggle.notifications-one"], label: "settings.stackNotifications" },
+        { toggle: ["trigger.toggle.notifications-off", "trigger.toggle.notifications-on"], label: "settings.focus" }
+      ] }
+    ]
+  },
+  {
     id: "security",
     label: "settings.security",
     iconEntry: "setup.security",
+    startsGroup: true,
     groups: [
       { label: "settings.signIn", rows: [
         { entry: "update.password.user" },
@@ -148,6 +177,7 @@ var SECTIONS = [
     id: "apps",
     label: "settings.apps",
     iconEntry: "install",
+    startsGroup: true,
     groups: [
       { label: "settings.defaultApps", rows: [
         { entry: "setup.default.browser" },
@@ -183,30 +213,12 @@ var SECTIONS = [
     ]
   },
   {
-    id: "general",
-    label: "settings.general",
-    iconEntry: "setup",
-    groups: [
-      { label: "", rows: [
-        { entry: "setup.language" },
-        { entry: "update.timezone" },
-        { entry: "update.time" }
-      ] },
-      { label: "settings.network", rows: [
-        { entry: "setup.network.dns" },
-        { entry: "setup.network.qr" },
-        { entry: "trigger.tests.network-speedtest" }
-      ] },
-      { label: "", rows: [
-        { entry: "learn" },
-        { entry: "setup.config" },
-        { entry: "trigger.tests.disk-speedtest" }
-      ] },
-      { label: "settings.advanced", rows: [
-        { entry: "setup.direct-boot" },
-        { entry: "setup.reset" }
-      ] }
-    ]
+    id: "learn",
+    label: "settings.learn",
+    iconEntry: "learn",
+    menu: "learn",
+    groups: [],
+    startsGroup: true
   },
   {
     id: "about",

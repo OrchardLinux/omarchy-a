@@ -59,6 +59,14 @@ FloatingWindow {
   function t(key) { return Commons.I18n.t(key) }
 
   readonly property var sections: Layout.SECTIONS
+  readonly property var sectionBlocks: {
+    var out = []
+    for (var i = 0; i < sections.length; i++) {
+      if (i === 0 || sections[i].startsGroup) out.push([])
+      out[out.length - 1].push(sections[i])
+    }
+    return out
+  }
 
   function sectionById(id) {
     for (var i = 0; i < sections.length; i++) if (sections[i].id === id) return sections[i]
@@ -79,7 +87,72 @@ FloatingWindow {
   property string query: ""
   readonly property bool searching: query.trim() !== ""
 
+  // A page comes in over the one before from the right and leaves to the
+  // right again, as on an iPad: the old page is held as a picture while the
+  // new one is built, so both move together. On a phone the section list is
+  // a page too; on a wide window the sidebar stays and a section shows in
+  // place. Without a GPU (software rendering) pages change at once.
+  readonly property bool gpu: Quickshell.env("QT_QUICK_BACKEND") !== "software"
+  property int navDirection: 0
+  property real navT: 1
+  property var navChange: null
+  property bool navPhone: false
+  function navigate(direction, change) {
+    if (!win.gpu || direction === 0 || content.width <= 0 || navAnim.running || navWait.running) {
+      if (navAnim.running) navAnim.complete()
+      change()
+      return
+    }
+    win.navPhone = !win.wide
+    var source = win.navPhone ? content : pageArea
+    shot.sourceItem = source
+    shot.x = win.navPhone ? 0 : pageArea.x
+    shot.width = source.width
+    shot.height = source.height
+    // Only a picture in the scene is taken: shown, too faint to see, until
+    // it has the old page.
+    shot.opacity = 0.01
+    shot.visible = true
+    shot.scheduleUpdate()
+    win.navDirection = direction
+    win.navChange = change
+    navWait.start()
+  }
+  // A frame for the picture to be taken before the page changes under it.
+  Timer {
+    id: navWait
+    interval: 34
+    onTriggered: {
+      win.navChange()
+      win.navChange = null
+      win.navT = 0
+      shot.opacity = 1
+      navAnim.restart()
+    }
+  }
+  NumberAnimation {
+    id: navAnim
+    target: win; property: "navT"; from: 0; to: 1
+    duration: Style.duration(340)
+    easing.type: Easing.OutCubic
+    onFinished: { shot.visible = false; shot.sourceItem = null; win.navDirection = 0 }
+  }
+  readonly property real navWidth: navPhone ? content.width : pageArea.width
+  // Where the new page and the picture of the old one stand now.
+  readonly property real slideNew: navDirection > 0 ? (1 - navT) * navWidth
+    : navDirection < 0 ? -(1 - navT) * navWidth * 0.3 : 0
+  readonly property real slideOld: navDirection > 0 ? -navT * navWidth * 0.3
+    : navDirection < 0 ? navT * navWidth : 0
+
   function goSection(id) {
+    // From a phone's list into a section: a page in.
+    if (!win.wide && win.section === "" && id !== "" && !win.searching) {
+      win.navigate(1, function() { win.showSection(id) })
+      return
+    }
+    win.showSection(id)
+  }
+  function showSection(id) {
     if (id !== "" && id !== sections[0].id) win.chosen = true
     win.section = id
     win.stack = []
@@ -89,6 +162,9 @@ FloatingWindow {
     scroller.contentY = 0
   }
   function push(page) {
+    win.navigate(1, function() { win.pushNow(page) })
+  }
+  function pushNow(page) {
     win.stack = win.stack.concat([page])
     win.cursor = -1
     scroller.contentY = 0
@@ -102,15 +178,21 @@ FloatingWindow {
   }
   function back() {
     if (win.searching) { win.query = ""; searchField.text = ""; return true }
-    if (win.stack.length > 0) { win.stack = win.stack.slice(0, -1); win.cursor = -1; return true }
-    if (!win.wide && win.section !== "") { win.section = ""; win.cursor = -1; return true }
+    if (win.stack.length > 0) {
+      win.navigate(-1, function() { win.stack = win.stack.slice(0, -1); win.cursor = -1 })
+      return true
+    }
+    if (!win.wide && win.section !== "") {
+      win.navigate(-1, function() { win.section = ""; win.cursor = -1 })
+      return true
+    }
     return false
   }
   function openPath(path) {
     var r = Model.route(path, sections, ctx)
     win.chosen = r.section !== ""
-    win.goSection(r.section || (win.wide ? sections[0].id : ""))
-    if (r.page) win.push(r.page)
+    win.showSection(r.section || (win.wide ? sections[0].id : ""))
+    if (r.page) win.pushNow(r.page)
   }
   // Opened without a page: a wide window shows its first section beside the
   // list, a phone the list itself. The window learns its width only once it
@@ -269,10 +351,29 @@ FloatingWindow {
 
   // ---------------------------------------------------------------- layout
 
+  // The old page during a transition: under the new one going forward, over
+  // it going back; a shade deepens on it as it moves under.
+  ShaderEffectSource {
+    id: shot
+    visible: false
+    live: false
+    hideSource: false
+    z: win.navDirection < 0 ? 2 : -1
+    transform: Translate { x: win.slideOld }
+    Rectangle {
+      anchors.fill: parent
+      color: "black"
+      opacity: win.navDirection > 0 ? 0.18 * win.navT : 0
+    }
+  }
+
   Item {
     id: content
     anchors.fill: parent
     focus: true
+    transform: Translate { x: win.navPhone && win.navDirection !== 0 ? win.slideNew : 0 }
+    // Opaque, so the page going forward covers the picture under it.
+    Rectangle { anchors.fill: parent; color: win.color; visible: win.navPhone && win.navDirection !== 0 }
 
     Keys.onPressed: function(event) {
       var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
@@ -389,10 +490,18 @@ FloatingWindow {
 
           // The sections; on a phone, the root list with what each holds, in
           // one box with a line between rows.
+          // The sections fall into kinds (startsGroup), a gap between.
+          Column {
+            width: parent.width
+            visible: !(win.searching && !win.wide)
+            spacing: win.wide ? Style.space(12) : Style.space(16)
+            Repeater {
+              model: win.sectionBlocks
           Rectangle {
+            id: block
+            required property var modelData
             width: parent.width
             height: sectionList.height + (win.wide ? 0 : 2)
-            visible: !(win.searching && !win.wide)
             color: win.wide ? "transparent" : win.fill
             border.width: win.wide ? 0 : 1
             border.color: win.line
@@ -403,7 +512,7 @@ FloatingWindow {
             width: parent.width - (win.wide ? 0 : 2)
             spacing: win.wide ? Style.space(2) : 0
             Repeater {
-              model: win.sections
+              model: block.modelData
               Rectangle {
                 id: sectionRow
                 required property var modelData
@@ -478,6 +587,8 @@ FloatingWindow {
             }
           }
           }
+            }
+          }
         }
       }
     }
@@ -491,6 +602,8 @@ FloatingWindow {
       x: win.wide ? sidebar.width : 0
       width: parent.width - x
       height: parent.height
+      transform: Translate { x: !win.navPhone && win.navDirection !== 0 ? win.slideNew : 0 }
+      Rectangle { anchors.fill: parent; color: win.color; visible: !win.navPhone && win.navDirection !== 0 }
 
       Flickable {
         id: scroller
@@ -517,14 +630,30 @@ FloatingWindow {
               visible: win.stack.length > 0 || (!win.wide && (win.section !== "" || win.searching))
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(6)
-              Text {
-                text: "‹"
-                color: win.accent
-                font.family: Style.font.family
-                font.pixelSize: Style.font.display
+              // A drawn chevron, so it sits on the label's middle whatever
+              // the font does with its glyphs.
+              Item {
+                width: Style.space(10)
+                height: backLabelText.height
                 anchors.verticalCenter: parent.verticalCenter
+                Repeater {
+                  model: [-1, 1]
+                  Rectangle {
+                    required property var modelData
+                    width: Style.space(9)
+                    height: Math.max(2, Style.space(2))
+                    radius: height / 2
+                    color: win.accent
+                    antialiasing: true
+                    x: Style.space(1)
+                    y: (parent.height - height) / 2
+                    rotation: modelData * 45
+                    transformOrigin: Item.Left
+                  }
+                }
               }
               Text {
+                id: backLabelText
                 text: win.stack.length > 0 ? win.backLabel : win.t("settings.title")
                 color: win.accent
                 font.family: Style.font.family
@@ -533,10 +662,16 @@ FloatingWindow {
               }
               TapHandler { onTapped: win.back() }
             }
+            // On a phone the title stands in the middle, as a phone's
+            // settings show it; on a wide window after the back link.
             Text {
               id: titleText
-              x: backRow.visible ? backRow.width + Style.space(16) : 0
-              width: parent.width - x - (moreButton.visible ? moreButton.width + Style.space(10) : 0)
+              readonly property bool centered: !win.wide && backRow.visible
+              x: centered ? Math.max(backRow.width + Style.space(12), (parent.width - width) / 2)
+                : (backRow.visible ? backRow.width + Style.space(16) : 0)
+              width: centered ? Math.min(implicitWidth, parent.width - 2 * (backRow.width + Style.space(12)))
+                : parent.width - x - (moreButton.visible ? moreButton.width + Style.space(10) : 0)
+              horizontalAlignment: centered ? Text.AlignHCenter : Text.AlignLeft
               anchors.verticalCenter: parent.verticalCenter
               text: win.pageTitle
               color: win.text
@@ -702,13 +837,38 @@ FloatingWindow {
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(1)
       opacity: rowItem.usable ? 1 : 0.45
-      Text {
+      // The name, and after it what it needs that is not here (Hyprland).
+      Row {
         width: parent.width
-        text: rowItem.row ? rowItem.row.label : ""
-        color: rowItem.row && rowItem.row.current ? win.accent : win.text
-        font.family: Style.font.family
-        font.pixelSize: Style.font.subtitle
-        elide: Text.ElideRight
+        spacing: Style.space(10)
+        Text {
+          id: labelText
+          width: Math.min(implicitWidth, parent.width - (tagBox.visible ? tagBox.width + parent.spacing : 0))
+          anchors.verticalCenter: parent.verticalCenter
+          text: rowItem.row ? rowItem.row.label : ""
+          color: rowItem.row && rowItem.row.current ? win.accent : win.text
+          font.family: Style.font.family
+          font.pixelSize: Style.font.subtitle
+          elide: Text.ElideRight
+        }
+        Rectangle {
+          id: tagBox
+          visible: !!rowItem.row && !!rowItem.row.tag
+          anchors.verticalCenter: parent.verticalCenter
+          width: tagText.width + Style.space(10)
+          height: tagText.height + Style.space(4)
+          color: "transparent"
+          border.width: 1
+          border.color: win.line
+          Text {
+            id: tagText
+            anchors.centerIn: parent
+            text: rowItem.row && rowItem.row.tag ? rowItem.row.tag : ""
+            color: win.faint
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+        }
       }
       // Where a search result lives.
       Text {
@@ -738,23 +898,6 @@ FloatingWindow {
         font.family: Style.font.family
         font.pixelSize: Style.font.body
         elide: Text.ElideRight
-      }
-      Rectangle {
-        visible: !!rowItem.row && !!rowItem.row.tag
-        anchors.verticalCenter: parent.verticalCenter
-        width: tagText.width + Style.space(10)
-        height: tagText.height + Style.space(4)
-        color: "transparent"
-        border.width: 1
-        border.color: win.line
-        Text {
-          id: tagText
-          anchors.centerIn: parent
-          text: rowItem.row && rowItem.row.tag ? rowItem.row.tag : ""
-          color: win.faint
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-        }
       }
       Text {
         visible: !!rowItem.row && (rowItem.row.current === true || (!!rowItem.row.off && rowItem.row.kind === "option"))

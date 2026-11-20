@@ -19,7 +19,9 @@ Item {
   height: grid.height
 
   readonly property int gap: Style.space(14)
-  readonly property int columns: Math.max(2, Math.floor((width + gap) / (Style.space(220) + gap)))
+  // Wide tiles: a set is a sheet of small drawings, which a narrow tile
+  // shrinks past seeing. One a row on a phone.
+  readonly property int columns: Math.max(1, Math.floor((width + gap) / (Style.space(300) + gap)))
   readonly property real cell: (width - gap * (columns - 1)) / columns
 
   Process {
@@ -71,19 +73,21 @@ Item {
         readonly property bool isCurrent: modelData.id === page.current
         width: page.cell
         spacing: Style.space(6)
-        Rectangle {
+        Item {
           width: parent.width
           height: Math.round(width * 0.56)
-          color: settings ? settings.fill : "black"
-          border.width: tile.isCurrent ? 2 : 1
-          border.color: tile.isCurrent ? (settings ? settings.accent : "white") : (settings ? settings.line : "gray")
           clip: true
+          Rectangle { anchors.fill: parent; color: settings ? settings.fill : "black" }
+          // The sheet keeps its drawings to the middle of its frame, with
+          // room around them; a little larger, they fill the tile to its edge
+          // without losing a row.
           Image {
-            anchors.fill: parent
-            anchors.margins: parent.border.width
+            anchors.centerIn: parent
+            width: parent.width * 1.15
+            height: parent.height * 1.15
             visible: tile.modelData.preview !== ""
             source: tile.modelData.preview ? Util.fileUrl(tile.modelData.preview) : ""
-            sourceSize.width: Math.round(page.cell * 1.5)
+            sourceSize.width: Math.round(page.cell * 2)
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: false
@@ -95,6 +99,13 @@ Item {
             color: settings ? settings.dim : "gray"
             font.family: Style.font.family
             font.pixelSize: Style.font.subtitle
+          }
+          // The frame over the picture.
+          Rectangle {
+            anchors.fill: parent
+            color: "transparent"
+            border.width: tile.isCurrent ? 2 : 1
+            border.color: tile.isCurrent ? (settings ? settings.accent : "white") : (settings ? settings.line : "gray")
           }
         }
         Text {
