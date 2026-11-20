@@ -20,10 +20,6 @@ You need a Mac or Linux computer, a USB cable, and a [compatible device](https:/
 
 Update from the device with **Update > Omarchy** in the menu. The Linux storage is not encrypted. For problems, see [Troubleshooting](docs/troubleshooting.md).
 
-## Supported devices
-
-The iPad 6 (Wi-Fi) is supported; the other devices are experimental. What works on each is in orchard's [compatibility matrix](https://github.com/OrchardLinux/orchard/blob/main/docs/compatibility.md), and the installer shows it before it changes anything. On the iPad 6 and iPad 7 the desktop draws on the GPU and Firefox plays video through the hardware decoder (its media sandbox is off for that); elsewhere it draws in software. Contributions for more devices are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
 ## How it works
 
 An iPad cannot boot a Linux installer like a PC boots an ISO. [How Omarchy A gets from DFU to desktop](docs/how-it-works.md) explains the boot path, release format, device runtime, and installation lifecycle.
