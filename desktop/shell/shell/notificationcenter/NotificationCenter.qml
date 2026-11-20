@@ -793,12 +793,17 @@ Item {
     // The cards behind a closed stack, as shapes; they fade as it opens.
     Repeater {
       model: card.shapes
+      // Each lies behind the card above and reaches up under it, so that
+      // card's opaque face covers its top edge: two half-transparent
+      // outlines on one row of pixels would add up to a brighter line.
       Rectangle {
         required property int index
+        readonly property real under: Style.space(6)
+        z: -1 - index
         x: Style.space(8) * (index + 1)
-        y: box.height + Style.space(6) * index * card.shade
+        y: box.height + Style.space(6) * index * card.shade - under
         width: card.width - Style.space(16) * (index + 1)
-        height: Style.space(6)
+        height: Style.space(6) + under
         color: root.cardFill
         border.width: root.hairline
         border.color: root.outline

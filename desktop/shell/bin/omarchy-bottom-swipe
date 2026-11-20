@@ -4,8 +4,10 @@
 # omarchy:hidden=true
 
 # labwc runs this for the bottom-edge swipe (bottomSwipeCommand). Over the
-# shell's own sheets the swipe dismisses them, as it does on a phone; over
-# an app it brings the keyboard up.
+# notification center and the control center labwc leaves the swipe to
+# them (bottomSwipeIgnoreNamespace), so it follows the finger; should it
+# still come here over one (an older labwc), it puts that one away. Over an
+# app it brings the keyboard up.
 runtime="${XDG_RUNTIME_DIR:-/run/user/$UID}"
 if [[ -e $runtime/omarchy-notification-center-open ]]; then
   exec omarchy-shell omarchy.notificationcenter close

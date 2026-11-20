@@ -182,9 +182,13 @@
       <action name="Execute" command="omarchy-toggle-bar" />
     </keybind>
   </keyboard>
+  <!-- The bottom-edge swipe: over the on-screen keyboard it is typing, over
+       the notification center or the control center their own drag, which
+       follows the finger (labwc/0009 takes a list); elsewhere
+       omarchy-bottom-swipe opens the keyboard. -->
   <touch mouseEmulation="no"
     bottomSwipeCommand="omarchy-bottom-swipe"
-    bottomSwipeIgnoreNamespace="wvkbd" />
+    bottomSwipeIgnoreNamespace="wvkbd,omarchy-notification-center,omarchy-control-center" />
   <snapping>
     <!-- Keep titlebar double-click maximize; top-edge dragging tiles upward. -->
     <topMaximize>no</topMaximize>
