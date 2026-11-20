@@ -891,7 +891,7 @@ Item {
         text: tile.glyph
         color: tile.ink
         font.family: Style.font.family
-        font.pixelSize: Style.font.title
+        font.pixelSize: Style.font.iconLarge
       }
       Column {
         anchors.verticalCenter: parent.verticalCenter
@@ -968,7 +968,7 @@ Item {
         text: "󰅂"
         color: tileMouse.holding ? Commons.Color.accent : tile.ink
         font.family: Style.font.family
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.heading
       }
       // A hint only: a tap toggles anywhere on the tile, a long press (or a
       // right click) opens the page.
@@ -1047,7 +1047,7 @@ Item {
       text: slider.glyph
       color: slider.value > 0.08 ? Commons.Color.background : root.text
       font.family: Style.font.family
-      font.pixelSize: Style.font.title
+      font.pixelSize: Style.font.heading
     }
     Text {
       visible: slider.note !== ""
@@ -1162,7 +1162,7 @@ Item {
           color: chipBox.ink
           opacity: chipBox.arrowOnly && !drag.holding ? 0.7 : 1
           font.family: Style.font.family
-          font.pixelSize: chipBox.arrowOnly ? Style.font.body : Style.font.caption
+          font.pixelSize: chipBox.arrowOnly ? Style.font.heading : Style.font.body
         }
       }
       // Only a hint that there is a page: a long press opens it, and a tap
@@ -1189,7 +1189,7 @@ Item {
         spacing: Style.space(6)
         Text { anchors.verticalCenter: parent.verticalCenter; text: battery.icon; color: root.text; font.family: Style.font.family; font.pixelSize: Style.font.body }
         Text { anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: root.batteryLine; color: root.text; font.family: Style.font.family; font.pixelSize: Style.font.caption }
-        Text { anchors.verticalCenter: parent.verticalCenter; text: "󰅂"; color: root.text; opacity: 0.6; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+        Text { anchors.verticalCenter: parent.verticalCenter; text: "󰅂"; color: root.text; opacity: 0.6; font.family: Style.font.family; font.pixelSize: Style.font.body }
       }
       MouseArea { anchors.fill: parent; onClicked: batteryCell.activate() }
     }
