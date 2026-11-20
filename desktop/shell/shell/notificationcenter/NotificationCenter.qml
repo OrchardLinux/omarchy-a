@@ -439,6 +439,18 @@ Item {
         ? Math.max(0, Math.min(1, root.reveal * 1.2 - 0.2))
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.3)), 2)
 
+      Rectangle {
+        // The handle's pill, at the bottom of the screen, moving with it.
+        visible: !root.popupStyle
+        z: 1
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: parent.height - Style.space(14) - height / 2
+        width: Style.space(48)
+        height: Style.space(4)
+        radius: height / 2
+        color: root.dim
+      }
+
       Flickable {
         id: scroller
         anchors.fill: parent
@@ -651,20 +663,14 @@ Item {
       }
     }
 
-    // Pushed up from its bottom edge: the handle a finger finds.
+    // Pushed up from its bottom edge: the handle a finger finds. The pill
+    // moves with the sheet (it is drawn there); where it is grabbed stays
+    // put at the screen's edge, so the drag measures against something still.
     Item {
       anchors.bottom: parent.bottom
       width: parent.width
       height: Style.space(28)
       visible: root.mapped && !root.popupStyle
-      Rectangle {
-        anchors.centerIn: parent
-        width: Style.space(48)
-        height: Style.space(4)
-        radius: height / 2
-        color: root.dim
-        opacity: sheet.opacity
-      }
       DragHandler {
         target: null
         xAxis.enabled: false
