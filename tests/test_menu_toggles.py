@@ -117,7 +117,7 @@ class MenuToggleTests(unittest.TestCase):
 
     def test_title_bars_are_on_until_turned_off(self):
         rules = self.home / '.local/state/omarchy/xdg-config/labwc/rc.xml'
-        undecorated = "./windowRules/windowRule[@identifier='*'][@serverDecoration='no']"
+        undecorated = "./theme/maximizedDecoration[.='none']"
         self.run_bin('omarchy-toggle-maximize-windows', '--apply')
         self.assertEqual(ET.fromstring(rules.read_bytes()).findall(undecorated), [])
         labwc = subprocess.Popen(['sleep', '30'])

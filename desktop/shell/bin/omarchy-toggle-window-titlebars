@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# omarchy:summary=Show title bars on windows, or not
+# omarchy:summary=Show title bars on maximized windows, or not
 # On by default: a window's title bar holds its name and its buttons, for a
-# mouse. Turned off, the window-titlebars-off flag says so and labwc draws
-# none (omarchy-labwc-window-rules); a window then closes from the overview
-# or with its app's own controls.
+# mouse. Turned off, the window-titlebars-off flag says so and a maximized
+# window has none (omarchy-labwc-window-rules); it then closes from the
+# overview or with its app's own controls. A floating window keeps its own.
 set -euo pipefail
 # Beside this command, as installed and in the source tree alike.
 rules=${BASH_SOURCE[0]%/*}/omarchy-labwc-window-rules
