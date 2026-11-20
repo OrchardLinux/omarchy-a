@@ -154,6 +154,9 @@ Item {
   function show() {
     root.clearOthers()
     root.everOpened = true
+    // Stacks open closed again, and the list starts at the top.
+    root.openGroups = ({})
+    scroller.contentY = 0
     root.focusIndex = -1
     root.opened = true
     root.mapped = true
@@ -239,6 +242,8 @@ Item {
     if (!root.opened) {
       root.clearOthers()
       root.everOpened = true
+      root.openGroups = ({})
+      scroller.contentY = 0
       root.reveal = 0
       root.mapped = true
     }
@@ -364,10 +369,9 @@ Item {
       y: root.barInset
       width: parent.width
       height: parent.height - y
-      // Dark enough that the cards read as the page (the design's), the
-      // wallpaper only a hint behind; a phone's is the opaque sheet.
-      readonly property color base: Commons.Color.menu.background
-      color: root.phone ? base : Qt.rgba(base.r, base.g, base.b, 0.88)
+      // Opaque, the theme's background: a translucent dark over the
+      // wallpaper only muddies it, and the cards read as the page.
+      color: Commons.Color.menu.background
       opacity: !root.gpu ? (root.reveal > 0 ? 1 : 0)
         : root.leaving ? sheet.opacity
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal)), 2.5)
@@ -376,12 +380,14 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onClicked: root.close()
       }
-      // Pushed up on the empty screen, it follows and goes away.
+      // Pushed up on the empty screen, it follows and goes away; only while
+      // there is nothing to scroll, or it would take a scroll's swipe and
+      // close instead (the handle at the bottom, Home and Escape always do).
       DragHandler {
         target: null
         xAxis.enabled: false
         acceptedDevices: PointerDevice.TouchScreen
-        enabled: root.opened || root.pulling
+        enabled: (root.opened || root.pulling) && !scroller.interactive
         onActiveChanged: active ? root.beginPull() : root.endPull(centroid.velocity.y)
         onTranslationChanged: if (active) root.pullTo(translation.y)
       }
@@ -436,89 +442,74 @@ Item {
         Item {
           id: content
           width: scroller.width
-          height: Math.max(todayColumn.y + todayColumn.height, listColumn.y + listColumn.height) + Style.space(root.phone ? 24 : 40)
+          height: Math.max(root.wide ? todayColumn.y + todayColumn.height : 0, listColumn.y + listColumn.height) + Style.space(root.phone ? 24 : 40)
 
           // ---- Today
+          // Landscape: a column of its own at the left, the clock large.
+          // Portrait and a phone: one row over the notifications, the clock
+          // and the date at the left and the weather at the right, so the
+          // notifications start near the top.
           Column {
             id: todayColumn
+            visible: root.wide
             x: root.margin
-            y: Style.space(root.phone ? 24 : 40)
+            y: Style.space(40)
             width: root.todayWidth
-            spacing: Style.space(root.phone ? 6 : 8)
+            height: root.wide ? implicitHeight : todayRow.height
+            spacing: Style.space(8)
 
-            // A phone: the date over a centred clock, as its lock does.
             Text {
-              visible: root.phone
-              width: parent.width
-              horizontalAlignment: Text.AlignHCenter
-              textFormat: Text.PlainText
-              text: Qt.locale(I18n.formatLocale).toString(new Date(root.now), "dddd, d MMMM")
-              color: root.dim
-              font.family: Style.font.family
-              font.pixelSize: Style.font.subtitle
-            }
-            Text {
-              width: parent.width
-              horizontalAlignment: root.phone ? Text.AlignHCenter : Text.AlignLeft
               textFormat: Text.PlainText
               text: Qt.locale(I18n.formatLocale).toString(new Date(root.now), "HH:mm")
               color: root.text
               font.family: Style.font.family
-              font.pixelSize: Style.space(root.phone ? 60 : 72)
+              font.pixelSize: Style.space(72)
               font.bold: true
             }
             Text {
-              visible: !root.phone
               textFormat: Text.PlainText
               text: Qt.locale(I18n.formatLocale).toString(new Date(root.now), "dddd, d MMMM")
               color: root.text
               font.family: Style.font.family
               font.pixelSize: Style.font.subtitle
             }
-            Item { width: 1; height: Style.space(root.phone ? 10 : 16); visible: root.hasWeather }
+            Item { width: 1; height: Style.space(16); visible: root.hasWeather }
+            WeatherCard { width: parent.width; visible: root.hasWeather }
+          }
 
-            // The weather, as the weather panel reads it.
-            Rectangle {
-              visible: root.hasWeather
-              width: parent.width
-              height: weatherRow.implicitHeight + Style.space(24)
-              color: root.cardFill
-              border.width: root.hairline
-              border.color: root.outline
-              Row {
-                id: weatherRow
-                x: Style.space(14)
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(12)
-                Text {
-                  anchors.verticalCenter: parent.verticalCenter
-                  textFormat: Text.PlainText
-                  text: root.weather ? root.weather.label : ""
-                  color: Commons.Color.accent
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.displayLarge
-                }
-                Column {
-                  anchors.verticalCenter: parent.verticalCenter
-                  spacing: Style.space(2)
-                  Text {
-                    textFormat: Text.PlainText
-                    text: root.weather ? root.weather.reportTempNum + root.weather.tempUnit : ""
-                    color: root.text
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.title
-                    font.bold: true
-                  }
-                  Text {
-                    textFormat: Text.PlainText
-                    text: [root.weatherHighLow, root.weather ? root.weather.reportLocation : ""]
-                      .filter(function(part) { return part !== "" }).join(" · ")
-                    color: root.dim
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.caption
-                  }
-                }
+          Item {
+            id: todayRow
+            visible: !root.wide
+            x: root.margin
+            y: Style.space(root.phone ? 16 : 28)
+            width: root.screenWidth - root.margin * 2
+            height: Math.max(clockBlock.implicitHeight, compactWeather.visible ? compactWeather.height : 0)
+            Column {
+              id: clockBlock
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(2)
+              Text {
+                textFormat: Text.PlainText
+                text: Qt.locale(I18n.formatLocale).toString(new Date(root.now), "HH:mm")
+                color: root.text
+                font.family: Style.font.family
+                font.pixelSize: Style.space(root.phone ? 34 : 40)
+                font.bold: true
               }
+              Text {
+                textFormat: Text.PlainText
+                text: Qt.locale(I18n.formatLocale).toString(new Date(root.now), "dddd, d MMMM")
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+              }
+            }
+            WeatherCard {
+              id: compactWeather
+              visible: root.hasWeather
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.min(implicitWidth, parent.width - clockBlock.implicitWidth - Style.space(16))
             }
           }
 
@@ -526,7 +517,7 @@ Item {
           Column {
             id: listColumn
             x: root.wide ? root.screenWidth - root.margin - root.listWidth : root.margin
-            y: root.wide ? Style.space(40) : todayColumn.y + todayColumn.height + Style.space(root.phone ? 28 : 40)
+            y: root.wide ? Style.space(40) : todayRow.y + todayRow.height + Style.space(root.phone ? 20 : 28)
             width: root.listWidth
             spacing: Style.space(12)
 
@@ -637,6 +628,50 @@ Item {
   }
 
   // ------------------------------------------------------------ parts
+
+  // The weather, as the weather panel reads it.
+  component WeatherCard: Rectangle {
+    implicitWidth: weatherRow.implicitWidth + Style.space(28)
+    height: weatherRow.implicitHeight + Style.space(20)
+    color: root.cardFill
+    border.width: root.hairline
+    border.color: root.outline
+    clip: true
+    Row {
+      id: weatherRow
+      x: Style.space(14)
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(12)
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        text: root.weather ? root.weather.label : ""
+        color: Commons.Color.accent
+        font.family: Style.font.family
+        font.pixelSize: Style.font.displayLarge
+      }
+      Column {
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(2)
+        Text {
+          textFormat: Text.PlainText
+          text: root.weather ? root.weather.reportTempNum + root.weather.tempUnit : ""
+          color: root.text
+          font.family: Style.font.family
+          font.pixelSize: Style.font.title
+          font.bold: true
+        }
+        Text {
+          textFormat: Text.PlainText
+          text: [root.weatherHighLow, root.weather ? root.weather.reportLocation : ""]
+            .filter(function(part) { return part !== "" }).join(" · ")
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+    }
+  }
 
   // A small outlined button of the header; lit in the accent while on.
   component HeaderButton: Rectangle {

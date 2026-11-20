@@ -183,7 +183,7 @@
     </keybind>
   </keyboard>
   <touch mouseEmulation="no"
-    bottomSwipeCommand="omarchy-keyboard show"
+    bottomSwipeCommand="omarchy-bottom-swipe"
     bottomSwipeIgnoreNamespace="wvkbd" />
   <snapping>
     <!-- Keep titlebar double-click maximize; top-edge dragging tiles upward. -->
