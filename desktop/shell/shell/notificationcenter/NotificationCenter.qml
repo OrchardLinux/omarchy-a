@@ -573,28 +573,67 @@ Item {
 
             Repeater {
               model: root.groups
-              Column {
+              Item {
                 id: groupColumn
                 required property var modelData
                 required property int index
                 readonly property bool open: !!root.openGroups[modelData.key]
                 readonly property int more: modelData.rows.length - 1
+                // 0 closed, 1 open: the stack's cards slide out from under its
+                // head and fade in, what follows moving down with them.
+                property real openness: open ? 1 : 0
+                Behavior on openness {
+                  enabled: root.gpu
+                  NumberAnimation { duration: Style.duration(300); easing.type: Easing.InOutCubic }
+                }
                 width: listColumn.width
-                spacing: Style.space(8)
-                Repeater {
-                  model: groupColumn.open ? groupColumn.modelData.rows : [groupColumn.modelData.rows[0]]
-                  CenterCard {
-                    required property var modelData
-                    required property int index
+                height: head.height + (rest.active && rest.item ? rest.item.height : 0)
+
+                CenterCard {
+                  id: head
+                  z: 1
+                  width: groupColumn.width
+                  entry: groupColumn.modelData.rows[0]
+                  more: groupColumn.open ? -1 : groupColumn.more
+                  shade: groupColumn.open ? 0 : 1 - groupColumn.openness
+                  focused: root.focusIndex === groupColumn.index + 2
+                  onOpened: root.openEntry(entry)
+                  onSwiped: root.forgetGroup(groupColumn.modelData, groupColumn.open, entry)
+                  onMoreToggled: root.toggleGroup(groupColumn.modelData.key)
+                  onActionPressed: function(id) {
+                    if (root.service && entry.live) { root.service.invokeAction(entry.key, id); root.close() }
+                  }
+                }
+                // The rest of the stack, built only while it shows.
+                Loader {
+                  id: rest
+                  active: groupColumn.more > 0 && (groupColumn.open || groupColumn.openness > 0)
+                  y: head.height
+                  width: groupColumn.width
+                  sourceComponent: Column {
                     width: groupColumn.width
-                    entry: modelData
-                    more: groupColumn.open ? (index === 0 ? -1 : 0) : groupColumn.more
-                    focused: index === 0 && root.focusIndex === groupColumn.index + 2
-                    onOpened: root.openEntry(entry)
-                    onSwiped: root.forgetGroup(groupColumn.modelData, groupColumn.open, entry)
-                    onMoreToggled: root.toggleGroup(groupColumn.modelData.key)
-                    onActionPressed: function(id) {
-                      if (root.service && entry.live) { root.service.invokeAction(entry.key, id); root.close() }
+                    topPadding: Style.space(8) * groupColumn.openness
+                    spacing: Style.space(8) * groupColumn.openness
+                    opacity: groupColumn.openness
+                    Repeater {
+                      model: groupColumn.modelData.rows.slice(1)
+                      Item {
+                        required property var modelData
+                        width: groupColumn.width
+                        height: restCard.height * groupColumn.openness
+                        CenterCard {
+                          id: restCard
+                          width: parent.width
+                          // From under the head: each card starts higher up.
+                          y: -(1 - groupColumn.openness) * height
+                          entry: parent.modelData
+                          onOpened: root.openEntry(entry)
+                          onSwiped: root.forgetGroup(groupColumn.modelData, true, entry)
+                          onActionPressed: function(id) {
+                            if (root.service && entry.live) { root.service.invokeAction(entry.key, id); root.close() }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -722,36 +761,44 @@ Item {
     }
   }
 
-  // One notification: the app's icon and name, the time, a bold title, the
-  // body and the sender's own buttons; "n more" opens its stack. A tap opens
-  // it, a finger sliding it sideways clears it (kinetic, as the banners).
+  // One notification, laid out as a banner: the app's icon at the left, a
+  // bold title with the time at its end, the body, the sender's own buttons
+  // under the text; the app's name only when there is no icon. "n more"
+  // opens its stack. A tap opens it, a finger sliding it sideways clears it
+  // (kinetic, as the banners).
   component CenterCard: Item {
     id: card
     property var entry: ({})
-    property int more: 0          // >0 collapsed with more behind, -1 the head of an open stack
+    property int more: 0          // >0 the head of a stack (closed), -1 the head of an open one
+    // How much of a closed stack's shapes behind it shows (1 closed, 0 open).
+    property real shade: 1
     property bool focused: false
     signal opened()
     signal swiped()
     signal moreToggled()
     signal actionPressed(string id)
-    height: box.height + (more > 0 ? Style.space(6) * Math.min(2, more) : 0)
+    readonly property int shapes: more > 0 ? Math.min(2, more) : 0
+    height: box.height + Style.space(6) * shapes * shade
 
     readonly property string iconUrl: root.service ? root.service.iconFor(entry) : ""
+    readonly property string glyph: String(entry.glyph || "")
+    readonly property bool hasIcon: iconUrl !== "" || glyph !== ""
     readonly property string appName: root.service ? root.service.nameFor(entry) : ""
+    readonly property real iconSize: root.phone ? Style.space(36) : Style.space(40)
 
-    // The cards behind a collapsed stack, as shapes.
+    // The cards behind a closed stack, as shapes; they fade as it opens.
     Repeater {
-      model: card.more > 0 ? Math.min(2, card.more) : 0
+      model: card.shapes
       Rectangle {
         required property int index
         x: Style.space(8) * (index + 1)
-        y: box.height + Style.space(6) * index - Style.space(6) * 0
+        y: box.height + Style.space(6) * index * card.shade
         width: card.width - Style.space(16) * (index + 1)
         height: Style.space(6)
         color: root.cardFill
         border.width: root.hairline
         border.color: root.outline
-        opacity: 0.8 - index * 0.25
+        opacity: (0.8 - index * 0.25) * card.shade
       }
     }
 
@@ -762,7 +809,7 @@ Item {
       id: box
       x: card.swipeX
       width: card.width
-      height: column.implicitHeight + Style.space(28)
+      height: content.implicitHeight + Style.space(24)
       color: root.cardFill
       border.width: root.focused ? Math.max(1, root.hairline) : root.hairline
       border.color: card.focused ? Commons.Color.accent : root.outline
@@ -775,24 +822,23 @@ Item {
       }
 
       Column {
-        id: column
-        x: Style.space(14)
-        y: Style.space(14)
-        width: parent.width - Style.space(28)
-        spacing: Style.space(6)
+        id: content
+        x: Style.space(12)
+        y: Style.space(12)
+        width: parent.width - Style.space(26)
+        spacing: Style.space(10)
 
-        Item {
+        Row {
           width: parent.width
-          height: Style.space(20)
-          Rectangle {
-            id: tile
-            width: Style.space(20)
+          spacing: Style.space(12)
+
+          Item {
+            id: icon
+            width: card.hasIcon ? card.iconSize : 0
             height: width
-            color: Util.alpha(Commons.Color.accent, 0.12)
+            visible: card.hasIcon
             Image {
-              anchors.centerIn: parent
-              width: Style.space(14)
-              height: width
+              anchors.fill: parent
               visible: card.iconUrl !== ""
               source: card.iconUrl
               sourceSize.width: width * 2
@@ -802,93 +848,97 @@ Item {
             }
             Text {
               anchors.centerIn: parent
-              visible: card.iconUrl === ""
+              visible: card.iconUrl === "" && card.glyph !== ""
               textFormat: Text.PlainText
-              text: String(card.entry.glyph || "") || "󰂚"
-              color: Commons.Color.accent
+              text: card.glyph
+              color: root.text
               font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.displayLarge
             }
           }
-          Text {
-            anchors.left: tile.right
-            anchors.leftMargin: Style.space(8)
-            anchors.right: meta.left
-            anchors.rightMargin: Style.space(8)
-            anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: card.appName.toUpperCase()
-            elide: Text.ElideRight
-            color: root.dim
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-            font.letterSpacing: 1
-          }
-          Row {
-            id: meta
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(8)
-            Text {
-              visible: card.more !== 0
-              textFormat: Text.PlainText
-              text: card.more > 0 ? I18n.t("notificationCenter.more").arg(card.more) : I18n.t("notificationCenter.less")
-              color: Commons.Color.accent
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-              MouseArea {
-                anchors.fill: parent
-                anchors.margins: -Style.space(10)
-                preventStealing: true
-                onClicked: card.moreToggled()
+
+          Column {
+            width: parent.width - (icon.visible ? icon.width + parent.spacing : 0)
+            spacing: Style.space(3)
+
+            Item {
+              width: parent.width
+              height: title.implicitHeight
+              Text {
+                id: title
+                width: parent.width - meta.width - Style.space(8)
+                textFormat: Text.PlainText
+                text: String(card.entry.summary || "")
+                color: root.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.title
+                font.bold: true
+                elide: Text.ElideRight
+              }
+              Row {
+                id: meta
+                anchors.right: parent.right
+                anchors.verticalCenter: title.verticalCenter
+                spacing: Style.space(8)
+                Text {
+                  visible: !card.hasIcon && card.appName !== ""
+                  textFormat: Text.PlainText
+                  text: card.appName
+                  color: root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  visible: card.more !== 0
+                  textFormat: Text.PlainText
+                  text: card.more > 0 ? I18n.t("notificationCenter.more").arg(card.more) : I18n.t("notificationCenter.less")
+                  color: Commons.Color.accent
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                  MouseArea {
+                    anchors.fill: parent
+                    anchors.margins: -Style.space(10)
+                    preventStealing: true
+                    onClicked: card.moreToggled()
+                  }
+                }
+                Text {
+                  textFormat: Text.PlainText
+                  text: root.ago(card.entry.ts || 0)
+                  color: root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
               }
             }
             Text {
+              visible: text !== ""
+              width: parent.width
               textFormat: Text.PlainText
-              text: root.ago(card.entry.ts || 0)
+              text: String(card.entry.body || "")
               color: root.dim
               font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.subtitle
+              wrapMode: Text.Wrap
+              maximumLineCount: 3
+              elide: Text.ElideRight
             }
           }
         }
 
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: String(card.entry.summary || "")
-          color: root.text
-          font.family: Style.font.family
-          font.pixelSize: Style.font.title
-          font.bold: true
-          elide: Text.ElideRight
-        }
-        Text {
-          visible: text !== ""
-          width: parent.width
-          textFormat: Text.PlainText
-          text: String(card.entry.body || "")
-          color: root.dim
-          font.family: Style.font.family
-          font.pixelSize: Style.font.subtitle
-          wrapMode: Text.Wrap
-          maximumLineCount: 3
-          elide: Text.ElideRight
-        }
-
-        // The sender's own buttons: the first in the accent, the rest outlined.
+        // The sender's own buttons under the text: the first in the accent.
         Row {
-          visible: actions.length > 0
           readonly property var actions: card.entry.actions || []
-          width: parent.width
+          visible: actions.length > 0
+          x: icon.visible ? icon.width + Style.space(12) : 0
+          width: parent.width - x
           spacing: Style.space(8)
-          topPadding: Style.space(4)
           Repeater {
             model: parent.actions
             Rectangle {
               required property var modelData
               required property int index
-              width: (column.width - Style.space(8) * (card.entry.actions.length - 1)) / card.entry.actions.length
+              width: (parent.width - Style.space(8) * (card.entry.actions.length - 1)) / card.entry.actions.length
               height: Style.space(32)
               color: index === 0 ? Commons.Color.accent : "transparent"
               border.width: index === 0 ? 0 : root.hairline
