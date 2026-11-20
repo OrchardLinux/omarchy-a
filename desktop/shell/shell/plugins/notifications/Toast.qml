@@ -158,7 +158,14 @@ Item {
   // time, and gets a fresh display period of its own duration. Its picture
   // may be new at the same path, so the image is read again too.
   property real remaining: Number(row.duration || 0)
-  readonly property bool ticking: Number(row.duration || 0) > 0 && !paused
+  readonly property bool ticking: Number(row.duration || 0) > 0 && !paused && !fingerHeld
+  // Orchard: a finger resting on the card, sliding it or just having thrown
+  // it holds its time, as a pointer over it does.
+  readonly property bool fingerHeld: fingerOn.active || swipe.active || fling !== ""
+  PointHandler {
+    id: fingerOn
+    acceptedDevices: PointerDevice.TouchScreen
+  }
   readonly property string arrival: String(row.ts) + ":" + String(row.duration)
   property bool reloading: false
   onArrivalChanged: {
