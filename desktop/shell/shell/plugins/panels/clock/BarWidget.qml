@@ -170,6 +170,9 @@ BarWidget {
     onPressed: function(b) {
       if (b === Qt.RightButton) root.cycleFormat()
       else if (b === Qt.MiddleButton) { if (root.bar) root.bar.run("omarchy-menu-timezone") }
+      // Orchard: the date and time open the notification center (SHELL-SPEC,
+      // step 3); upstream's calendar panel stays where there is none.
+      else if (root.bar && root.bar.shell && root.bar.shell.notificationCenter) root.bar.shell.notificationCenter.togglePopup()
       else root.togglePanel()
     }
 

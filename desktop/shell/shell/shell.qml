@@ -11,6 +11,7 @@ import qs.Commons as Commons
 import "plugins/bar"
 import "launcher"
 import "controlcenter"
+import "notificationcenter"
 import "services"
 import "services/AuthServiceStore.js" as AuthServiceStore
 
@@ -31,8 +32,10 @@ ShellRoot {
   Launcher { id: appGrid; shell: shell; appLibrary: shell.appLibrary }
   // Orchard: the control center (`omarchy-shell omarchy.controlcenter toggle`).
   ControlCenter { id: controlCenter; shell: shell }
+  NotificationCenter { id: notificationCenter; shell: shell }
   // The bar pulls it down from the top edge's right third (Bar.qml).
   readonly property var controlCenter: controlCenter
+  readonly property var notificationCenter: notificationCenter
   readonly property var launcher: appGrid
   ShellIpc {
     target: "omarchy.dock"

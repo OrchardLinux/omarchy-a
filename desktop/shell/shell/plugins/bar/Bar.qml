@@ -1858,6 +1858,26 @@ Item {
       // thirds will be the notification center's. Only a vertical drag takes
       // the touch from the icons under it: a tap still reaches them. The
       // touch stays this surface's while the finger moves down the screen.
+      // The left two thirds: the notification center, the same way.
+      Item {
+        width: parent.width * 2 / 3
+        height: parent.height
+        visible: root.position === "top" && !!root.shell && !!root.shell.notificationCenter
+
+        DragHandler {
+          target: null
+          xAxis.enabled: false
+          acceptedDevices: PointerDevice.TouchScreen
+          grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+          readonly property var center: root.shell ? root.shell.notificationCenter : null
+          onActiveChanged: {
+            if (!center) return
+            if (active) center.beginPull()
+            else center.endPull(centroid.velocity.y)
+          }
+          onTranslationChanged: if (active && center) center.pullTo(translation.y)
+        }
+      }
       Item {
         x: parent.width * 2 / 3
         width: parent.width - x

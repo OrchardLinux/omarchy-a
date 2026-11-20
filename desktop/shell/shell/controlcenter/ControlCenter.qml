@@ -335,6 +335,7 @@ Item {
   function show() {
     root.closePopout()
     if (root.shell && root.shell.launcher && root.shell.launcher.opened) root.shell.launcher.close()
+    if (root.shell && root.shell.notificationCenter && root.shell.notificationCenter.opened) root.shell.notificationCenter.close()
     root.prepare()
     root.opened = true
     root.mapped = true
@@ -399,6 +400,7 @@ Item {
     root.popupStyle = false
     if (!root.opened) {
       root.closePopout()
+      if (root.shell && root.shell.notificationCenter && root.shell.notificationCenter.opened) root.shell.notificationCenter.close()
       root.prepare()
       root.reveal = 0
       root.mapped = true

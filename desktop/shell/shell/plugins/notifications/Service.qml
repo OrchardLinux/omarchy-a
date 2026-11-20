@@ -125,7 +125,8 @@ Item {
   // pauses meanwhile (they take the keyboard; its text and the on-screen
   // keyboard stay) and goes on once they close.
   readonly property bool shellCovered: !!shell
-    && ((shell.controlCenter && shell.controlCenter.mapped) || (shell.launcher && shell.launcher.mapped))
+    && ((shell.controlCenter && shell.controlCenter.mapped) || (shell.launcher && shell.launcher.mapped)
+        || (shell.notificationCenter && shell.notificationCenter.mapped))
   property bool replyPaused: false
   onShellCoveredChanged: {
     if (shellCovered && replying) { replyPaused = true; replying = false }
@@ -1390,6 +1391,101 @@ Item {
     return kept
   }
 
+  // ------------------------------------------------------- notification center
+  //
+  // Orchard: what the notification center (SHELL-SPEC, step 3) lists: the
+  // cards on screen and the history behind them, newest first, grouped by
+  // app. A notification opened (activated) or withdrawn by its sender is
+  // done with; one that timed out, was swiped away or replaced by a newer
+  // banner stays until it is cleared here.
+  readonly property var centerDone: ({ activated: true, closed: true, cleared: true })
+  // Bumped by everything the list depends on; the center binds to it.
+  readonly property int centerRevision: toasts.count + historyEntries.length * 1000 + refsRevision * 1000000
+  function centerEntries() {
+    var out = [], seen = {}
+    for (var i = 0; i < toasts.count; i++) {
+      var live = toasts.get(i)
+      var key = String(live.key)
+      if (leaving[key] || key.indexOf("placeholder") === 0) continue
+      seen[key] = true
+      out.push({ key: key, live: true, app: String(live.app || ""), appIcon: String(live.appIcon || ""),
+                 glyph: String(live.glyph || ""), source: String(live.source || ""),
+                 summary: String(live.summary || ""), body: String(live.body || ""),
+                 groupKey: String(live.groupKey || live.app || ""), ts: Number(live.ts || 0),
+                 actions: senderActions(refs[key]) })
+    }
+    var history = currentHistory()
+    for (var h = 0; h < history.length; h++) {
+      var e = history[h]
+      if (seen[e.key] || centerDone[e.closed_reason]) continue
+      seen[e.key] = true
+      out.push({ key: String(e.key), live: false, app: String(e.app || ""), appIcon: String(e.appIcon || ""),
+                 glyph: String(e.glyph || ""), source: String(e.source || ""),
+                 summary: String(e.summary || ""), body: String(e.body || ""),
+                 groupKey: String(e.groupKey || e.app || ""), ts: Number(e.ts || 0), actions: [] })
+    }
+    out.sort(function(a, b) { return b.ts - a.ts })
+    return out
+  }
+  function centerGroups() {
+    var entries = centerEntries(), groups = [], at = {}
+    for (var i = 0; i < entries.length; i++) {
+      var g = entries[i].groupKey
+      if (at[g] === undefined) { at[g] = groups.length; groups.push({ key: g, rows: [] }) }
+      groups[at[g]].rows.push(entries[i])
+    }
+    return groups
+  }
+  // An entry gone from the center: a card on screen closes, a history entry
+  // is forgotten.
+  function forgetEntry(key) {
+    if (rowIndexFor(key) >= 0) closeToast(key, "cleared")
+    var kept = historyEntries.filter(function(e) { return e.key !== key })
+    if (kept.length !== historyEntries.length) { historyEntries = kept; saveSoon("history") }
+  }
+  function clearCenter() {
+    clearAll("cleared", true)
+    historyEntries = []
+    saveSoon("history")
+  }
+  // A tap: a card on screen as on screen; a history entry has no sender left,
+  // so its app's window, else the app.
+  function openEntry(entry) {
+    if (entry.live && rowIndexFor(entry.key) >= 0) { activate(entry.key); return }
+    var app = String(entry.app || entry.source || "")
+    if (!app) return
+    if (usingHyprland) { Util.execArgv(["omarchy-hyprland-focus-app", app]); return }
+    if (service.shell && service.shell.appLibrary && service.shell.appLibrary.focusToplevel(app)) return
+    var desktop = DesktopEntries.heuristicLookup(app)
+    if (desktop) desktop.execute()
+  }
+  // The app's name for a center card: its desktop entry's, else what it sent.
+  function nameFor(entry) {
+    var app = String(entry.app || entry.source || "")
+    if (!app || app === "notify-send" || app === "omarchy-action") return ""
+    var want = Icons.candidates(entry)
+    for (var i = 0; i < want.entries.length; i++) {
+      var desktop = DesktopEntries.heuristicLookup(want.entries[i])
+      if (desktop && String(desktop.name || "")) return String(desktop.name)
+    }
+    return app
+  }
+
+  // The app's icon for a center card, as the cards find theirs.
+  function iconFor(entry) {
+    var want = Icons.candidates(entry)
+    for (var i = 0; i < want.themed.length; i++) {
+      var found = Quickshell.iconPath(want.themed[i], true)
+      if (found) return found
+    }
+    for (var j = 0; j < want.entries.length; j++) {
+      var desktop = DesktopEntries.heuristicLookup(want.entries[j])
+      var icon = desktop ? String(desktop.icon || "") : ""
+      if (icon) return icon.charAt(0) === "/" ? Util.fileUrl(icon) : Quickshell.iconPath(icon, true)
+    }
+    return ""
+  }
+
   function saveSoon(file) {
     unsaved[file] = true
     if (!saveTimer.running) saveTimer.start()
@@ -1687,7 +1783,9 @@ Item {
       readonly property var margins: service.marginsFor(String(modelData.name))
       readonly property bool stepAside: service.fullscreenOn(String(modelData.name))
       readonly property bool hasSomethingToShow: showingNotifications && toasts.count > 0
-      visible: !stepAside || hasSomethingToShow
+      // Under the open notification center no banner shows: it is listed there.
+      readonly property bool centerOpen: !!service.shell && !!service.shell.notificationCenter && service.shell.notificationCenter.mapped
+      visible: (!stepAside || hasSomethingToShow) && !centerOpen
       color: "transparent"
 
       WlrLayershell.namespace: "omarchy-notifications"
