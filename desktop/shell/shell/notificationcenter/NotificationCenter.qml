@@ -60,6 +60,30 @@ Item {
     var revision = service ? service.centerRevision : 0
     return service ? service.centerGroups() : []
   }
+  // The groups as a model keyed by app, kept in step with `groups` by
+  // moves, inserts and removals: a group that a new message sorts to the top
+  // moves (its card stays and slides there) instead of every card being
+  // made again in the new order.
+  ListModel { id: groupModel }
+  property var groupMap: ({})
+  property bool reordering: false
+  Timer { id: reorderDone; interval: 450; onTriggered: root.reordering = false }
+  function syncGroups() {
+    var map = {}, keys = []
+    for (var g = 0; g < root.groups.length; g++) { map[root.groups[g].key] = root.groups[g]; keys.push(root.groups[g].key) }
+    root.groupMap = map
+    var moved = false
+    for (var i = 0; i < keys.length; i++) {
+      if (i < groupModel.count && groupModel.get(i).key === keys[i]) continue
+      var at = -1
+      for (var j = i + 1; j < groupModel.count; j++) if (groupModel.get(j).key === keys[i]) { at = j; break }
+      if (at >= 0) { groupModel.move(at, i, 1); moved = true }
+      else groupModel.insert(i, { key: keys[i] })
+    }
+    while (groupModel.count > keys.length) groupModel.remove(groupModel.count - 1)
+    if (moved && root.mapped && root.gpu) { root.reordering = true; reorderDone.restart() }
+  }
+  onGroupsChanged: syncGroups()
   property var openGroups: ({})
   // What was on the list while it was open: something newer arriving then
   // comes in with a transition; what was there on opening does not.
@@ -226,7 +250,7 @@ Item {
     property bool writing: false
     onExited: { root.noteWritten = writing; root.writeOpenNote() }
   }
-  Component.onCompleted: writeOpenNote()
+  Component.onCompleted: { writeOpenNote(); syncGroups() }
   onOpenedChanged: {
     writeOpenNote()
     if (!opened && typing) endReply()
@@ -576,6 +600,13 @@ Item {
             y: root.wide ? Style.space(40) : todayRow.y + todayRow.height + Style.space(root.phone ? 20 : 28)
             width: root.listWidth
             spacing: Style.space(12)
+            // Re-sorting slides the groups to their new places; otherwise
+            // (a stack opening, a card leaving) positions follow at once.
+            move: root.reordering ? reorderMove : null
+            Transition {
+              id: reorderMove
+              NumberAnimation { properties: "y"; duration: Style.duration(320); easing.type: Easing.Bezier; easing.bezierCurve: Style.easeOut }
+            }
 
             // The header: Focus (Do Not Disturb) and Clear all.
             Item {
@@ -625,11 +656,12 @@ Item {
             }
 
             Repeater {
-              model: root.groups
+              model: groupModel
               Item {
                 id: groupColumn
-                required property var modelData
+                required property string key
                 required property int index
+                readonly property var modelData: root.groupMap[key] || ({ key: key, rows: [{}] })
                 readonly property bool open: !!root.openGroups[modelData.key]
                 readonly property int more: modelData.rows.length - 1
                 // 0 closed, 1 open: the stack's cards slide out from under its
@@ -661,15 +693,17 @@ Item {
                   duration: root.gpu ? Style.duration(260) : 0
                   easing.type: Easing.InOutCubic
                 }
-                Component.onCompleted: {
+                function arrive() {
                   var rows = modelData.rows, unseen = 0
-                  for (var i = 0; i < rows.length; i++) if (!root.seen[rows[i].key]) unseen++
+                  for (var i = 0; i < rows.length; i++) if (rows[i].key && !root.seen[rows[i].key]) unseen++
                   if (root.mapped && unseen > 0) {
                     if (unseen === rows.length) { appear = 0; appearRun.start() }
                     else { headAppear = 0; headAppearRun.start() }
                   }
-                  for (var j = 0; j < rows.length; j++) root.seen[rows[j].key] = true
+                  for (var j = 0; j < rows.length; j++) if (rows[j].key) root.seen[rows[j].key] = true
                 }
+                Component.onCompleted: arrive()
+                onModelDataChanged: arrive()
                 clip: appear < 1
                 opacity: appear
                 height: (head.height + (rest.active && rest.item ? rest.item.height : 0)) * appear
