@@ -554,14 +554,14 @@ Item {
 
   Component.onCompleted: { wallpaperProc.running = true; opaqueProc.running = true }
 
-  // Orchard: Trigger > Toggle > Opaque Launcher shows it on the theme's
-  // plain background instead of the frosted wallpaper (no blurred copy is
-  // made then). Read as it opens.
-  property bool opaque: false
+  // Orchard: on the theme's plain background by default (no blurred copy
+  // is made then); Trigger > Toggle > Frosted Launcher puts it on the frosted
+  // wallpaper. Read as it opens.
+  property bool opaque: true
   Process {
     id: opaqueProc
-    command: ["omarchy-toggle-enabled", "launcher-opaque"]
-    onExited: function(code) { root.opaque = code === 0 }
+    command: ["omarchy-toggle-enabled", "launcher-frosted"]
+    onExited: function(code) { root.opaque = code !== 0 }
   }
 
   // The background plugin names the new wallpaper the moment a theme or

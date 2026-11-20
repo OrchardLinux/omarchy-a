@@ -36,8 +36,8 @@ is missing or empty.
 - The status bar is back to Omarchy's compact size. Stay Awake sits with the
   icons on the right, and the keyboard button is gone: swipe up from the
   bottom, or use the control center.
-- The launcher opens with a gentle zoom, and can use an opaque background
-  instead of the blurred wallpaper (Trigger > Toggle).
+- The launcher opens with a gentle zoom on the theme's plain background; the
+  blurred wallpaper is a choice in Trigger > Toggle.
 - On a phone, About and Omacalc open full screen like every other window.
 - A touch no longer leaves hover highlights, tooltips or close marks behind,
   in the shell and in apps.
@@ -49,6 +49,8 @@ is missing or empty.
   see the weather and all recent notifications, grouped by app. Tap one to
   open it, reply where the app offers it, swipe it away, or clear them all.
   A swipe up from the bottom puts it, or the control center, away.
+- The control center's Focus tile switches Do Not Disturb, as the
+  notification center does.
 
 ## [0.3.2] - 2026-11-19
 
