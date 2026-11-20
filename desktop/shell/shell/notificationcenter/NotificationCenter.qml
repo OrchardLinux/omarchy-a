@@ -595,7 +595,9 @@ Item {
                   width: groupColumn.width
                   entry: groupColumn.modelData.rows[0]
                   more: groupColumn.open ? -1 : groupColumn.more
-                  shade: groupColumn.open ? 0 : 1 - groupColumn.openness
+                  // The shapes fade and fold away with the opening, not at once.
+                  stacked: groupColumn.more
+                  shade: 1 - groupColumn.openness
                   focused: root.focusIndex === groupColumn.index + 2
                   onOpened: root.openEntry(entry)
                   onSwiped: root.forgetGroup(groupColumn.modelData, groupColumn.open, entry)
@@ -770,6 +772,8 @@ Item {
     id: card
     property var entry: ({})
     property int more: 0          // >0 the head of a stack (closed), -1 the head of an open one
+    // How many cards it heads (its shapes stay while they fade out).
+    property int stacked: more > 0 ? more : 0
     // How much of a closed stack's shapes behind it shows (1 closed, 0 open).
     property real shade: 1
     property bool focused: false
@@ -777,7 +781,7 @@ Item {
     signal swiped()
     signal moreToggled()
     signal actionPressed(string id)
-    readonly property int shapes: more > 0 ? Math.min(2, more) : 0
+    readonly property int shapes: Math.min(2, stacked)
     height: box.height + Style.space(6) * shapes * shade
 
     readonly property string iconUrl: root.service ? root.service.iconFor(entry) : ""
