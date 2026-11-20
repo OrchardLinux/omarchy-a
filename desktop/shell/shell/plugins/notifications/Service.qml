@@ -31,8 +31,17 @@ Item {
   // A new deck lands on the focused output and stays there until it empties.
   property string deckDisplayName: ""
   readonly property var displayNames: Quickshell.screens.map(function(screen) { return screen.name })
+  // Orchard: Hyprland's answers only where Hyprland runs; on labwc the
+  // generic Wayland window list (ToplevelManager) stands in for them.
+  readonly property bool usingHyprland: !!Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE")
   readonly property string focusedDisplayName: {
-    var name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
+    var name = ""
+    if (usingHyprland) name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
+    else {
+      var active = ToplevelManager.activeToplevel
+      var on = active && active.screens && active.screens.length ? active.screens[0] : null
+      name = on ? String(on.name || "") : ""
+    }
     return displayNames.indexOf(name) >= 0 ? name : (displayNames[0] || "")
   }
   readonly property string targetDisplayName: displayNames.indexOf(deckDisplayName) >= 0 ? deckDisplayName : focusedDisplayName
@@ -71,10 +80,93 @@ Item {
   readonly property string barPosition: barRef ? String(barRef.position || "top") : "top"
   readonly property bool barVertical: barPosition === "left" || barPosition === "right"
   readonly property int defaultBarSize: barVertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
-  function marginsFor(screenName) {
-    return Delivery.deckMargins(barPosition, Delivery.barThickness(barRef, screenName, defaultBarSize), Style.gapsOut)
+  // Orchard: one notification at a time as a banner (the default), or
+  // upstream's deck (Trigger > Toggle > Stack Notifications, the
+  // notifications-stack toggle). The notification center holds them all
+  // either way.
+  property bool stackMode: false
+  readonly property bool bannerMode: !stackMode
+  // The shell spec's banner card, its place and its exit, in either setting:
+  // the stack is upstream's deck behaviour with the same cards.
+  readonly property bool bannerLook: true
+  Process {
+    id: stackModeProc
+    command: ["omarchy-toggle-enabled", "notifications-stack"]
+    onExited: function(code) { service.stackMode = code === 0 }
   }
-  readonly property int notificationWidth: Style.space(380)
+
+  readonly property int narrowestScreen: {
+    var narrowest = 0
+    for (var i = 0; i < Quickshell.screens.length; i++) {
+      var w = Quickshell.screens[i].width
+      if (w > 0 && (narrowest === 0 || w < narrowest)) narrowest = w
+    }
+    return narrowest
+  }
+  // A phone (a screen narrower than the bar's narrow limit) has the banner
+  // full width with an 8 px margin; an iPad has it 380 wide, top right.
+  readonly property bool narrowScreens: narrowestScreen > 0 && narrowestScreen < 480
+  function marginsFor(screenName) {
+    var bar = Delivery.barThickness(barRef, screenName, defaultBarSize)
+    if (bannerLook && barPosition === "top")
+      return { top: bar + Style.space(8), right: narrowScreens ? Style.space(8) : Style.space(12) }
+    return Delivery.deckMargins(barPosition, bar, Style.gapsOut)
+  }
+  // Never wider than the narrowest screen allows with the same gap on both
+  // sides: a phone (375 wide) had upstream's card run off its left edge.
+  readonly property int notificationWidth: {
+    var gap = bannerLook ? Style.space(8) : Style.gapsOut
+    var room = narrowestScreen > 0 ? narrowestScreen - 2 * gap : Style.space(380)
+    return bannerLook && narrowScreens ? room : Math.min(Style.space(380), room)
+  }
+
+  // Orchard: the control center or the launcher opens over the screen as it
+  // is, a banner and the on-screen keyboard included. A reply being typed
+  // pauses meanwhile (they take the keyboard; its text and the on-screen
+  // keyboard stay) and goes on once they close.
+  readonly property bool shellCovered: !!shell
+    && ((shell.controlCenter && shell.controlCenter.mapped) || (shell.launcher && shell.launcher.mapped))
+  property bool replyPaused: false
+  onShellCoveredChanged: {
+    if (shellCovered && replying) { replyPaused = true; replying = false }
+    else if (!shellCovered && replyPaused) { replyPaused = false; replying = true }
+  }
+
+  // A reply field has the keyboard from its tap until the reply is sent,
+  // Escape, or the card goes (labwc does not hand an overlay the keyboard on
+  // demand, so it is taken outright, as keyboard mode does). Its card does
+  // not time out meanwhile.
+  property bool replying: false
+  // The on-screen keyboard was opened for the reply (a finger tapped the
+  // field): it goes again with the reply.
+  property bool replyKeyboard: false
+  function beginReply(byTouch) {
+    replying = true
+    if (byTouch && !replyKeyboard) {
+      replyKeyboard = true
+      Util.execArgv(["omarchy-keyboard", "show"])
+    }
+  }
+  function endReply() {
+    replyPaused = false
+    replying = false
+    if (replyKeyboard) {
+      replyKeyboard = false
+      Util.execArgv(["omarchy-keyboard", "hide"])
+    }
+  }
+  function replyOf(key, revision) {
+    var ref = refs[key]
+    if (!ref || !ref.hasInlineReply) return ""
+    return String(ref.inlineReplyPlaceholder || "") || I18n.t("notifications.reply")
+  }
+  function sendReply(key, text) {
+    var ref = refs[key]
+    endReply()
+    if (!ref || !ref.hasInlineReply) return
+    try { ref.sendInlineReply(String(text)) } catch (e) {}
+    closeToast(key, "activated")
+  }
 
   // ---------------------------------------------------- fullscreen windows
   //
@@ -99,6 +191,15 @@ Item {
   function fullscreenOn(name) {
     var revision = hyprRevision
     if (!name) return false
+    if (!usingHyprland) {
+      // labwc: the active window, fullscreen on that output.
+      var active = ToplevelManager.activeToplevel
+      if (!active || !active.fullscreen) return false
+      var screens = active.screens || []
+      for (var a = 0; a < screens.length; a++)
+        if (String(screens[a].name) === name) return true
+      return false
+    }
     var screen = null
     for (var s = 0; s < Quickshell.screens.length; s++)
       if (String(Quickshell.screens[s].name) === name) screen = Quickshell.screens[s]
@@ -116,7 +217,7 @@ Item {
   }
 
   Connections {
-    target: Hyprland
+    target: service.usingHyprland ? Hyprland : null
     function onRawEvent(event) {
       switch (event.name) {
       case "fullscreen": case "openwindow": case "closewindow": case "movewindowv2":
@@ -441,6 +542,8 @@ Item {
   readonly property var sceneCurve: Style.easeOut
   readonly property int arriveDuration: 250
   readonly property int leaveDuration: 200
+  // A banner's own exit (Toast.qml), a little longer than a deck card's.
+  readonly property int bannerExit: 280
   property int sceneDuration: arriveDuration
   // How far a card drops in from, and rises by on its way out.
   readonly property real travel: Style.space(24)
@@ -717,6 +820,16 @@ Item {
         Store.applyTo(toasts, at, row)      // an update, in place
         service.retarget(snap, deckNow)
       } else {
+        // One at a time: the new card takes the place of what is on screen,
+        // which is in the history (the notification center) already.
+        if (service.bannerMode) {
+          var shown = []
+          for (var t = 0; t < toasts.count; t++) {
+            var other = String(toasts.get(t).key)
+            if (other !== key && !service.leaving[other]) shown.push(other)
+          }
+          if (shown.length) service.closeToasts(shown, "replaced", true)
+        }
         service.pinDeckDisplay()
         // Before the insert: the delegate measures itself while it is built.
         service.fresh[key] = true
@@ -745,7 +858,8 @@ Item {
     refsRevision += 1
     try {
       if (reason === "expired") ref.expire()
-      else if (reason) ref.dismiss()
+      // Orchard: a banner replaced by a newer one was not dismissed.
+      else if (reason && reason !== "replaced") ref.dismiss()
       else ref.tracked = false
     } catch (e) {}
   }
@@ -794,9 +908,18 @@ Item {
       // Under the cards closing in, so the one taking its place covers it on
       // the way up. Its text goes first, or it would read through them; the
       // last card keeps its words, with nothing to cover it.
-      gone[keys[j]] = { y: from.y - travel, scale: from.scale, opacity: 0, height: from.height,
-                        z: 0, front: staying === 0, hidden: place ? place.hidden === true : true,
-                        leaving: true, until: Date.now() + Style.duration(leaveDuration) }
+      // Orchard: a banner stays where it is and leaves on its own (Toast's
+      // exit: a fade, a slight shrink and drift up, as the popups go); the
+      // deck only waits for it.
+      gone[keys[j]] = bannerLook
+        ? { y: from.y, scale: from.scale, opacity: from.opacity, height: from.height,
+            // Not hidden: a leaving card has no place left in the layout, and
+            // a hidden one is drawn at once at nothing, cutting its exit off.
+            z: 0, front: true, hidden: false,
+            leaving: true, until: Date.now() + Style.duration(bannerExit) }
+        : { y: from.y - travel, scale: from.scale, opacity: 0, height: from.height,
+            z: 0, front: staying === 0, hidden: place ? place.hidden === true : true,
+            leaving: true, until: Date.now() + Style.duration(leaveDuration) }
     }
     departures = gone
     leaving = next
@@ -823,8 +946,17 @@ Item {
   }
 
   function finishLeaving() {
-    var keys = Object.keys(leaving)
-    for (var i = 0; i < keys.length; i++) finishClose(keys[i], leaving[keys[i]])
+    var keys = Object.keys(leaving), now = Date.now()
+    for (var i = 0; i < keys.length; i++) {
+      // Orchard: a departure still on its own clock (a banner's longer exit)
+      // ends there, not with the scene's.
+      var departing = departures[keys[i]]
+      if (departing && departing.until > now) {
+        if (!departureDeadline.running) departureDeadline.start()
+        continue
+      }
+      finishClose(keys[i], leaving[keys[i]])
+    }
   }
 
   function unmarkLeaving(key) {
@@ -970,6 +1102,19 @@ Item {
   }
 
   function openWindows() {
+    if (!usingHyprland) {
+      // labwc: the window list has no pid or focus history; the active
+      // window counts as the most recent, the rest after it.
+      var windows = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
+      var active = ToplevelManager.activeToplevel
+      var listed = []
+      for (var w = 0; w < windows.length; w++) {
+        var appId = String(windows[w].appId || "")
+        if (appId) listed.push({ wmClass: appId, title: String(windows[w].title || ""), address: "",
+                                 pid: 0, focusOrder: windows[w] === active ? 0 : 1 + w, toplevel: windows[w] })
+      }
+      return listed
+    }
     var list = Hyprland.toplevels ? Hyprland.toplevels.values : []
     var out = []
     for (var i = 0; i < list.length; i++) {
@@ -1083,6 +1228,7 @@ Item {
   // By address, because a class is not an identity.
   function focusWindow(win) {
     if (!win) return
+    if (win.toplevel) { win.toplevel.activate(); return }
     if (!/^0x[0-9a-f]+$/i.test(String(win.address || ""))) return
     Hyprland.dispatch('hl.dsp.focus({window = hl.get_window("address:' + win.address + '")})')
   }
@@ -1110,7 +1256,10 @@ Item {
       else if (Markup.hostname(row.source))
         Security.openExternalUrl("https://" + Markup.hostname(row.source) + "/")
       else if (String(row.link || "")) Security.openExternalUrl(String(row.link))
-      else if (String(row.app || "")) Util.execArgv(["omarchy-hyprland-focus-app", String(row.app)])
+      else if (String(row.app || "")) {
+        if (usingHyprland) Util.execArgv(["omarchy-hyprland-focus-app", String(row.app)])
+        else if (service.shell && service.shell.appLibrary) service.shell.appLibrary.focusToplevel(String(row.app))
+      }
     }
     closeToast(key, "activated", instant)
   }
@@ -1348,7 +1497,7 @@ Item {
     onExited: function(code) { service.storeReady = code === 0 }
   }
 
-  Component.onCompleted: storePrepare.running = true
+  Component.onCompleted: { storePrepare.running = true; stackModeProc.running = true }
   // A reload or a clean exit inside the save delay still writes.
   Component.onDestruction: flushStore()
 
@@ -1379,6 +1528,7 @@ Item {
     bodyMarkupSupported: true
     bodyHyperlinksSupported: true
     persistenceSupported: true
+    inlineReplySupported: true
 
     onNotification: function(notification) { service.handleNotification(notification) }
   }
@@ -1421,6 +1571,13 @@ Item {
     function ping(): string { return "ok" }
 
     function isDnd(): string { return service.doNotDisturb ? "on" : "off" }
+
+    // Orchard: one banner at a time, or upstream's stack (the toggle runs this).
+    function setStack(value: string): string {
+      var v = String(value || "").toLowerCase()
+      service.stackMode = v === "true" || v === "1" || v === "on" || v === "yes"
+      return service.stackMode ? "on" : "off"
+    }
 
     function toggleDnd(): string {
       service.setDoNotDisturb(!service.doNotDisturb)
@@ -1534,16 +1691,51 @@ Item {
       color: "transparent"
 
       WlrLayershell.namespace: "omarchy-notifications"
-      WlrLayershell.layer: WlrLayer.Overlay
+      // Orchard: the Top layer, as the control center and launcher on a
+      // tablet (OverlayWindow): opened later, they lie over a banner, and the
+      // on-screen keyboard (Overlay) stays over all of them.
+      WlrLayershell.layer: Quickshell.env("OMARCHY_TOUCH_MODE") === "1" ? WlrLayer.Top : WlrLayer.Overlay
       readonly property bool takesKeyboard: service.keyboardMode && service.targetDisplayName === String(modelData.name)
-      WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+      WlrLayershell.keyboardFocus: takesKeyboard ? WlrKeyboardFocus.Exclusive
+        : service.replying ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
       exclusionMode: ExclusionMode.Ignore
 
       // Constant width and full height, so the buffer is allocated once.
-      anchors { top: true; bottom: true; right: true }
-      implicitWidth: clipper.width + Style.space(10)
+      // Orchard: the whole screen while a reply is typed, so a tap outside
+      // the banner ends it (and does nothing else).
+      // With the banner's cards: the whole screen's width, so a card swiped to
+      // the left goes on to the screen's edge instead of being cut off at the
+      // window's (input stays the cards'). Also while a reply is typed.
+      anchors { top: true; bottom: true; right: true; left: service.bannerLook || service.replying }
+      implicitWidth: Math.min(clipper.width + Style.space(10), screen.width)
 
-      mask: Region { item: surface.showingNotifications ? deck : null }
+      // Orchard: the deck's rectangle by its numbers, at least as tall as
+      // the cards drawn in it: the deck's height follows a card that grew
+      // after it arrived (a banner's reply row) only later, and taps on the
+      // new part fell through to the desktop meanwhile.
+      // The bar stays the bar's: a pull from it opens the control center.
+      readonly property real barStrip: service.barPosition === "top"
+        ? Delivery.barThickness(service.barRef, String(modelData.name), service.defaultBarSize) : 0
+      MouseArea {
+        anchors.fill: parent
+        anchors.topMargin: surface.barStrip
+        visible: service.replying
+        acceptedButtons: Qt.AllButtons
+        onPressed: service.endReply()
+      }
+      mask: service.replying ? outsideRegion : deckRegion
+      property Region outsideRegion: Region {
+        y: surface.barStrip
+        width: surface.width
+        height: Math.max(0, surface.height - surface.barStrip)
+      }
+      property Region deckRegion: Region {
+        x: surface.showingNotifications ? clipper.x + deck.x : 0
+        y: surface.showingNotifications ? clipper.y + deck.y : 0
+        width: surface.showingNotifications ? deck.width : 0
+        height: surface.showingNotifications
+          ? Math.max(deck.height, deck.childrenRect.y + deck.childrenRect.height) : 0
+      }
 
       Item {
         focus: surface.takesKeyboard
@@ -1557,16 +1749,29 @@ Item {
         visible: surface.showingNotifications
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: surface.margins.top
-        // Room for the arrival's scale animation, and the gap from the edge.
-        readonly property int motionInset: Style.spacing.sm
-        width: service.notificationWidth + motionInset + surface.margins.right
-        height: deck.y + deck.height + motionInset
+        // A banner's shadow reaches above it (its blur less its drop) and
+        // further below: the clip leaves room for both.
+        readonly property int shadowAbove: service.bannerLook ? Style.space(18) : 0
+        readonly property int shadowBelow: service.bannerLook ? Style.space(40) : 0
+        anchors.topMargin: surface.margins.top - shadowAbove
+        // Room for the arrival's scale animation, and the gap from the edge;
+        // a banner's shadow needs more, as far as the screen has room for it
+        // (the window must not be wider than the screen).
+        readonly property int motionInset: service.bannerLook
+          ? Math.max(0, Math.min(Style.space(28), surface.screen.width - service.notificationWidth - surface.margins.right))
+          : Style.spacing.sm
+        width: service.bannerLook ? surface.width : service.notificationWidth + motionInset + surface.margins.right
+        // The cards drawn, a leaving one included: the deck stops counting
+        // a card the moment it leaves, and clipping to it cut the card away
+        // instead of letting it go.
+        height: deck.y + Math.max(deck.height, deck.childrenRect.y + deck.childrenRect.height)
+          + Math.max(motionInset, shadowBelow)
         clip: true
 
         Item {
           id: deck
-          x: clipper.motionInset
+          y: clipper.shadowAbove
+          x: service.bannerLook ? clipper.width - surface.margins.right - service.notificationWidth : clipper.motionInset
           width: service.notificationWidth
           height: service.deckHeight
 
@@ -1665,7 +1870,7 @@ Item {
                         && service.openDeck === Layout.groupKeyFor(model)
               // Hover opens the body only when there is nothing else to open.
               sole: toasts.count === 1
-              paused: service.expanded
+              paused: service.expanded || service.replying
 
               drawnHeight: service.at(model.key, "height")
               // A hidden output collapses child visibility; its measurements
@@ -1676,6 +1881,9 @@ Item {
               onExpired: service.closeToast(model.key, "expired")
               onActivated: { service.stopKeyboard(); service.activate(model.key) }
               onDismissed: { service.stopKeyboard(); service.closeToast(model.key, "dismissed") }
+              banner: service.bannerLook
+              reply: service.replyOf(model.key, service.refsRevision)
+              onReplySent: function(text) { service.sendReply(model.key, text) }
             }
           }
         }

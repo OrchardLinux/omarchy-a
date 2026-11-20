@@ -41,6 +41,10 @@ is missing or empty.
 - On a phone, About and Omacalc open full screen like every other window.
 - A touch no longer leaves hover highlights, tooltips or close marks behind,
   in the shell and in apps.
+- Notifications appear as banners at the top of the screen: one at a time,
+  with a reply field where the app offers one, or stacked (Trigger > Toggle >
+  Stack Notifications). Swipe a banner away, or tap it to open the app.
+- The control center opens over the on-screen keyboard and leaves it open.
 
 ## [0.3.2] - 2026-11-19
 

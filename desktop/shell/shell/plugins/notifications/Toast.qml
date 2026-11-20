@@ -27,6 +27,13 @@ Item {
   property double now: Date.now()
   property real cardWidth: Style.space(380)
   property var actions: []                   // what the sender put on the wire
+  // Orchard: the banner (one notification at a time, the default): the
+  // same card, drawn as the shell spec's banner instead of upstream's deck
+  // card. The deck (the Stack setting) keeps upstream's look.
+  property bool banner: false
+  // The sender takes an inline reply: its placeholder, else "".
+  property string reply: ""
+  signal replySent(string text)
 
   // The pointer in the deck's coordinates: the deck owns hover, so cards and
   // their buttons work out what is under it themselves.
@@ -151,7 +158,14 @@ Item {
   // time, and gets a fresh display period of its own duration. Its picture
   // may be new at the same path, so the image is read again too.
   property real remaining: Number(row.duration || 0)
-  readonly property bool ticking: Number(row.duration || 0) > 0 && !paused
+  readonly property bool ticking: Number(row.duration || 0) > 0 && !paused && !fingerHeld
+  // Orchard: a finger resting on the card, sliding it or just having thrown
+  // it holds its time, as a pointer over it does.
+  readonly property bool fingerHeld: fingerOn.active || swipe.active || fling !== ""
+  PointHandler {
+    id: fingerOn
+    acceptedDevices: PointerDevice.TouchScreen
+  }
   readonly property string arrival: String(row.ts) + ":" + String(row.duration)
   property bool reloading: false
   onArrivalChanged: {
@@ -173,7 +187,7 @@ Item {
   }
 
   width: cardWidth
-  height: body.height
+  height: banner ? bannerBox.height : body.height
 
   LayoutMirroring.enabled: Commons.I18n.rightToLeft
   LayoutMirroring.childrenInherit: true
@@ -200,7 +214,7 @@ Item {
 
   // The height this card's *state* implies, a step function the deck lays out
   // from. Feeding a mid-animation height back into the layout stalls the stack.
-  readonly property real targetHeight: fixedHeight + deedArea.wanted
+  readonly property real targetHeight: banner ? bannerBox.implicitHeight : fixedHeight + deedArea.wanted
 
   // The height the scene says it is right now, on the way there.
   property real drawnHeight: targetHeight
@@ -209,8 +223,149 @@ Item {
   y: scene ? scene.at(row.key, "y") : 0
   z: place.z
   scale: scene ? scene.at(row.key, "scale") : 1
-  opacity: place.hidden ? 0 : (scene ? scene.at(row.key, "opacity") : 1)
+  opacity: (place.hidden ? 0 : (scene ? scene.at(row.key, "opacity") : 1)) * swipeFade * (1 - exit)
   transformOrigin: Item.Top
+
+  // Orchard: a finger takes the card along, up or to either side (down stays
+  // free for the notification center's pull). A clear swipe throws it away,
+  // a short one springs back; a tap still opens it. The mouse keeps
+  // upstream's close mark and right click.
+  readonly property bool gpu: Quickshell.env("QT_QUICK_BACKEND") !== "software"
+  property string swipeAxis: ""
+  // Where the drag stood when it took the touch: the direction is read from
+  // the way the finger goes after that, not from a jump on the first event.
+  property point swipeFrom: Qt.point(0, 0)
+  property bool swipeFromSet: false
+  property real swipeX: 0
+  property real swipeY: 0
+  // Gone within half its width: a card thrown aside does not sweep the screen.
+  readonly property real swipeFade: swipeAxis === "x" ? Math.max(0, 1 - Math.abs(swipeX) / (width * 0.5))
+    : swipeAxis === "y" ? Math.max(0, 1 + swipeY / Math.max(1, height)) : 1
+  transform: [
+    Translate { x: card.swipeX; y: card.swipeY },
+    // A banner's exit: it fades, shrinks to 97 % toward its top centre and
+    // drifts up a little, as the bar's popups go (at once in software).
+    Scale { origin.x: card.width / 2; origin.y: 0; xScale: 1 - 0.03 * card.exit; yScale: 1 - 0.03 * card.exit },
+    Translate { y: -Style.space(10) * card.exit }
+  ]
+  property real exit: 0
+  readonly property bool exiting: banner && place.leaving === true
+  readonly property real exitPad: Style.space(40)
+  // A sender updating it on its way out brings it back.
+  onExitingChanged: {
+    if (exiting) { if (gpu) exitRun.restart(); else exit = 1 }
+    else { exitRun.stop(); exit = 0 }
+  }
+  NumberAnimation {
+    id: exitRun
+    target: card; property: "exit"; from: 0; to: 1
+    duration: Style.duration(card.scene ? card.scene.bannerExit : 280)
+    // Even over its whole time: the arrival's strong ease-out did nearly all
+    // of it in the first fifth, so the banner seemed to drop out at once.
+    easing.type: Easing.InOutCubic
+  }
+
+  // What the banner shows of the sender's buttons and reply stays as it was
+  // once one is used (and while it leaves): the sender withdrawing the
+  // notification right after a reply must not collapse the card on its way.
+  property bool settled: false
+  property var shownActions: []
+  property string shownReply: ""
+  function keepShown() {
+    if (settled || exiting) return
+    shownActions = actions
+    shownReply = reply
+  }
+  onActionsChanged: keepShown()
+  onReplyChanged: keepShown()
+  Component.onCompleted: keepShown()
+  // Let go, the card keeps the finger's speed (the control center's way):
+  // thrown, it goes on at that speed, a little braked but never slower than
+  // it takes to leave, until it has faded out; kept, the control center's
+  // spring carries it back from where and as fast as it was moving.
+  property string fling: ""        // "away", "back" or ""
+  property real flingVelocity: 0   // px/s along the swipe's axis
+  function swipeEnded(velocity) {
+    var flick = Style.space(500)
+    var along = swipeAxis === "x" ? velocity.x : velocity.y
+    var away = swipeAxis === "x"
+      ? Math.abs(swipeX) > width * 0.35 || Math.abs(velocity.x) > flick
+      : swipeAxis === "y" && (swipeY < -height * 0.4 || velocity.y < -flick)
+    if (!gpu) {
+      if (away) card.dismissed()
+      else { swipeX = 0; swipeY = 0; swipeAxis = "" }
+      return
+    }
+    if (away) {
+      var position = swipeAxis === "x" ? swipeX : swipeY
+      var direction = swipeAxis === "y" ? -1 : (position + along * 0.05 >= 0 ? 1 : -1)
+      flingVelocity = direction * Math.max(Math.abs(along), Style.space(900))
+      fling = "away"
+    } else {
+      flingVelocity = swipeAxis === "x" || swipeAxis === "y" ? along : 0
+      fling = "back"
+    }
+  }
+  FrameAnimation {
+    running: card.fling !== ""
+    onTriggered: {
+      var elapsed = Math.min(frameTime, 0.05)
+      var steps = Math.max(1, Math.ceil(elapsed / (1 / 240)))
+      var dt = elapsed / steps
+      var horizontal = card.swipeAxis === "x"
+      var position = horizontal ? card.swipeX : card.swipeY
+      var velocity = card.flingVelocity
+      for (var i = 0; i < steps; i++) {
+        if (card.fling === "away") {
+          var floor = Style.space(900)
+          velocity *= Math.pow(0.35, dt)
+          if (Math.abs(velocity) < floor) velocity = (velocity < 0 ? -1 : 1) * floor
+        } else {
+          var stiffness = 260
+          var damping = 2 * Math.sqrt(stiffness) * 0.85
+          velocity += (-stiffness * position - damping * velocity) * dt
+        }
+        position += velocity * dt
+      }
+      card.flingVelocity = velocity
+      if (horizontal) card.swipeX = position; else card.swipeY = position
+      if (card.fling === "away") {
+        if (card.swipeFade <= 0) { card.fling = ""; card.dismissed() }
+      } else if (Math.abs(position) < 0.5 && Math.abs(velocity) < Style.space(10)) {
+        card.swipeX = 0; card.swipeY = 0; card.swipeAxis = ""; card.fling = ""
+      }
+    }
+  }
+  DragHandler {
+    id: swipe
+    target: null
+    acceptedDevices: PointerDevice.TouchScreen
+    grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+    onActiveChanged: {
+      if (active) {
+        card.fling = ""
+        card.swipeAxis = ""
+        card.swipeFromSet = false
+      } else if (card.swipeAxis !== "") {
+        card.swipeEnded(centroid.velocity)
+      }
+    }
+    onTranslationChanged: {
+      if (!active) return
+      if (!card.swipeFromSet) {
+        card.swipeFrom = Qt.point(translation.x, translation.y)
+        card.swipeFromSet = true
+        return
+      }
+      var tx = translation.x - card.swipeFrom.x, ty = translation.y - card.swipeFrom.y
+      if (card.swipeAxis === "") {
+        if (Math.abs(tx) < dragThreshold && Math.abs(ty) < dragThreshold) return
+        card.swipeAxis = Math.abs(tx) >= Math.abs(ty) ? "x" : (ty < 0 ? "y" : "down")
+      }
+      if (card.swipeAxis === "x") card.swipeX = tx
+      else if (card.swipeAxis === "y") card.swipeY = Math.min(0, ty)
+    }
+  }
 
   // `visible` is deliberately unbound: anything derived from layout output
   // (opacity, place.hidden) closes a binding loop through `heights`. A hidden
@@ -221,6 +376,7 @@ Item {
   // inset by those exact widths.
   BorderSurface {
     id: plate
+    visible: !card.banner
     width: body.width
     height: body.height
     radius: Style.cornerRadius
@@ -234,12 +390,298 @@ Item {
     anchors.fill: plate
     anchors { leftMargin: plate.borderLeft; rightMargin: plate.borderRight
               topMargin: plate.borderTop; bottomMargin: plate.borderBottom }
-    visible: card.selected
+    visible: card.selected && !card.banner
     color: Style.hoverFillFor(Commons.Color.notifications.text, Commons.Color.accent)
+  }
+
+  // ----------------------------------------------------------- the banner
+  //
+  // Square, opaque (without blur translucency only muddies the text, and
+  // opaque is cheaper to draw in software), a thin outline and a soft
+  // shadow. The app's icon, a bold title with the time at its end, the body;
+  // the app's name only when there is no icon to tell where it came from.
+  // Only the sender's own non-default actions as buttons, and its inline
+  // reply when it takes one.
+  readonly property bool bannerHasIcon: thumb.pictured || thumb.glyphed
+  // While it leaves the banner is drawn once, shadow and all, into a texture
+  // that is only faded and scaled, as the control center when it moves:
+  // faded part by part, its shadow would show through the card halfway, and
+  // redrawn every frame it would stutter in software OpenGL. The layer has
+  // the shadow's room around the card, so nothing is squeezed into it.
+  Item {
+    id: bannerLayer
+    visible: card.banner
+    x: -card.exitPad
+    y: -card.exitPad
+    width: card.width + 2 * card.exitPad
+    height: bannerBox.height + 2 * card.exitPad
+    // Also while a finger slides it, it is thrown or it springs back.
+    layer.enabled: card.gpu && (card.exiting || card.swipeAxis !== "" || card.fling !== "")
+    layer.smooth: true
+
+    Rectangle {
+      id: bannerShadow
+      visible: card.banner && card.gpu
+      anchors.fill: bannerBox
+      color: "black"
+      layer.enabled: visible
+      layer.effect: MultiEffect {
+        shadowEnabled: true
+        shadowColor: Qt.rgba(0, 0, 0, 0.35)
+        shadowVerticalOffset: Style.space(10)
+        shadowBlur: 1.0
+        blurMax: Style.space(28)
+      }
+    }
+    Rectangle {
+      id: bannerBox
+      visible: card.banner
+      x: card.exitPad
+      y: card.exitPad
+      width: card.width
+      implicitHeight: bannerColumn.implicitHeight + Style.space(24)
+      height: implicitHeight
+      readonly property color plain: Commons.Color.notifications.background
+      color: Qt.rgba(plain.r, plain.g, plain.b, 1)
+      // The theme's outline for idle controls (normal-border), as on the
+      // banner's own buttons and reply field.
+      // One device pixel: a whole point read as a frame rather than an edge.
+      border.width: Style.normalBorderWidth > 0 ? 1 / Screen.devicePixelRatio : 0
+      border.color: Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
+
+      Column {
+        id: bannerColumn
+        // Behind the front of a collapsed stack a card is a shape: its words
+        // fade as upstream's do (contentOpacity).
+        opacity: card.contentOpacity
+        x: Style.space(12)
+        y: Style.space(12)
+        width: parent.width - Style.space(26)
+        spacing: Style.space(10)
+
+        Row {
+          width: parent.width
+          spacing: Style.space(12)
+          readonly property real iconSize: card.width < Style.space(380) ? Style.space(36) : Style.space(40)
+
+          Item {
+            id: bannerIcon
+            width: card.bannerHasIcon ? parent.iconSize : 0
+            height: width
+            visible: card.bannerHasIcon
+            Image {
+              anchors.fill: parent
+              visible: thumb.pictured
+              source: card.banner && thumb.pictured ? thumb.best : ""
+              fillMode: thumb.photo ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+              sourceSize.width: width * Screen.devicePixelRatio
+              sourceSize.height: height * Screen.devicePixelRatio
+              asynchronous: true
+            }
+            Text {
+              anchors.centerIn: parent
+              visible: !thumb.pictured && thumb.glyphed
+              textFormat: Text.PlainText
+              text: String(card.row.glyph || "")
+              color: Commons.Color.notifications.text
+              font.family: Delivery.omarchyGlyph(card.row.glyph) ? "omarchy" : Style.font.family
+              font.pixelSize: Style.font.displayLarge
+            }
+          }
+
+          Column {
+            width: parent.width - (bannerIcon.visible ? bannerIcon.width + parent.spacing : 0)
+            spacing: Style.space(3)
+
+            Item {
+              width: parent.width
+              height: bannerTitle.implicitHeight
+              Text {
+                id: bannerTitle
+                width: parent.width - bannerWhen.width - Style.space(8)
+                textFormat: Text.PlainText
+                text: card.redacted ? I18n.t("notifications.redactedSummary") : String(card.row.summary || "")
+                color: Commons.Color.notifications.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.title
+                font.bold: true
+                elide: Text.ElideRight
+              }
+              Row {
+                id: bannerWhen
+                anchors.right: parent.right
+                anchors.verticalCenter: bannerTitle.verticalCenter
+                spacing: Style.space(6)
+                Text {
+                  visible: !card.bannerHasIcon && !card.anonymous
+                  textFormat: Text.PlainText
+                  text: String(card.row.source || card.row.app || "")
+                  color: card.dimColor
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  visible: !bannerClose.visible
+                  textFormat: Text.PlainText
+                  text: card.ago() || I18n.t("agents.durationNow")
+                  color: card.dimColor
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+                // With a mouse: the close mark over the card, in the time's place.
+                Text {
+                  id: bannerClose
+                  visible: card.hovered && !(card.scene && card.scene.keyboardMode)
+                  textFormat: Text.PlainText
+                  text: "✕"
+                  color: bannerCloseArea.containsMouse ? Commons.Color.notifications.text : card.dimColor
+                  font.pixelSize: Style.font.subtitle
+                  MouseArea {
+                    id: bannerCloseArea
+                    anchors.fill: parent
+                    anchors.margins: -Style.space(6)
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: card.dismissed()
+                  }
+                }
+              }
+            }
+
+            Text {
+              width: parent.width
+              visible: card.hasBody
+              textFormat: Text.StyledText
+              text: card.redacted ? I18n.t("notifications.redactedBody") : String(card.row.bodyRich || "")
+              color: card.bodyColor
+              linkColor: Commons.Color.accent
+              font.family: Style.font.family
+              font.pixelSize: Style.font.subtitle
+              wrapMode: Text.Wrap
+              maximumLineCount: 3
+              elide: Text.ElideRight
+              onLinkActivated: function(url) { card.linkOpened(); Security.openExternalUrl(url) }
+            }
+          }
+        }
+
+        // The sender's own buttons, under the text.
+        Row {
+          visible: card.shownActions.length > 0
+          x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
+          width: parent.width - x
+          spacing: Style.space(8)
+          Repeater {
+            model: card.banner ? card.shownActions : []
+            Rectangle {
+              required property var modelData
+              width: (parent.width - parent.spacing * (card.shownActions.length - 1)) / card.shownActions.length
+              height: Style.space(34)
+              color: "transparent"
+              border.width: 1
+              border.color: Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
+              scale: actionArea.pressed ? 0.96 : 1
+              Text {
+                anchors.centerIn: parent
+                width: parent.width - Style.space(12)
+                horizontalAlignment: Text.AlignHCenter
+                textFormat: Text.PlainText
+                text: String(parent.modelData.text || "")
+                color: Commons.Color.notifications.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.subtitle
+                elide: Text.ElideRight
+              }
+              MouseArea {
+                id: actionArea
+                anchors.fill: parent
+                onClicked: { card.settled = true; card.actionInvoked(String(parent.modelData.id)) }
+              }
+            }
+          }
+        }
+
+        // The inline reply, when the sender takes one.
+        Row {
+          visible: card.shownReply !== ""
+          x: bannerIcon.visible ? bannerIcon.width + Style.space(12) : 0
+          width: parent.width - x
+          spacing: Style.space(8)
+          Rectangle {
+            width: parent.width - sendBox.width - parent.spacing
+            height: Style.space(34)
+            color: Util.alpha(Commons.Color.background, 0.7)
+            border.width: 1
+            border.color: replyInput.activeFocus && card.scene && card.scene.replying ? Commons.Color.accent : Style.normalBorderFor(Commons.Color.notifications.text, Commons.Color.accent)
+            TextInput {
+              id: replyInput
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(10)
+              anchors.rightMargin: Style.space(10)
+              verticalAlignment: TextInput.AlignVCenter
+              color: Commons.Color.notifications.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              clip: true
+              Connections {
+                target: card.scene
+                function onReplyingChanged() {
+                  if (!card.scene.replying && !card.scene.replyPaused && replyInput.activeFocus) replyInput.focus = false
+                }
+              }
+              onAccepted: if (text.trim() !== "") { card.settled = true; card.replySent(text) }
+              Keys.onEscapePressed: { text = ""; if (card.scene) card.scene.endReply() }
+              Component.onDestruction: if (activeFocus && card.scene) card.scene.endReply()
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: parent.text === ""
+                textFormat: Text.PlainText
+                text: card.shownReply
+                color: card.dimColor
+                font: parent.font
+              }
+            }
+            // A finger's tap opens the on-screen keyboard as well; a mouse
+            // click does not (there is a keyboard then).
+            Item {
+              anchors.fill: parent
+              visible: !(card.scene && card.scene.replying)
+              TapHandler {
+                onTapped: function(point) {
+                  if (card.scene) card.scene.beginReply(point.device.type === PointerDevice.TouchScreen)
+                  replyInput.forceActiveFocus()
+                }
+              }
+            }
+          }
+          Rectangle {
+            id: sendBox
+            width: Style.space(34)
+            height: Style.space(34)
+            color: Commons.Color.accent
+            scale: sendArea.pressed ? 0.96 : 1
+            Text {
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              text: "\uf1d8"
+              color: Commons.Color.background
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+            }
+            MouseArea {
+              id: sendArea
+              anchors.fill: parent
+              onClicked: if (replyInput.text.trim() !== "") { card.settled = true; card.replySent(replyInput.text) }
+            }
+          }
+        }
+      }
+    }
   }
 
   Item {
     id: body
+    visible: !card.banner
     width: parent.width
     height: card.drawnHeight
 

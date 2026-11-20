@@ -69,6 +69,27 @@ class KeyboardPolicyTests(unittest.TestCase):
         self.wait(1)
         self.assertEqual(self.calls, [])
 
+    # The control center over an app
+
+    def test_the_control_center_opening_over_a_typing_app_keeps_the_keyboard(self):
+        self.facts('field on 2', 'press', TAP, 'show')   # typing in foot
+        self.policy.person('hold')                       # the control center takes the keyboard
+        self.facts('field off')
+        self.wait(1)
+        self.assertEqual(self.calls, ['show'])
+        self.policy.person('release')                    # closed: the app's field comes back
+        self.facts('field on 2')
+        self.wait(1)
+        self.assertEqual(self.calls, ['show'])
+
+    def test_closing_the_control_center_with_no_field_back_puts_it_away(self):
+        self.facts('field on 2', 'press', TAP, 'show')
+        self.policy.person('hold')
+        self.facts('field off')
+        self.policy.person('release')
+        self.wait(1)
+        self.assertEqual(self.calls, ['show', 'hide'])
+
     # Taps on fields
 
     def test_an_app_asking_during_a_touch_opens_it(self):
