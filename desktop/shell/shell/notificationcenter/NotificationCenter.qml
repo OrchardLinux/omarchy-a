@@ -54,9 +54,11 @@ Item {
 
   // Groups of entries, newest first; a group of several shows its newest
   // with "n more" until it is opened.
+  // Kept up to date while closed too: built only as it opened, its first
+  // frames went into making the cards and the opening stuttered.
   readonly property var groups: {
     var revision = service ? service.centerRevision : 0
-    return root.opened || root.mapped ? (service ? service.centerGroups() : []) : []
+    return service ? service.centerGroups() : []
   }
   property var openGroups: ({})
   function toggleGroup(key) {
@@ -425,10 +427,15 @@ Item {
       layer.enabled: root.moving && root.gpu
       layer.smooth: true
       readonly property real follow: Math.min(content.height, height)
-      readonly property real grow: !root.gpu ? 1 : (root.popupStyle ? 0.97 + 0.03 * root.reveal : 1)
+      // As the control center: pulled, it grows out of its top centre (from
+      // 94 %, a whole screen moving less than a card) while the bottom of
+      // what it shows stays at the finger; as a popup from 97 %.
+      readonly property real grow: !root.gpu ? 1
+        : root.popupStyle ? 0.97 + 0.03 * root.reveal
+        : 0.94 + 0.06 * Math.min(1, root.reveal)
       transform: [
         Scale { origin.x: sheet.width / 2; origin.y: 0; xScale: sheet.grow; yScale: sheet.grow },
-        Translate { y: root.popupStyle ? 0 : Math.min(0, (root.reveal - 1) * sheet.follow) }
+        Translate { y: root.popupStyle ? 0 : Math.min(0, root.reveal * root.pullSpan - root.barInset - sheet.follow * sheet.grow) }
       ]
       opacity: !root.gpu ? (root.reveal > 0 ? 1 : 0) : root.popupStyle ? root.reveal : root.leaving
         ? Math.max(0, Math.min(1, root.reveal * 1.2 - 0.2))
