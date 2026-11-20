@@ -70,7 +70,7 @@ Item {
   readonly property int barSize: bar ? bar.barSize : Style.bar.sizeHorizontal
   readonly property real scaledHorizontalMargin: Style.spaceReal(horizontalMargin)
   readonly property real scaledVerticalPadding: Style.spaceReal(verticalPadding)
-  readonly property bool tooltipHovered: visible && interactive && !concealed && pointerHover.hovered
+  readonly property bool tooltipHovered: visible && interactive && !concealed && mouseArea.containsMouse
   // Width of the painted label, for bar chrome that wants to line up with the
   // text rather than with the slot it sits in. Zero on icon-only buttons.
   readonly property real labelWidth: label.visible ? label.implicitWidth : 0
@@ -169,23 +169,6 @@ Item {
     }
   }
 
-  // Orchard: tooltips and hover reveal follow a pointer only. Qt makes mouse
-  // events of a touch, and the MouseArea's own hover then stayed on after the
-  // finger had gone, with a tooltip to match.
-  HoverHandler {
-    id: pointerHover
-    enabled: root.interactive
-    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-    onHoveredChanged: {
-      if (root.bar) {
-        if (hovered) root.bar.showTooltip(root, root.tooltipText)
-        else root.bar.hideTooltip(root)
-      }
-      if (root.maintainIndicatorReveal && root.revealHost && root.revealHost.setIndicatorItemHovered)
-        root.revealHost.setIndicatorItemHovered(hovered)
-    }
-  }
-
   MouseArea {
     id: mouseArea
     anchors.fill: parent
@@ -194,6 +177,20 @@ Item {
     enabled: root.interactive
     hoverEnabled: true
     cursorShape: root.pressable ? Qt.PointingHandCursor : Qt.ArrowCursor
+    onEntered: {
+      if (root.bar) {
+        root.bar.showTooltip(root, root.tooltipText)
+      }
+      if (root.maintainIndicatorReveal && root.revealHost && root.revealHost.setIndicatorItemHovered)
+        root.revealHost.setIndicatorItemHovered(true)
+    }
+    onExited: {
+      if (root.bar) {
+        root.bar.hideTooltip(root)
+      }
+      if (root.maintainIndicatorReveal && root.revealHost && root.revealHost.setIndicatorItemHovered)
+        root.revealHost.setIndicatorItemHovered(false)
+    }
     onPressed: root.touchLongPressTriggered = false
     onPressAndHold: function(mouse) {
       if (root.pressable && mouse.button === Qt.LeftButton
