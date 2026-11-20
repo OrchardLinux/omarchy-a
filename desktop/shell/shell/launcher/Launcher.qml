@@ -665,6 +665,7 @@ Item {
     var bar = root.shell ? root.shell.bar : null
     if (bar && bar.activePopout && typeof bar.activePopout.close === "function") bar.activePopout.close()
     if (root.shell && root.shell.controlCenter && root.shell.controlCenter.opened) root.shell.controlCenter.close()
+    if (root.shell && root.shell.notificationCenter && root.shell.notificationCenter.opened) root.shell.notificationCenter.close()
     if (root.appLibrary) root.appLibrary.refreshIcons()
     if (root.appsStale || root.apps.length === 0) root.rebuild()
     // Stop Screenrecording and the session list follow what is true now.

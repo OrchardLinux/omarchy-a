@@ -22,6 +22,11 @@ if [[ -e $runtime/omarchy-control-center-open ]]; then
   control_center=1
   omarchy-shell omarchy.controlcenter close >/dev/null 2>&1 &
 fi
+# The notification center likewise.
+if [[ -e $runtime/omarchy-notification-center-open ]]; then
+  control_center=1
+  omarchy-shell omarchy.notificationcenter close >/dev/null 2>&1 &
+fi
 
 # In the overview Home goes back to the desktop (omarchy-overview-changed
 # keeps the note).

@@ -335,6 +335,7 @@ Item {
   function show() {
     root.closePopout()
     if (root.shell && root.shell.launcher && root.shell.launcher.opened) root.shell.launcher.close()
+    if (root.shell && root.shell.notificationCenter && root.shell.notificationCenter.opened) root.shell.notificationCenter.close()
     root.prepare()
     root.opened = true
     root.mapped = true
@@ -399,6 +400,7 @@ Item {
     root.popupStyle = false
     if (!root.opened) {
       root.closePopout()
+      if (root.shell && root.shell.notificationCenter && root.shell.notificationCenter.opened) root.shell.notificationCenter.close()
       root.prepare()
       root.reveal = 0
       root.mapped = true
@@ -447,7 +449,8 @@ Item {
       var elapsed = Math.min(frameTime, 0.25)
       // Softer going out: it is seen to travel up rather than vanish.
       var stiffness = root.springTarget > 0 ? 260 : 195
-      var damping = 2 * Math.sqrt(stiffness) * (root.springTarget > 0 ? 0.78 : 1.0)
+      // A touch under critical going in: it lands with a small swing, not a bounce.
+      var damping = 2 * Math.sqrt(stiffness) * (root.springTarget > 0 ? 0.86 : 1.0)
       var steps = Math.max(1, Math.ceil(elapsed / (1 / 240)))
       var dt = elapsed / steps
       var reveal = root.reveal, velocity = root.springVelocity
@@ -696,7 +699,10 @@ Item {
         ? Math.max(0, Math.min(1, (root.reveal - barShare) / (1 - barShare)))
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.25)), 2)
 
-      MouseArea { anchors.fill: parent }  // taps inside never close
+      // Taps on it never close it; on a phone, where the card is the whole
+      // screen, only its content counts, and a tap on the empty sheet below
+      // closes as a tap beside an iPad's card does.
+      MouseArea { width: parent.width; height: root.phone ? Math.min(parent.height, card.follow) : parent.height }
 
       Column {
         id: content

@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# omarchy:summary=A swipe up from the screen's bottom edge: put the notification center or the control center away, else open the on-screen keyboard
+# omarchy:hidden=true
+
+# labwc runs this for the bottom-edge swipe (bottomSwipeCommand). Over the
+# notification center and the control center labwc leaves the swipe to
+# them (bottomSwipeIgnoreNamespace), so it follows the finger; should it
+# still come here over one (an older labwc), it puts that one away. Over an
+# app it brings the keyboard up.
+runtime="${XDG_RUNTIME_DIR:-/run/user/$UID}"
+if [[ -e $runtime/omarchy-notification-center-open ]]; then
+  exec omarchy-shell omarchy.notificationcenter close
+fi
+if [[ -e $runtime/omarchy-control-center-open ]]; then
+  exec omarchy-shell omarchy.controlcenter close
+fi
+exec omarchy-keyboard show

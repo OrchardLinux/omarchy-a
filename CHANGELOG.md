@@ -45,6 +45,10 @@ is missing or empty.
   with a reply field where the app offers one, or stacked (Trigger > Toggle >
   Stack Notifications). Swipe a banner away, or tap it to open the app.
 - The control center opens over the on-screen keyboard and leaves it open.
+- A notification center: pull down from the top left or click the clock to
+  see the weather and all recent notifications, grouped by app. Tap one to
+  open it, reply where the app offers it, swipe it away, or clear them all.
+  A swipe up from the bottom puts it, or the control center, away.
 
 ## [0.3.2] - 2026-11-19
 
