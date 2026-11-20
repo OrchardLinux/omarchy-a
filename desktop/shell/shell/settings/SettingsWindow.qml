@@ -514,11 +514,21 @@ FloatingWindow {
           Rectangle {
             id: block
             required property var modelData
+            required property int index
             width: parent.width
             height: sectionList.height + (win.wide ? 0 : 2)
             color: win.wide ? "transparent" : win.fill
             border.width: win.wide ? 0 : 1
             border.color: win.line
+            // In the sidebar, a faint line in the gap above each kind.
+            Rectangle {
+              visible: win.wide && block.index > 0
+              x: Style.space(12)
+              y: -Style.space(6) - 1
+              width: parent.width - 2 * Style.space(12)
+              height: 1
+              color: Util.alpha(win.text, 0.08)
+            }
           Column {
             id: sectionList
             x: win.wide ? 0 : 1
