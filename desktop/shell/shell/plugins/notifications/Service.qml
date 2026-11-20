@@ -1471,9 +1471,29 @@ Item {
     return app
   }
 
-  // The app's icon for a center card, as the cards find theirs.
+  // Orchard: the launcher's drawing of an app (the icon set's, Papercraft
+  // by default, in the theme's colours), else "": the app library knows it
+  // by the name a desktop entry gives or by the app's own.
+  function appIconFor(names, entries) {
+    var library = service.shell ? service.shell.appLibrary : null
+    if (!library || !library.iconIndex) return ""
+    var index = library.iconIndex
+    for (var i = 0; i < names.length; i++)
+      if (names[i] && index[names[i]]) return library.iconSource(names[i])
+    for (var j = 0; j < entries.length; j++) {
+      var desktop = DesktopEntries.heuristicLookup(entries[j])
+      var icon = desktop ? String(desktop.icon || "") : ""
+      if (icon && index[icon]) return library.iconSource(icon)
+    }
+    return ""
+  }
+
+  // The app's icon for a center card: the launcher's drawing first, as the
+  // banners find theirs.
   function iconFor(entry) {
     var want = Icons.candidates(entry)
+    var drawn = appIconFor(want.themed, want.entries)
+    if (drawn) return drawn
     for (var i = 0; i < want.themed.length; i++) {
       var found = Quickshell.iconPath(want.themed[i], true)
       if (found) return found

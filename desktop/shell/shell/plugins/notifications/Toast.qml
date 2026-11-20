@@ -746,7 +746,10 @@ Item {
         readonly property var sources: {
           var appsRevision = DesktopEntries.applications.values.length
           var want = Icons.candidates(card.row)
-          var found = [sent,
+          // Orchard: the launcher's drawing of the app (the icon set's, in
+          // the theme's colours) before the icon theme's.
+          var drawn = card.scene && card.scene.appIconFor ? card.scene.appIconFor(want.themed, want.entries) : ""
+          var found = [sent, drawn,
             firstOf(want.themed, function(name) { return Quickshell.iconPath(name, true) }),
             firstOf(want.entries, function(name) {
               var entry = DesktopEntries.heuristicLookup(name)
