@@ -38,6 +38,9 @@ is missing or empty.
   bottom, or use the control center.
 - The launcher opens with a gentle zoom, and can use an opaque background
   instead of the blurred wallpaper (Trigger > Toggle).
+- On a phone, About and Omacalc open full screen like every other window.
+- A touch no longer leaves hover highlights, tooltips or close marks behind,
+  in the shell and in apps.
 - Notifications appear as banners at the top of the screen: one at a time,
   with a reply field where the app offers one, or stacked (Trigger > Toggle >
   Stack Notifications). Swipe a banner away, or tap it to open the app.

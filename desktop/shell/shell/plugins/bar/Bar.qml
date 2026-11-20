@@ -3000,9 +3000,7 @@ Item {
       root.unregisterModuleSlot(slot)
     }
 
-    // Orchard: hover is a pointer's. A finger leaves no hover behind (Qt
-    // makes mouse events of a touch, which kept a slot hovered after it).
-    HoverHandler { id: moduleHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
+    HoverHandler { id: moduleHover }
 
     // The widget at its own size. Lifted out by a drag, it folds away with
     // its room.

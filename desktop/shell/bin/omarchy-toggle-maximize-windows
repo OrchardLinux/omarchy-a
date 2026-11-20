@@ -6,7 +6,7 @@
 # session merges (labwc -m) before ~/.config/labwc/rc.xml, so updates that
 # replace rc.xml keep it; login writes it for the current choice (--apply).
 # About (org.omarchy.about) and Omacalc keep their own size, which fits what
-# they show.
+# they show, except on a phone: there every window fills the screen.
 #
 #   omarchy-toggle-maximize-windows           switch it, and reload labwc
 #   omarchy-toggle-maximize-windows --apply   write the rule for the current choice
@@ -14,6 +14,28 @@ set -euo pipefail
 toggles=$HOME/.local/state/omarchy/toggles
 off=$toggles/maximize-windows-off
 rules=$HOME/.local/state/omarchy/xdg-config/labwc/rc.xml
+
+# A phone: the panel's short side under 480 logical pixels (the shell's
+# narrow bar), at the scale omarchy-hyprland-monitor-persist saved for it,
+# else 2 (as scale-output). Read from the kernel: at login labwc is not up.
+phone() {
+  local modes mode short scale=2 settings
+  for modes in "${OMARCHY_DRM_ROOT:-/sys/class/drm}"/card*-*/modes; do
+    [[ -r $modes ]] || continue
+    mode=$(head -1 "$modes")
+    [[ $mode =~ ^([0-9]+)x([0-9]+) ]] || continue
+    short=$(( BASH_REMATCH[1] < BASH_REMATCH[2] ? BASH_REMATCH[1] : BASH_REMATCH[2] ))
+    settings=$HOME/.local/state/omarchy/monitors/settings
+    if [[ -r $settings ]]; then
+      local saved
+      saved=$(awk -F'\t' 'NF >= 3 { s = $3 } END { print s }' "$settings")
+      [[ $saved =~ ^[0-9]+([.][0-9]+)?$ ]] && scale=$saved
+    fi
+    awk -v s="$short" -v k="$scale" 'BEGIN { exit !(k > 0 && s / k < 480) }'
+    return
+  done
+  return 1
+}
 
 apply() {
   # The flag for "on" from when it was off by default.
@@ -23,16 +45,15 @@ apply() {
     return
   fi
   mkdir -p "${rules%/*}"
-  cat >"$rules.tmp" <<'XML'
-<?xml version="1.0"?>
-<labwc_config>
-  <windowRules>
-    <windowRule identifier="*"><action name="Maximize" /></windowRule>
-    <windowRule identifier="org.omarchy.about"><action name="UnMaximize" /></windowRule>
-    <windowRule identifier="omacalc"><action name="UnMaximize" /></windowRule>
-  </windowRules>
-</labwc_config>
-XML
+  local own_size='    <windowRule identifier="org.omarchy.about"><action name="UnMaximize" /></windowRule>
+    <windowRule identifier="omacalc"><action name="UnMaximize" /></windowRule>'
+  phone && own_size=''
+  {
+    printf '%s\n' '<?xml version="1.0"?>' '<labwc_config>' '  <windowRules>' \
+      '    <windowRule identifier="*"><action name="Maximize" /></windowRule>'
+    [[ -z $own_size ]] || printf '%s\n' "$own_size"
+    printf '%s\n' '  </windowRules>' '</labwc_config>'
+  } >"$rules.tmp"
   mv "$rules.tmp" "$rules"
 }
 

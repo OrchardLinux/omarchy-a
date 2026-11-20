@@ -15,7 +15,15 @@ class MenuToggleTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
-        self.env = {**os.environ, 'HOME': str(self.home)}
+        # An iPad's panel unless a test says otherwise (the host's own is not asked).
+        self.drm = self.home / 'drm'
+        self.panel('1536x2048')
+        self.env = {**os.environ, 'HOME': str(self.home), 'OMARCHY_DRM_ROOT': str(self.drm)}
+
+    def panel(self, mode):
+        modes = self.drm / 'card0-DSI-1/modes'
+        modes.parent.mkdir(parents=True, exist_ok=True)
+        modes.write_text(mode + '\n')
 
     def run_bin(self, name, *args, **env):
         return subprocess.run(['bash', str(BIN / name), *args], env={**self.env, **env},
@@ -32,13 +40,14 @@ class MenuToggleTests(unittest.TestCase):
         self.assertEqual(self.toggle_enabled('bar-off'), 0)
         self.assertEqual(self.toggle_enabled('../x'), 2)
 
-    def assert_maximizes(self, rules):
+    def assert_maximizes(self, rules, phone=False):
         tree = ET.fromstring(rules.read_bytes())
         found = tree.findall("./windowRules/windowRule[@identifier='*']/action[@name='Maximize']")
         self.assertEqual(len(found), 1)
         # About and Omacalc keep the size that fits what they show; their rules come after the one for all.
+        # On a phone every window fills the screen.
         identifiers = [rule.get('identifier') for rule in tree.findall('./windowRules/windowRule')]
-        self.assertEqual(identifiers, ['*', 'org.omarchy.about', 'omacalc'])
+        self.assertEqual(identifiers, ['*'] if phone else ['*', 'org.omarchy.about', 'omacalc'])
         for app in identifiers[1:]:
             kept = tree.findall("./windowRules/windowRule[@identifier='%s']/action[@name='UnMaximize']" % app)
             self.assertEqual(len(kept), 1, app)
@@ -67,6 +76,19 @@ class MenuToggleTests(unittest.TestCase):
         self.run_bin('omarchy-toggle-maximize-windows', '--apply')
         self.assertFalse(rules.exists())
         self.assertFalse((self.home / '.config').exists())
+
+    def test_on_a_phone_about_and_omacalc_fill_the_screen_too(self):
+        rules = self.home / '.local/state/omarchy/xdg-config/labwc/rc.xml'
+        self.panel('750x1334')   # the iPhone 7: 375 wide at scale 2
+        result = self.run_bin('omarchy-toggle-maximize-windows', '--apply')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_maximizes(rules, phone=True)
+        # A phone set to scale 1 is as wide as a small tablet.
+        settings = self.home / '.local/state/omarchy/monitors/settings'
+        settings.parent.mkdir(parents=True)
+        settings.write_text('750x1334\t60\t1\tDSI-1\n')
+        self.run_bin('omarchy-toggle-maximize-windows', '--apply')
+        self.assert_maximizes(rules)
 
     def test_the_on_flag_from_before_the_default_goes(self):
         legacy = self.home / '.local/state/omarchy/toggles/maximize-windows'
