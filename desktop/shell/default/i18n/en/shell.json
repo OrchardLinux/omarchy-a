@@ -730,5 +730,8 @@
   "settings.searching": "Searching…",
   "settings.connected": "Connected",
   "settings.notConnected": "Not Connected",
-  "settings.noWifiDevice": "No Wi-Fi on this device"
+  "settings.noWifiDevice": "No Wi-Fi on this device",
+  "settings.brightness": "Brightness",
+  "settings.autoBrightness": "Auto-Brightness",
+  "settings.rotationLock": "Rotation Lock"
 }

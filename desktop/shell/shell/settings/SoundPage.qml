@@ -114,75 +114,19 @@ Item {
   }
 
   // The level of the device in use, and its mute on the glyph.
-  component VolumeRow: Item {
-    id: volumeRow
+  component VolumeRow: SettingsSlider {
     property var node: null
-    property bool first: false
-    readonly property bool usable: !!node && !!node.audio
-    readonly property real level: usable ? Math.min(1, node.audio.volume) : 0
-    readonly property bool muted: usable && node.audio.muted
-    width: parent ? parent.width : 0
-    height: page.settings ? page.settings.rowHeight + Style.space(6) : 48
-
-    Text {
-      id: muteGlyph
-      x: Style.space(14)
-      width: Style.space(20)
-      anchors.verticalCenter: parent.verticalCenter
-      horizontalAlignment: Text.AlignHCenter
-      text: volumeRow.muted ? "󰖁" : "󰕾"
-      color: page.settings ? page.settings.text : "white"
-      font.family: Style.font.menuFamily
-      font.pixelSize: Style.font.title
-      TapHandler {
-        enabled: volumeRow.usable
-        onTapped: volumeRow.node.audio.muted = !volumeRow.node.audio.muted
-      }
+    readonly property bool live: !!node && !!node.audio
+    settings: page.settings
+    usable: live
+    level: live ? node.audio.volume : 0
+    dimmed: live && node.audio.muted
+    glyph: dimmed ? "\udb81\udd81" : "\udb81\udd7e"
+    onMoved: function(value) {
+      if (!live) return
+      node.audio.volume = value
+      if (node.audio.muted && value > 0) node.audio.muted = false
     }
-    Item {
-      id: track
-      x: muteGlyph.x + muteGlyph.width + Style.space(14)
-      width: parent.width - x - Style.space(16)
-      height: Style.space(28)
-      anchors.verticalCenter: parent.verticalCenter
-      opacity: volumeRow.usable ? (volumeRow.muted ? 0.5 : 1) : 0.4
-      Rectangle {
-        anchors.verticalCenter: parent.verticalCenter
-        width: parent.width
-        height: Style.space(6)
-        color: page.settings ? page.settings.line : "gray"
-      }
-      Rectangle {
-        anchors.verticalCenter: parent.verticalCenter
-        width: parent.width * volumeRow.level
-        height: Style.space(6)
-        color: page.settings ? page.settings.accent : "white"
-      }
-      Rectangle {
-        x: parent.width * volumeRow.level - width / 2
-        anchors.verticalCenter: parent.verticalCenter
-        width: Style.space(16)
-        height: Style.space(16)
-        color: page.settings ? page.settings.text : "white"
-      }
-      // The level goes where the finger or the pointer is, along the way.
-      DragHandler {
-        id: drag
-        target: null
-        enabled: volumeRow.usable
-        xAxis.enabled: true
-        yAxis.enabled: false
-        onCentroidChanged: if (active) volumeRow.set(centroid.position.x)
-      }
-      TapHandler {
-        enabled: volumeRow.usable
-        onTapped: function(point) { volumeRow.set(point.position.x) }
-      }
-    }
-    function set(x) {
-      if (!usable) return
-      node.audio.volume = Math.max(0, Math.min(1, x / track.width))
-      if (node.audio.muted && x > 0) node.audio.muted = false
-    }
+    onGlyphTapped: if (live) node.audio.muted = !node.audio.muted
   }
 }

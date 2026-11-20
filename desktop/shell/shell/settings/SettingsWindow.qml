@@ -768,7 +768,8 @@ FloatingWindow {
                 : win.nativePage === "about" ? aboutPage
               : win.nativePage === "wifi" ? wifiPage
               : win.nativePage === "bluetooth" ? bluetoothPage
-              : win.nativePage === "sound" ? soundPage : null
+              : win.nativePage === "sound" ? soundPage
+              : win.nativePage === "display" ? displayPage : null
             }
 
             // The section's groups: the card first, then two columns where the
@@ -1047,4 +1048,5 @@ FloatingWindow {
   Component { id: wifiPage; WifiPage { settings: win } }
   Component { id: bluetoothPage; BluetoothPage { settings: win } }
   Component { id: soundPage; SoundPage { settings: win } }
+  Component { id: displayPage; DisplayPage { settings: win } }
 }

@@ -113,6 +113,7 @@ var SECTIONS = [
   {
     id: "display",
     label: "settings.display",
+    page: "display",
     icon: "󰍹",
     groups: [
       { label: "", rows: [
