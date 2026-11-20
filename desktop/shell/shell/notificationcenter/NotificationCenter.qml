@@ -369,9 +369,12 @@ Item {
       y: root.barInset
       width: parent.width
       height: parent.height - y
-      // Opaque, the theme's background: a translucent dark over the
-      // wallpaper only muddies it, and the cards read as the page.
-      color: Commons.Color.menu.background
+      // The lock screen's scrim: even, the theme's lock scrim, and on a dark
+      // theme taken toward black so it does not grey the wallpaper to mud.
+      // The wallpaper stays a hint behind the cards.
+      readonly property color lockScrim: Commons.Color.lock.scrim
+      readonly property bool darkTheme: (0.2126 * lockScrim.r + 0.7152 * lockScrim.g + 0.0722 * lockScrim.b) < 0.5
+      color: darkTheme ? Qt.rgba(lockScrim.r * 0.42, lockScrim.g * 0.42, lockScrim.b * 0.42, lockScrim.a) : lockScrim
       opacity: !root.gpu ? (root.reveal > 0 ? 1 : 0)
         : root.leaving ? sheet.opacity
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal)), 2.5)
