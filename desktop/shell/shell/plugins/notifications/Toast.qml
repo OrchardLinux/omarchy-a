@@ -378,7 +378,8 @@ Item {
     y: -card.exitPad
     width: card.width + 2 * card.exitPad
     height: bannerBox.height + 2 * card.exitPad
-    layer.enabled: card.exiting && card.gpu
+    // Also while a finger slides it, it is thrown or it springs back.
+    layer.enabled: card.gpu && (card.exiting || card.swipeAxis !== "" || swipeOut.running || swipeBack.running)
     layer.smooth: true
 
     Rectangle {
