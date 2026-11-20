@@ -464,11 +464,24 @@ Item {
           spacing: Style.space(12)
           readonly property real iconSize: card.width < Style.space(380) ? Style.space(36) : Style.space(40)
 
+          // Without an icon, a quiet square with a bell keeps the text in line.
           Item {
             id: bannerIcon
-            width: card.bannerHasIcon ? parent.iconSize : 0
+            width: parent.iconSize
             height: width
-            visible: card.bannerHasIcon
+            Rectangle {
+              anchors.fill: parent
+              visible: !card.bannerHasIcon
+              color: Util.alpha(Commons.Color.notifications.text, 0.08)
+              Text {
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: "󰂚"
+                color: card.dimColor
+                font.family: Style.font.family
+                font.pixelSize: Style.font.title
+              }
+            }
             Image {
               anchors.fill: parent
               visible: thumb.pictured

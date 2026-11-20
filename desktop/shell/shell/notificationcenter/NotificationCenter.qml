@@ -61,6 +61,15 @@ Item {
     return service ? service.centerGroups() : []
   }
   property var openGroups: ({})
+  // What was on the list while it was open: something newer arriving then
+  // comes in with a transition; what was there on opening does not.
+  property var seen: ({})
+  function markAllSeen() {
+    var next = {}
+    for (var g = 0; g < root.groups.length; g++)
+      for (var r = 0; r < root.groups[g].rows.length; r++) next[root.groups[g].rows[r].key] = true
+    root.seen = next
+  }
   function toggleGroup(key) {
     var next = {}
     for (var k in openGroups) next[k] = openGroups[k]
@@ -158,6 +167,7 @@ Item {
     root.everOpened = true
     // Stacks open closed again, and the list starts at the top.
     root.openGroups = ({})
+    root.markAllSeen()
     scroller.contentY = 0
     root.focusIndex = -1
     root.opened = true
@@ -217,7 +227,10 @@ Item {
     onExited: { root.noteWritten = writing; root.writeOpenNote() }
   }
   Component.onCompleted: writeOpenNote()
-  onOpenedChanged: writeOpenNote()
+  onOpenedChanged: {
+    writeOpenNote()
+    if (!opened && typing) endReply()
+  }
 
   ShellIpc {
     target: "omarchy.notificationcenter"
@@ -245,6 +258,7 @@ Item {
       root.clearOthers()
       root.everOpened = true
       root.openGroups = ({})
+      root.markAllSeen()
       scroller.contentY = 0
       root.reveal = 0
       root.mapped = true
@@ -334,6 +348,39 @@ Item {
     root.close()
   }
   function openGroup(group) { if (group && group.rows.length) root.openEntry(group.rows[0]) }
+  // A sender's button, or its inline reply: the center goes first, since the
+  // press changes the list and so remakes the card it came from.
+  function pressAction(entry, id) {
+    var key = entry.key, live = entry.live
+    root.close()
+    if (service && live) service.invokeAction(key, id)
+  }
+  function sendReply(entry, text) {
+    var key = entry.key
+    root.endReply()
+    root.close()
+    if (service) service.sendReply(key, text)
+  }
+  // A reply field being typed in: the on-screen keyboard (opened for a
+  // finger) lies over the center then, and goes with the reply.
+  property bool typing: false
+  property bool replyKeyboard: false
+  function beginReply(byTouch) {
+    root.typing = true
+    if (byTouch && !root.replyKeyboard) {
+      root.replyKeyboard = true
+      Quickshell.execDetached([(Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/bin/omarchy-keyboard", "show"])
+    }
+  }
+  function endReply() {
+    root.typing = false
+    if (root.replyKeyboard) {
+      root.replyKeyboard = false
+      Quickshell.execDetached([(Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/bin/omarchy-keyboard", "hide"])
+    }
+    keyCatcher.forceActiveFocus()
+  }
+
   // A collapsed stack goes whole; an open one, the card swiped.
   function forgetGroup(group, single, entry) {
     if (!service || !group) return
@@ -346,8 +393,9 @@ Item {
   OverlayWindow {
     id: panel
     shown: root.mapped
-    // Above everything, the on-screen keyboard included.
-    shownLayer: WlrLayer.Overlay
+    // Above everything, the on-screen keyboard included, except while a
+    // reply is typed: then under it, so the keyboard is there to type with.
+    shownLayer: root.typing ? WlrLayer.Top : WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-notification-center"
     // The bar stays the bar's: a pull from it or a click on its items reaches it.
     mask: Region { item: belowBar }
@@ -592,11 +640,45 @@ Item {
                   NumberAnimation { duration: Style.duration(300); easing.type: Easing.InOutCubic }
                 }
                 width: listColumn.width
-                height: head.height + (rest.active && rest.item ? rest.item.height : 0)
+                // Arriving while open: a new app's group grows in from
+                // nothing at the top and fades in, what follows moving down;
+                // a group that was there takes its new message as a fade of
+                // its head.
+                property real appear: 1
+                property real headAppear: 1
+                NumberAnimation on appear {
+                  id: appearRun
+                  running: false
+                  to: 1
+                  duration: root.gpu ? Style.duration(320) : 0
+                  easing.type: Easing.Bezier
+                  easing.bezierCurve: Style.easeOut
+                }
+                NumberAnimation on headAppear {
+                  id: headAppearRun
+                  running: false
+                  to: 1
+                  duration: root.gpu ? Style.duration(260) : 0
+                  easing.type: Easing.InOutCubic
+                }
+                Component.onCompleted: {
+                  var rows = modelData.rows, unseen = 0
+                  for (var i = 0; i < rows.length; i++) if (!root.seen[rows[i].key]) unseen++
+                  if (root.mapped && unseen > 0) {
+                    if (unseen === rows.length) { appear = 0; appearRun.start() }
+                    else { headAppear = 0; headAppearRun.start() }
+                  }
+                  for (var j = 0; j < rows.length; j++) root.seen[rows[j].key] = true
+                }
+                clip: appear < 1
+                opacity: appear
+                height: (head.height + (rest.active && rest.item ? rest.item.height : 0)) * appear
 
                 CenterCard {
                   id: head
                   z: 1
+                  y: -(1 - groupColumn.appear) * Style.space(16)
+                  opacity: groupColumn.headAppear
                   width: groupColumn.width
                   entry: groupColumn.modelData.rows[0]
                   more: groupColumn.open ? -1 : groupColumn.more
@@ -607,9 +689,8 @@ Item {
                   onOpened: root.openEntry(entry)
                   onSwiped: root.forgetGroup(groupColumn.modelData, groupColumn.open, entry)
                   onMoreToggled: root.toggleGroup(groupColumn.modelData.key)
-                  onActionPressed: function(id) {
-                    if (root.service && entry.live) { root.service.invokeAction(entry.key, id); root.close() }
-                  }
+                  onActionPressed: function(id) { root.pressAction(entry, id) }
+                  onReplySent: function(text) { root.sendReply(entry, text) }
                 }
                 // The rest of the stack, built only while it shows.
                 Loader {
@@ -636,9 +717,8 @@ Item {
                           entry: parent.modelData
                           onOpened: root.openEntry(entry)
                           onSwiped: root.forgetGroup(groupColumn.modelData, true, entry)
-                          onActionPressed: function(id) {
-                            if (root.service && entry.live) { root.service.invokeAction(entry.key, id); root.close() }
-                          }
+                          onActionPressed: function(id) { root.pressAction(entry, id) }
+                          onReplySent: function(text) { root.sendReply(entry, text) }
                         }
                       }
                     }
@@ -781,6 +861,7 @@ Item {
     signal swiped()
     signal moreToggled()
     signal actionPressed(string id)
+    signal replySent(string text)
     readonly property int shapes: Math.min(2, stacked)
     height: box.height + Style.space(6) * shapes * shade
 
@@ -841,11 +922,25 @@ Item {
           width: parent.width
           spacing: Style.space(12)
 
+          // Without an icon, a quiet square with a bell keeps every card's
+          // text in line.
           Item {
             id: icon
-            width: card.hasIcon ? card.iconSize : 0
+            width: card.iconSize
             height: width
-            visible: card.hasIcon
+            Rectangle {
+              anchors.fill: parent
+              visible: !card.hasIcon
+              color: Util.alpha(root.text, 0.08)
+              Text {
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: "󰂚"
+                color: root.dim
+                font.family: Style.font.family
+                font.pixelSize: Style.font.title
+              }
+            }
             Image {
               anchors.fill: parent
               visible: card.iconUrl !== ""
@@ -971,6 +1066,74 @@ Item {
                 preventStealing: true
                 onClicked: card.actionPressed(String(parent.modelData.id))
               }
+            }
+          }
+        }
+
+        // The sender's inline reply, as on a banner.
+        Row {
+          visible: String(card.entry.reply || "") !== ""
+          x: icon.visible ? icon.width + Style.space(12) : 0
+          width: parent.width - x
+          spacing: Style.space(8)
+          Rectangle {
+            width: parent.width - sendBox.width - parent.spacing
+            height: Style.space(34)
+            color: Util.alpha(Commons.Color.background, 0.7)
+            border.width: replyInput.activeFocus && root.typing ? Math.max(1, root.hairline) : root.hairline
+            border.color: replyInput.activeFocus && root.typing ? Commons.Color.accent : root.outline
+            TextInput {
+              id: replyInput
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(10)
+              anchors.rightMargin: Style.space(10)
+              verticalAlignment: TextInput.AlignVCenter
+              color: root.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              clip: true
+              activeFocusOnPress: false
+              onAccepted: if (text.trim() !== "") card.replySent(text)
+              Keys.onEscapePressed: { text = ""; root.endReply() }
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: parent.text === ""
+                textFormat: Text.PlainText
+                text: String(card.entry.reply || "")
+                color: root.dim
+                font: parent.font
+              }
+            }
+            Item {
+              anchors.fill: parent
+              visible: !(replyInput.activeFocus && root.typing)
+              TapHandler {
+                onTapped: function(point) {
+                  root.beginReply(point.device.type === PointerDevice.TouchScreen)
+                  replyInput.forceActiveFocus()
+                }
+              }
+            }
+          }
+          Rectangle {
+            id: sendBox
+            width: Style.space(34)
+            height: Style.space(34)
+            color: Commons.Color.accent
+            scale: sendArea.pressed && sendArea.containsMouse ? 0.96 : 1
+            Text {
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              text: "\uf1d8"
+              color: Commons.Color.background
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+            }
+            MouseArea {
+              id: sendArea
+              anchors.fill: parent
+              preventStealing: true
+              onClicked: if (replyInput.text.trim() !== "") card.replySent(replyInput.text)
             }
           }
         }

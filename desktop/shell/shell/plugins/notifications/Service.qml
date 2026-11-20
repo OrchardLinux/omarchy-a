@@ -1412,7 +1412,7 @@ Item {
                  glyph: String(live.glyph || ""), source: String(live.source || ""),
                  summary: String(live.summary || ""), body: String(live.body || ""),
                  groupKey: String(live.groupKey || live.app || ""), ts: Number(live.ts || 0),
-                 actions: senderActions(refs[key]) })
+                 actions: senderActions(refs[key]), reply: replyOf(key, refsRevision) })
     }
     var history = currentHistory()
     for (var h = 0; h < history.length; h++) {
