@@ -28,19 +28,35 @@
 
 var SECTIONS = [
   {
+    id: "wifi",
+    label: "settings.wifi",
+    icon: "󰖩",
+    page: "wifi",
+    groups: [
+      { label: "settings.network", rows: [
+        { entry: "setup.network.dns" },
+        { entry: "setup.network.qr" },
+        { entry: "trigger.tests.network-speedtest" }
+      ] }
+    ]
+  },
+  {
+    id: "bluetooth",
+    label: "settings.bluetooth",
+    icon: "󰂯",
+    page: "bluetooth",
+    groups: []
+  },
+  {
     id: "general",
     label: "settings.general",
+    startsGroup: true,
     iconEntry: "setup",
     groups: [
       { label: "", rows: [
         { entry: "setup.language" },
         { entry: "update.timezone" },
         { entry: "update.time" }
-      ] },
-      { label: "settings.network", rows: [
-        { entry: "setup.network.dns" },
-        { entry: "setup.network.qr" },
-        { entry: "trigger.tests.network-speedtest" }
       ] },
       { label: "", rows: [
         { entry: "setup.config" },
@@ -107,6 +123,13 @@ var SECTIONS = [
         { toggle: ["trigger.hardware.hybrid-gpu-on", "trigger.hardware.hybrid-gpu-off"], label: "settings.hybridGpu" }
       ] }
     ]
+  },
+  {
+    id: "sound",
+    label: "settings.sound",
+    icon: "󰕾",
+    page: "sound",
+    groups: []
   },
   {
     id: "keyboard",

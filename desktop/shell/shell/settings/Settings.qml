@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Bluetooth
 import qs.Commons
 import qs.Commons as Commons
 import "SettingsLayout.js" as Layout
@@ -56,6 +57,45 @@ Item {
   function toggle() {
     if (root.opened) root.close()
     else root.open("")
+  }
+
+  // Bluetooth discovery while the Bluetooth page shows, and its end after,
+  // here because the page (and the window) are gone by then. As the control
+  // center does it: BlueZ refuses a start while the adapter powers up, and
+  // only a stop after it confirmed the start ends the session, which would
+  // otherwise keep the radio searching (and A2DP audio stuttering) until the
+  // shell restarts.
+  property bool bluetoothScan: false
+  property bool owesDiscoveryStop: false
+  readonly property var adapter: Bluetooth.defaultAdapter
+  Timer {
+    interval: 1000
+    repeat: true
+    triggeredOnStart: true
+    running: root.bluetoothScan && root.adapter !== null && root.adapter.enabled && !root.adapter.discovering
+    onTriggered: {
+      root.owesDiscoveryStop = true
+      root.adapter.discovering = true
+    }
+  }
+  Timer {
+    id: discoveryStop
+    interval: 1000
+    repeat: true
+    property int attempts: 0
+    running: !root.bluetoothScan && root.owesDiscoveryStop && root.adapter !== null && root.adapter.discovering === true
+    onRunningChanged: if (running) attempts = 0
+    onTriggered: {
+      if (++attempts > 10) { root.owesDiscoveryStop = false; return }
+      root.adapter.discovering = false
+    }
+  }
+  // Once the search has ended, nothing is owed: a later one is someone else's.
+  Connections {
+    target: root.adapter
+    function onDiscoveringChanged() {
+      if (!root.bluetoothScan && root.adapter && !root.adapter.discovering) root.owesDiscoveryStop = false
+    }
   }
 
   ShellIpc {

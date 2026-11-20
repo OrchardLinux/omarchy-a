@@ -765,7 +765,10 @@ FloatingWindow {
               sourceComponent: win.nativePage === "theme" ? themePage
                 : win.nativePage === "background" ? backgroundPage
                 : win.nativePage === "icons" ? iconsPage
-                : win.nativePage === "about" ? aboutPage : null
+                : win.nativePage === "about" ? aboutPage
+              : win.nativePage === "wifi" ? wifiPage
+              : win.nativePage === "bluetooth" ? bluetoothPage
+              : win.nativePage === "sound" ? soundPage : null
             }
 
             // The section's groups: the card first, then two columns where the
@@ -780,7 +783,8 @@ FloatingWindow {
             }
             Row {
               id: columns
-              visible: win.nativePage === "" || win.nativePage === "about"
+              // A section's own page shows its groups under it (Wi-Fi, About).
+            visible: win.nativePage === "" || !win.top
               width: parent.width
               spacing: Style.space(18)
               readonly property var plain: win.groups.filter(function(g) { return !g.card })
@@ -1040,4 +1044,7 @@ FloatingWindow {
   Component { id: backgroundPage; BackgroundPage { settings: win } }
   Component { id: iconsPage; IconsPage { settings: win } }
   Component { id: aboutPage; AboutPage { settings: win } }
+  Component { id: wifiPage; WifiPage { settings: win } }
+  Component { id: bluetoothPage; BluetoothPage { settings: win } }
+  Component { id: soundPage; SoundPage { settings: win } }
 }

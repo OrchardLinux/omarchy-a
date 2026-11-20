@@ -718,5 +718,17 @@
   "settings.aboutStorage": "Storage",
   "settings.noBackgrounds": "This theme has no backgrounds",
   "settings.learn": "Learn",
-  "settings.titleBars": "Title Bars When Maximized"
+  "settings.titleBars": "Title Bars When Maximized",
+  "settings.wifi": "Wi-Fi",
+  "settings.bluetooth": "Bluetooth",
+  "settings.sound": "Sound",
+  "settings.output": "Output",
+  "settings.input": "Input",
+  "settings.noAudioDevices": "No audio devices",
+  "settings.myDevices": "My Devices",
+  "settings.otherDevices": "Other Devices",
+  "settings.searching": "Searching…",
+  "settings.connected": "Connected",
+  "settings.notConnected": "Not Connected",
+  "settings.noWifiDevice": "No Wi-Fi on this device"
 }
