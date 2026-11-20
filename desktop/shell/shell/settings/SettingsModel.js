@@ -52,18 +52,26 @@ function commandsIn(text) {
   return Object.keys(found).sort()
 }
 
+// The commands an entry needs that cannot work here: not installed, or
+// Hyprland's while the session is not Hyprland (ctx.hyprland).
 function missingIn(ctx, text) {
   var commands = commandsIn(text)
   var out = []
-  for (var i = 0; i < commands.length; i++) if (ctx.missing && ctx.missing[commands[i]]) out.push(commands[i])
+  for (var i = 0; i < commands.length; i++) {
+    var c = commands[i]
+    if ((ctx.missing && ctx.missing[c]) || (ctx.hyprland && ctx.hyprland[c])) out.push(c)
+  }
   return out
 }
 
 // "Hyprland" for an entry that only does something under Hyprland: its
-// commands are Hyprland's (omarchy-hyprland-*, hyprctl) and not here.
-function tagFor(missing, text) {
+// commands are Hyprland's (omarchy-hyprland-*, or calling hyprctl).
+function tagFor(missing, text, ctx) {
   var source = String(text || "")
-  for (var i = 0; i < missing.length; i++) if (missing[i].indexOf("hyprland") >= 0) return "Hyprland"
+  for (var i = 0; i < missing.length; i++) {
+    if (missing[i].indexOf("hyprland") >= 0) return "Hyprland"
+    if (ctx && ctx.hyprland && ctx.hyprland[missing[i]]) return "Hyprland"
+  }
   if (missing.length > 0 && /\bhyprctl\b/.test(source)) return "Hyprland"
   return ""
 }
@@ -145,7 +153,7 @@ function resolveRow(spec, ctx, providers, t) {
       entry: offShown ? offEntry : onEntry,
       value: "",
       available: missing.length === 0,
-      tag: tagFor(missing, text)
+      tag: tagFor(missing, text, ctx)
     }
   }
 
@@ -162,7 +170,7 @@ function resolveRow(spec, ctx, providers, t) {
   var available = gone.length === 0 || (entry.kind === "menu" && !entry.provider && submenuWorks(ctx, entry, providers))
   var row = {
     key: key, entry: entry, label: entry.label, icon: entry.icon || "", iconFont: entry.iconFont || "",
-    value: values[key] || "", available: available, tag: available ? "" : tagFor(gone, all),
+    value: values[key] || "", available: available, tag: available ? "" : tagFor(gone, all, ctx),
     off: !!(entry.disabled && ctx.disabledResults && ctx.disabledResults[entry.id])
   }
   if (spec.page) { row.kind = "native"; row.page = spec.page; return row }
@@ -434,7 +442,8 @@ function stateScript(sections, ctx, providers) {
     for (var n = 0; n < names.length; n++) commands[names[n]] = true
   }
   var list = Object.keys(commands).sort()
-  if (list.length) lines.push("for c in " + list.join(" ") + "; do command -v \"$c\" >/dev/null 2>&1 || printf 'm\\t%s\\n' \"$c\"; done")
+  // Missing, or (outside a Hyprland session) calling hyprctl.
+  if (list.length) lines.push("for c in " + list.join(" ") + "; do p=$(command -v \"$c\" 2>/dev/null) || { printf 'm\\t%s\\n' \"$c\"; continue; }; [[ -z $HYPRLAND_INSTANCE_SIGNATURE ]] && grep -qE '\\bhyprctl\\b|\\bomarchy-hyprland-' \"$p\" 2>/dev/null && printf 'h\\t%s\\n' \"$c\"; done")
   for (var s = 0; s < sections.length; s++)
     for (var g = 0; g < sections[s].groups.length; g++)
       for (var r = 0; r < sections[s].groups[g].rows.length; r++) {
@@ -447,14 +456,16 @@ function stateScript(sections, ctx, providers) {
 
 function parseState(text) {
   var missing = {}
+  var hyprland = {}
   var values = {}
   var lines = String(text || "").split("\n")
   for (var i = 0; i < lines.length; i++) {
     var parts = lines[i].split("\t")
     if (parts[0] === "m" && parts[1]) missing[parts[1]] = true
+    else if (parts[0] === "h" && parts[1]) hyprland[parts[1]] = true
     else if (parts[0] === "v" && parts[1]) values[parts[1]] = parts.slice(2).join("\t")
   }
-  return { missing: missing, values: values }
+  return { missing: missing, hyprland: hyprland, values: values }
 }
 
 function shellQuote(value) {

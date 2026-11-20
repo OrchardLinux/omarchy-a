@@ -69,7 +69,11 @@ assert.deepEqual(M.commandsIn('a=$(omarchy-foo x); omarchy-bar-set "$a" | grep o
 assert.deepEqual(M.route('appearance/theme', L.SECTIONS, ctx()), { section: 'appearance', page: { kind: 'native', page: 'theme' } });
 assert.deepEqual(M.route('setup.security', L.SECTIONS, ctx()), { section: 'security', page: { kind: 'menu', id: 'setup.security' } });
 assert.deepEqual(M.route('nowhere', L.SECTIONS, ctx()), { section: '', page: null });
-assert.deepEqual(M.parseState('m\tomarchy-bar\nv\tappearance.icons\tPapercraft\n'), { missing: { 'omarchy-bar': true }, values: { 'appearance.icons': 'Papercraft' } });
+assert.deepEqual(M.parseState('m\tomarchy-bar\nh\tomarchy-x\nv\tappearance.icons\tPapercraft\n'), { missing: { 'omarchy-bar': true }, hyprland: { 'omarchy-x': true }, values: { 'appearance.icons': 'Papercraft' } });
+// A command that is here but Hyprland's: dimmed and tagged outside Hyprland.
+const corners = M.resolveRow({ entry: 'appearance.windows.corners' }, ctx({ hyprland: Object.fromEntries(M.commandsIn(menu.items['appearance.windows.corners.sharp'].action).map(c => [c, true])) }), {});
+assert.equal(corners.available, false);
+assert.equal(corners.tag, 'Hyprland');
 const found = M.search('wallpaper', L.SECTIONS, ctx(), {}, k => k);
 assert.equal(found[0].key, 'appearance.background');
 assert.equal(found[0].section, 'appearance');

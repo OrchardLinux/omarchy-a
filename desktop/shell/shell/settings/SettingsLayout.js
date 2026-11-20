@@ -134,6 +134,7 @@ var SECTIONS = [
     groups: [
       { label: "", rows: [
         { toggle: ["trigger.toggle.maximize-windows-on", "trigger.toggle.maximize-windows-off"], label: "settings.maximizeWindows" },
+        { toggle: ["trigger.toggle.window-titlebars-on", "trigger.toggle.window-titlebars-off"], label: "settings.titleBars" },
         { toggle: ["trigger.toggle.screensaver-on", "trigger.toggle.screensaver-off"], label: "settings.screensaver" }
       ] }
     ]

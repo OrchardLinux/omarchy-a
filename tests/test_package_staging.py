@@ -23,6 +23,19 @@ class PackageStagingTests(unittest.TestCase):
         # The package writes into no home: the tablet user's defaults are /etc/skel's.
         self.assertFalse((target / 'home').exists())
 
+    def test_upstream_commands_ship_except_the_held_ones(self):
+        target = tree()
+        omarchy = target / 'usr/share/omarchy'
+        # Upstream's own command, on PATH as upstream's are.
+        self.assertEqual((omarchy / 'bin/omarchy-upstream-only').read_text(), '#!/bin/bash\necho upstream\n')
+        self.assertTrue((target / 'usr/bin/omarchy-upstream-only').is_symlink())
+        # One the tablet's shell runs by itself waits until it is checked here.
+        held = (HERE / 'upstream-commands-held').read_text()
+        self.assertIn('omarchy-battery-low\t', held)
+        self.assertFalse((omarchy / 'bin/omarchy-battery-low').exists())
+        # Where the tablet has its own (labwc's), that one is shipped.
+        self.assertEqual((omarchy / 'bin/omarchy-theme-set').read_bytes(), (HERE / 'shell/bin/omarchy-theme-set').read_bytes())
+
     def test_trusted_ui_fallback_theme_and_tmpfiles_are_staged(self):
         target = tree()
         skel = target / 'etc/skel'

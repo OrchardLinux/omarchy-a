@@ -43,6 +43,7 @@ FloatingWindow {
   // What the menu knows now; every row reads it.
   property var values: ({})
   property var missing: ({})
+  property var hyprland: ({})
   // A switch flipped a moment ago shows its new state until the menu has
   // checked again.
   property var pending: ({})
@@ -53,7 +54,8 @@ FloatingWindow {
     checkedResults: menu ? menu.checkedResults : ({}),
     disabledResults: menu ? menu.disabledResults : ({}),
     values: values,
-    missing: missing
+    missing: missing,
+    hyprland: hyprland
   })
   readonly property var providers: menu ? menu.providers : ({})
   function t(key) { return Commons.I18n.t(key) }
@@ -316,6 +318,7 @@ FloatingWindow {
       var s = Model.parseState(stateProc.collected)
       win.values = s.values
       win.missing = s.missing
+      win.hyprland = s.hyprland
     }
   }
 
@@ -667,7 +670,7 @@ FloatingWindow {
             Text {
               id: titleText
               readonly property bool centered: !win.wide && backRow.visible
-              x: centered ? Math.max(backRow.width + Style.space(12), (parent.width - width) / 2)
+              x: centered ? Math.max(backRow.visible ? backRow.width + Style.space(12) : 0, (parent.width - width) / 2)
                 : (backRow.visible ? backRow.width + Style.space(16) : 0)
               width: centered ? Math.min(implicitWidth, parent.width - 2 * (backRow.width + Style.space(12)))
                 : parent.width - x - (moreButton.visible ? moreButton.width + Style.space(10) : 0)
@@ -676,7 +679,7 @@ FloatingWindow {
               text: win.pageTitle
               color: win.text
               font.family: Style.font.family
-              font.pixelSize: Style.font.displayLarge > 0 && !backRow.visible ? Style.font.display : Style.font.heading
+              font.pixelSize: !backRow.visible ? Style.font.display : Style.font.heading
               font.bold: true
               elide: Text.ElideRight
             }

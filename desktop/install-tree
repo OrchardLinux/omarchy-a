@@ -19,7 +19,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 project=$(dirname "$here")
 shell=$here/shell config=$here/configuration
 omarchy=$root/usr/share/omarchy
-for input in "$build/wvkbd-mobintl" "$build/wtype" "$build/wtype.LICENSE" "$upstream/themes" \
+for input in "$build/wvkbd-mobintl" "$build/wtype" "$build/wtype.LICENSE" "$upstream/themes" "$upstream/bin" \
     "$upstream/themes/jade-horse/colors.toml" "$upstream/icons/papercraft" "$upstream/applications/foot.desktop" "$dbus_next/dbus_next/__init__.py"; do
   [[ -e $input ]] || { echo "Missing input: $input" >&2; exit 1; }
 done
@@ -36,8 +36,16 @@ sha256() {
   if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
 }
 
-# The Omarchy tree.
-mkdir -p "$omarchy"
+# The Omarchy tree: upstream's commands at the pin, then ours over them
+# (labwc's own versions of some). The commands the tablet's shell runs by
+# itself wait in upstream-commands-held until each is checked here.
+mkdir -p "$omarchy/bin"
+held=$(grep -v '^#' "$here/upstream-commands-held" | cut -f1)
+for script in "$upstream"/bin/*; do
+  [[ -f $script ]] || continue
+  grep -qxF "${script##*/}" <<<"$held" && continue
+  cp -P "$script" "$omarchy/bin/"
+done
 cp -R "$shell/." "$omarchy/"
 find "$omarchy" \( -name __pycache__ -o -name '*.pyc' \) -prune -exec rm -rf {} +
 

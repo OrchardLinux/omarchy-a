@@ -110,10 +110,34 @@ class MenuToggleTests(unittest.TestCase):
         loop = session[session.index('\nwhile :; do\n'):]
         self.assertIn('  /usr/bin/labwc -m || true\n', loop)
         self.assertEqual(session.rstrip().splitlines()[-1], 'done')
-        toggle = (BIN / 'omarchy-toggle-maximize-windows').read_text()
+        toggle = (BIN / 'omarchy-labwc-window-rules').read_text()
         self.assertIn('$HOME/.local/state/omarchy/xdg-config/labwc/rc.xml', toggle)
         code = [line for line in toggle.splitlines() if not line.lstrip().startswith('#')]
         self.assertFalse([line for line in code if '.config/labwc' in line])
+
+    def test_title_bars_are_on_until_turned_off(self):
+        rules = self.home / '.local/state/omarchy/xdg-config/labwc/rc.xml'
+        undecorated = "./windowRules/windowRule[@identifier='*'][@serverDecoration='no']"
+        self.run_bin('omarchy-toggle-maximize-windows', '--apply')
+        self.assertEqual(ET.fromstring(rules.read_bytes()).findall(undecorated), [])
+        labwc = subprocess.Popen(['sleep', '30'])
+        try:
+            result = self.run_bin('omarchy-toggle-window-titlebars', LABWC_PID=str(labwc.pid))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            tree = ET.fromstring(rules.read_bytes())
+            self.assertEqual(len(tree.findall(undecorated)), 1)
+            # Both toggles' rules live in the one file.
+            self.assertEqual(len(tree.findall("./windowRules/windowRule[@identifier='*']/action[@name='Maximize']")), 1)
+        finally:
+            labwc.kill()
+            labwc.wait()
+        labwc = subprocess.Popen(['sleep', '30'])
+        try:
+            self.run_bin('omarchy-toggle-window-titlebars', LABWC_PID=str(labwc.pid))
+        finally:
+            labwc.kill()
+            labwc.wait()
+        self.assertEqual(ET.fromstring(rules.read_bytes()).findall(undecorated), [])
 
     def test_menu_toggles_use_shipped_commands(self):
         menu = (PROJECT / 'desktop/shell/default/omarchy/omarchy-menu.jsonc').read_text()

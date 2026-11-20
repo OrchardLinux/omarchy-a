@@ -717,5 +717,6 @@
   "settings.aboutMemory": "Memory",
   "settings.aboutStorage": "Storage",
   "settings.noBackgrounds": "This theme has no backgrounds",
-  "settings.learn": "Learn"
+  "settings.learn": "Learn",
+  "settings.titleBars": "Title Bars"
 }
