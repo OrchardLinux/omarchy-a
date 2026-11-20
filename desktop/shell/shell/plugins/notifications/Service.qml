@@ -1703,7 +1703,10 @@ Item {
       // Constant width and full height, so the buffer is allocated once.
       // Orchard: the whole screen while a reply is typed, so a tap outside
       // the banner ends it (and does nothing else).
-      anchors { top: true; bottom: true; right: true; left: service.replying }
+      // With the banner's cards: the whole screen's width, so a card swiped to
+      // the left goes on to the screen's edge instead of being cut off at the
+      // window's (input stays the cards'). Also while a reply is typed.
+      anchors { top: true; bottom: true; right: true; left: service.bannerLook || service.replying }
       implicitWidth: Math.min(clipper.width + Style.space(10), screen.width)
 
       // Orchard: the deck's rectangle by its numbers, at least as tall as
@@ -1757,7 +1760,7 @@ Item {
         readonly property int motionInset: service.bannerLook
           ? Math.max(0, Math.min(Style.space(28), surface.screen.width - service.notificationWidth - surface.margins.right))
           : Style.spacing.sm
-        width: service.notificationWidth + motionInset + surface.margins.right
+        width: service.bannerLook ? surface.width : service.notificationWidth + motionInset + surface.margins.right
         // The cards drawn, a leaving one included: the deck stops counting
         // a card the moment it leaves, and clipping to it cut the card away
         // instead of letting it go.
@@ -1768,7 +1771,7 @@ Item {
         Item {
           id: deck
           y: clipper.shadowAbove
-          x: clipper.motionInset
+          x: service.bannerLook ? clipper.width - surface.margins.right - service.notificationWidth : clipper.motionInset
           width: service.notificationWidth
           height: service.deckHeight
 
