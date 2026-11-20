@@ -115,9 +115,9 @@ FloatingWindow {
       shot.width = content.width
       shot.height = content.height
     }
-    // Only a picture in the scene is taken: shown, too faint to see, until
+    // Only a picture in the scene is taken: shown (too faint to see) until
     // it has the old page.
-    picture.opacity = 0.01
+    win.navT = 1
     picture.visible = true
     picture.scheduleUpdate()
     win.navPicture = picture
@@ -133,7 +133,6 @@ FloatingWindow {
       win.navChange()
       win.navChange = null
       win.navT = 0
-      win.navPicture.opacity = 1
       navAnim.restart()
     }
   }
@@ -370,6 +369,9 @@ FloatingWindow {
     visible: false
     live: false
     hideSource: false
+    // It fades as it goes; while it is being taken (navT still 1) it is too
+    // faint to see.
+    opacity: Math.max(0.01, 1 - win.navT)
     z: win.navDirection < 0 ? 2 : -1
     transform: Translate { x: win.slideOld }
     Rectangle {
@@ -627,6 +629,7 @@ FloatingWindow {
         visible: false
         live: false
         hideSource: false
+        opacity: Math.max(0.01, 1 - win.navT)
         z: win.navDirection < 0 ? 2 : 0
         transform: Translate { x: win.slideOld }
         Rectangle {
