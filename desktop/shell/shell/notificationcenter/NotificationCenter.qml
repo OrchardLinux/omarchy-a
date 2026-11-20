@@ -103,12 +103,16 @@ Item {
 
   // The time, to the minute, for the clock and the cards' ages.
   property double now: Date.now()
+  // Checked every second while it shows, so its clock turns with the bar's.
   Timer {
-    interval: 1000 * (60 - new Date().getSeconds())
+    interval: 1000
     running: root.mapped
     repeat: true
     triggeredOnStart: true
-    onTriggered: { root.now = Date.now(); interval = 1000 * (60 - new Date().getSeconds()) }
+    onTriggered: {
+      var t = Date.now()
+      if (Math.floor(t / 60000) !== Math.floor(root.now / 60000)) root.now = t
+    }
   }
   function ago(ts) {
     var s = Math.max(0, (root.now - ts * 1000) / 1000)
@@ -789,7 +793,12 @@ Item {
 
   // The weather, as the weather panel reads it.
   component WeatherCard: Rectangle {
-    implicitWidth: weatherRow.implicitWidth + Style.space(28)
+    id: weatherCard
+    // Room the text has inside the card as it is laid out.
+    readonly property real maxTextWidth: Math.max(0, width - Style.space(28) - weatherIcon.width - Style.space(12))
+    // From the texts' full widths, not the shortened ones it lays out.
+    implicitWidth: weatherIcon.implicitWidth + Style.space(12)
+      + Math.max(tempLine.implicitWidth, detailLine.implicitWidth) + Style.space(28)
     height: weatherRow.implicitHeight + Style.space(20)
     color: root.cardFill
     border.width: root.hairline
@@ -801,6 +810,7 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(12)
       Text {
+        id: weatherIcon
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: root.weather ? root.weather.label : ""
@@ -809,9 +819,11 @@ Item {
         font.pixelSize: Style.font.displayLarge
       }
       Column {
+        id: weatherText
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.space(2)
         Text {
+          id: tempLine
           textFormat: Text.PlainText
           text: root.weather ? root.weather.reportTempNum + root.weather.tempUnit : ""
           color: root.text
@@ -819,10 +831,15 @@ Item {
           font.pixelSize: Style.font.title
           font.bold: true
         }
+        // A phone's card is too narrow for the place; too long a line ends
+        // in an ellipsis rather than at the card's edge.
         Text {
+          id: detailLine
+          width: Math.min(implicitWidth, weatherCard.maxTextWidth)
           textFormat: Text.PlainText
-          text: [root.weatherHighLow, root.weather ? root.weather.reportLocation : ""]
+          text: [root.weatherHighLow, root.weather && !root.phone ? root.weather.reportLocation : ""]
             .filter(function(part) { return part !== "" }).join(" · ")
+          elide: Text.ElideRight
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
