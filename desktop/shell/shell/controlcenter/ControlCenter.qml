@@ -258,10 +258,16 @@ Item {
     { key: "keyboard", glyph: "󰌌", label: Commons.I18n.t("controlCenter.keyboard"),
       on: root.keyboardShown, enabled: true, act: root.showKeyboard }
   ]
-  // Live once their backend exists (power profiles, Focus, Night Light, media).
+  // Live once their backend exists (power profiles, Night Light, media); Focus is.
+  // Focus is live: the notifications' Do Not Disturb, as the notification
+  // center's header switches it.
+  readonly property var notifications: shell ? shell.firstPartyServiceFor("omarchy.notifications") : null
+  readonly property bool focusOn: !!notifications && notifications.doNotDisturb === true
+  function toggleFocus() { if (notifications) notifications.setDoNotDisturb(!root.focusOn) }
   readonly property var later: [
     { glyph: "󰓅", label: Commons.I18n.t("controlCenter.balanced") },
-    { glyph: "󰖔", label: Commons.I18n.t("controlCenter.focus") },
+    { glyph: "󰖔", label: Commons.I18n.t("controlCenter.focus"),
+      on: root.focusOn, enabled: !!root.notifications, act: root.toggleFocus },
     { glyph: "󰽟", label: Commons.I18n.t("controlCenter.night") },
     { glyph: "󰝚", label: Commons.I18n.t("controlCenter.media") }
   ]
@@ -790,7 +796,10 @@ Item {
               height: root.phone ? width : Style.space(64)
               glyph: modelData.glyph
               label: modelData.label
-              available: false
+              // Dimmed until its backend exists; then live like the others.
+              on: modelData.on === true
+              available: !!modelData.act && modelData.enabled === true
+              onActivated: if (modelData.act) modelData.act()
             }
           }
         }
@@ -882,7 +891,7 @@ Item {
         text: tile.glyph
         color: tile.ink
         font.family: Style.font.family
-        font.pixelSize: Style.font.title
+        font.pixelSize: Style.font.iconLarge
       }
       Column {
         anchors.verticalCenter: parent.verticalCenter
@@ -959,7 +968,7 @@ Item {
         text: "󰅂"
         color: tileMouse.holding ? Commons.Color.accent : tile.ink
         font.family: Style.font.family
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.heading
       }
       // A hint only: a tap toggles anywhere on the tile, a long press (or a
       // right click) opens the page.
@@ -1038,7 +1047,7 @@ Item {
       text: slider.glyph
       color: slider.value > 0.08 ? Commons.Color.background : root.text
       font.family: Style.font.family
-      font.pixelSize: Style.font.title
+      font.pixelSize: Style.font.heading
     }
     Text {
       visible: slider.note !== ""
@@ -1153,7 +1162,7 @@ Item {
           color: chipBox.ink
           opacity: chipBox.arrowOnly && !drag.holding ? 0.7 : 1
           font.family: Style.font.family
-          font.pixelSize: chipBox.arrowOnly ? Style.font.body : Style.font.caption
+          font.pixelSize: chipBox.arrowOnly ? Style.font.heading : Style.font.body
         }
       }
       // Only a hint that there is a page: a long press opens it, and a tap
@@ -1180,7 +1189,7 @@ Item {
         spacing: Style.space(6)
         Text { anchors.verticalCenter: parent.verticalCenter; text: battery.icon; color: root.text; font.family: Style.font.family; font.pixelSize: Style.font.body }
         Text { anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: root.batteryLine; color: root.text; font.family: Style.font.family; font.pixelSize: Style.font.caption }
-        Text { anchors.verticalCenter: parent.verticalCenter; text: "󰅂"; color: root.text; opacity: 0.6; font.family: Style.font.family; font.pixelSize: Style.font.caption }
+        Text { anchors.verticalCenter: parent.verticalCenter; text: "󰅂"; color: root.text; opacity: 0.6; font.family: Style.font.family; font.pixelSize: Style.font.body }
       }
       MouseArea { anchors.fill: parent; onClicked: batteryCell.activate() }
     }
