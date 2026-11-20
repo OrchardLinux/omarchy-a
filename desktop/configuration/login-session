@@ -17,6 +17,12 @@ export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=labwc
 export WLR_RENDERER=pixman QT_QUICK_BACKEND=software QT_QPA_PLATFORM=wayland
 # Match pinned upstream Omarchy's GTK-backed Qt platform theme.
 export QT_QPA_PLATFORMTHEME=gtk3
+# Qt Quick hovers what lies under a finger while it is down (its
+# frame-synchronous hover takes the touch point for the mouse): close marks,
+# tooltips and hover tints appeared under a press or a drag, in the shell and
+# in every Qt Quick app. Off, hover follows a real pointer only; with a mouse
+# it is then updated when the mouse moves, not when content moves under it.
+export QT_QUICK_FRAME_SYNCHRONOUS_HOVER_INTERVAL=-1
 export OMARCHY_TOUCH_MODE=1
 export LIBGL_ALWAYS_SOFTWARE=1 LIBSEAT_BACKEND=seatd MOZ_ENABLE_WAYLAND=1
 # A board with a GPU this image has a Vulkan driver for (kernel driver powervr,
@@ -96,7 +102,7 @@ export PATH=/usr/local/bin:/usr/bin
 OMARCHY_MIGRATE_LOCK_WAIT=0 timeout 120 omarchy-migrate 2>&1 | logger -t omarchy-migrate || true
 # Services such as PipeWire and WirePlumber use the same user manager/bus as
 # Quickshell. Do not spawn a separate dbus-run-session instance.
-systemctl --user import-environment DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE XDG_CURRENT_DESKTOP
+systemctl --user import-environment DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE XDG_CURRENT_DESKTOP QT_QUICK_FRAME_SYNCHRONOUS_HOVER_INTERVAL
 if [[ -n ${QT_QPA_PLATFORMTHEME:-} ]]; then systemctl --user import-environment QT_QPA_PLATFORMTHEME; fi
 /usr/libexec/arch-ipad-first-theme
 # Windows open maximized unless the person turned that off (Trigger > Toggle).
