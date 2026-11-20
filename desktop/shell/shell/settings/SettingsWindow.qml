@@ -99,6 +99,7 @@ FloatingWindow {
   property real navT: 1
   property var navChange: null
   property bool navPhone: false
+  property var navPicture: null
   function navigate(direction, change) {
     if (!win.gpu || direction === 0 || content.width <= 0 || navAnim.running || navWait.running) {
       if (navAnim.running) navAnim.complete()
@@ -106,16 +107,20 @@ FloatingWindow {
       return
     }
     win.navPhone = !win.wide
-    var source = win.navPhone ? content : pageArea
-    shot.sourceItem = source
-    shot.x = win.navPhone ? 0 : pageArea.x
-    shot.width = source.width
-    shot.height = source.height
+    // A phone's whole window moves; a wide window's page only.
+    var picture = win.navPhone ? shot : pageShot
+    picture.sourceItem = win.navPhone ? content : pageMover
+    if (win.navPhone) {
+      shot.x = 0
+      shot.width = content.width
+      shot.height = content.height
+    }
     // Only a picture in the scene is taken: shown, too faint to see, until
     // it has the old page.
-    shot.opacity = 0.01
-    shot.visible = true
-    shot.scheduleUpdate()
+    picture.opacity = 0.01
+    picture.visible = true
+    picture.scheduleUpdate()
+    win.navPicture = picture
     win.navDirection = direction
     win.navChange = change
     navWait.start()
@@ -128,7 +133,7 @@ FloatingWindow {
       win.navChange()
       win.navChange = null
       win.navT = 0
-      shot.opacity = 1
+      win.navPicture.opacity = 1
       navAnim.restart()
     }
   }
@@ -137,7 +142,11 @@ FloatingWindow {
     target: win; property: "navT"; from: 0; to: 1
     duration: Style.duration(340)
     easing.type: Easing.OutCubic
-    onFinished: { shot.visible = false; shot.sourceItem = null; win.navDirection = 0 }
+    onFinished: {
+      if (win.navPicture) { win.navPicture.visible = false; win.navPicture.sourceItem = null }
+      win.navPicture = null
+      win.navDirection = 0
+    }
   }
   readonly property real navWidth: navPhone ? content.width : pageArea.width
   // Where the new page and the picture of the old one stand now.
@@ -605,170 +614,202 @@ FloatingWindow {
       x: win.wide ? sidebar.width : 0
       width: parent.width - x
       height: parent.height
-      transform: Translate { x: !win.navPhone && win.navDirection !== 0 ? win.slideNew : 0 }
-      Rectangle { anchors.fill: parent; color: win.color; visible: !win.navPhone && win.navDirection !== 0 }
+      // On a wide window a page moves within its own area, never over the
+      // sidebar.
+      clip: true
 
-      Flickable {
-        id: scroller
+      // The old page during a transition here: under the new one going
+      // forward, over it going back.
+      ShaderEffectSource {
+        id: pageShot
+        width: pageArea.width
+        height: pageArea.height
+        visible: false
+        live: false
+        hideSource: false
+        z: win.navDirection < 0 ? 2 : 0
+        transform: Translate { x: win.slideOld }
+        Rectangle {
+          anchors.fill: parent
+          color: "black"
+          opacity: win.navDirection > 0 ? 0.18 * win.navT : 0
+        }
+      }
+
+      Item {
+        id: pageMover
         anchors.fill: parent
-        contentHeight: pageColumn.height + win.pad * 2
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        interactive: contentHeight > height
+        z: 1
+        transform: Translate { x: !win.navPhone && win.navDirection !== 0 ? win.slideNew : 0 }
+        // Opaque, so the page going forward covers the picture under it.
+        Rectangle { anchors.fill: parent; color: win.color; visible: !win.navPhone && win.navDirection !== 0 }
 
-        Column {
-          id: pageColumn
-          x: win.pad
-          y: win.pad
-          width: parent.width - win.pad * 2
-          spacing: Style.space(14)
+        Flickable {
+          id: scroller
+          anchors.fill: parent
+          contentHeight: pageColumn.height + win.pad * 2
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          interactive: contentHeight > height
 
-          // Back and the title. On a phone the back reads "‹ Settings" at
-          // the top of a section.
-          Item {
-            width: parent.width
-            height: Math.max(titleText.height, backRow.visible ? backRow.height : 0)
-            Row {
-              id: backRow
-              visible: win.stack.length > 0 || (!win.wide && (win.section !== "" || win.searching))
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(6)
-              // A drawn chevron, so it sits on the label's middle whatever
-              // the font does with its glyphs.
-              Item {
-                width: Style.space(10)
-                height: backLabelText.height
+          Column {
+            id: pageColumn
+            x: win.pad
+            y: win.pad
+            width: parent.width - win.pad * 2
+            spacing: Style.space(14)
+
+            // Back and the title. On a phone the back reads "‹ Settings" at
+            // the top of a section.
+            Item {
+              width: parent.width
+              height: Math.max(titleText.height, backRow.visible ? backRow.height : 0)
+              Row {
+                id: backRow
+                visible: win.stack.length > 0 || (!win.wide && (win.section !== "" || win.searching))
                 anchors.verticalCenter: parent.verticalCenter
-                Repeater {
-                  model: [-1, 1]
-                  Rectangle {
-                    required property var modelData
-                    width: Style.space(9)
-                    height: Math.max(2, Style.space(2))
-                    radius: height / 2
-                    color: win.accent
-                    antialiasing: true
-                    x: Style.space(1)
-                    y: (parent.height - height) / 2
-                    rotation: modelData * 45
-                    transformOrigin: Item.Left
+                spacing: Style.space(6)
+                // A drawn chevron, so it sits on the label's middle whatever
+                // the font does with its glyphs.
+                Item {
+                  width: Style.space(10)
+                  height: backLabelText.height
+                  anchors.verticalCenter: parent.verticalCenter
+                  Repeater {
+                    model: [-1, 1]
+                    Rectangle {
+                      required property var modelData
+                      width: Style.space(9)
+                      height: Math.max(2, Style.space(2))
+                      radius: height / 2
+                      color: win.accent
+                      antialiasing: true
+                      x: Style.space(1)
+                      y: (parent.height - height) / 2
+                      rotation: modelData * 45
+                      transformOrigin: Item.Left
+                    }
                   }
                 }
+                Text {
+                  id: backLabelText
+                  text: win.stack.length > 0 ? win.backLabel : win.t("settings.title")
+                  color: win.accent
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.subtitle
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+                TapHandler { onTapped: win.back() }
               }
+              // On a phone the title stands in the middle, as a phone's
+              // settings show it; on a wide window after the back link.
               Text {
-                id: backLabelText
-                text: win.stack.length > 0 ? win.backLabel : win.t("settings.title")
-                color: win.accent
-                font.family: Style.font.family
-                font.pixelSize: Style.font.subtitle
+                id: titleText
+                readonly property bool centered: !win.wide && backRow.visible
+                // Worked out from the back link and the text alone, so where it
+                // stands and how wide it is never wait on each other.
+                readonly property real leftEdge: backRow.visible ? backRow.width + Style.space(centered ? 12 : 16) : 0
+                readonly property real titleWidth: centered
+                  ? Math.min(implicitWidth, parent.width - 2 * leftEdge)
+                  : parent.width - leftEdge - (moreButton.visible ? moreButton.width + Style.space(10) : 0)
+                x: centered ? Math.max(leftEdge, (parent.width - titleWidth) / 2) : leftEdge
+                width: titleWidth
+                horizontalAlignment: centered ? Text.AlignHCenter : Text.AlignLeft
                 anchors.verticalCenter: parent.verticalCenter
-              }
-              TapHandler { onTapped: win.back() }
-            }
-            // On a phone the title stands in the middle, as a phone's
-            // settings show it; on a wide window after the back link.
-            Text {
-              id: titleText
-              readonly property bool centered: !win.wide && backRow.visible
-              x: centered ? Math.max(backRow.visible ? backRow.width + Style.space(12) : 0, (parent.width - width) / 2)
-                : (backRow.visible ? backRow.width + Style.space(16) : 0)
-              width: centered ? Math.min(implicitWidth, parent.width - 2 * (backRow.width + Style.space(12)))
-                : parent.width - x - (moreButton.visible ? moreButton.width + Style.space(10) : 0)
-              horizontalAlignment: centered ? Text.AlignHCenter : Text.AlignLeft
-              anchors.verticalCenter: parent.verticalCenter
-              text: win.pageTitle
-              color: win.text
-              font.family: Style.font.family
-              font.pixelSize: !backRow.visible ? Style.font.display : Style.font.heading
-              font.bold: true
-              elide: Text.ElideRight
-            }
-            // The theme page's "Get more", where the menu offers it.
-            Rectangle {
-              id: moreButton
-              readonly property var entry: win.ctx.items["update.themes"]
-              visible: win.nativePage === "theme" && !!entry && Model.shown(win.ctx, entry)
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              width: moreText.width + Style.space(24)
-              height: Style.space(32)
-              color: "transparent"
-              border.width: 1
-              border.color: win.line
-              Text {
-                id: moreText
-                anchors.centerIn: parent
-                text: moreButton.entry ? moreButton.entry.label : ""
+                text: win.pageTitle
                 color: win.text
                 font.family: Style.font.family
-                font.pixelSize: Style.font.body
+                font.pixelSize: !backRow.visible ? Style.font.display : Style.font.heading
+                font.bold: true
+                elide: Text.ElideRight
               }
-              TapHandler { onTapped: win.run(moreButton.entry.action) }
-            }
-          }
-
-          Text {
-            visible: win.searching && win.groups.length === 0
-            text: win.t("settings.noResults")
-            color: win.faint
-            font.family: Style.font.family
-            font.pixelSize: Style.font.subtitle
-          }
-
-          Loader {
-            width: parent.width
-            active: win.nativePage !== ""
-            visible: active
-            sourceComponent: win.nativePage === "theme" ? themePage
-              : win.nativePage === "background" ? backgroundPage
-              : win.nativePage === "icons" ? iconsPage
-              : win.nativePage === "about" ? aboutPage : null
-          }
-
-          // The section's groups: the card first, then two columns where the
-          // window is wide enough, one otherwise.
-          Repeater {
-            model: win.groups.filter(function(g) { return g.card })
-            ThemeCard {
-              required property var modelData
-              width: pageColumn.width
-              row: modelData.rows[0]
-            }
-          }
-          Row {
-            id: columns
-            visible: win.nativePage === "" || win.nativePage === "about"
-            width: parent.width
-            spacing: Style.space(18)
-            readonly property var plain: win.groups.filter(function(g) { return !g.card })
-            readonly property bool split: win.twoColumns && plain.length > 1 && !win.top && !win.searching
-            // Groups go to the shorter column, in order.
-            readonly property var halves: {
-              var left = [], right = [], lh = 0, rh = 0
-              for (var i = 0; i < plain.length; i++) {
-                var h = plain[i].rows.length + (plain[i].label ? 1 : 0) + 1
-                if (!split || lh <= rh) { left.push(plain[i]); lh += h } else { right.push(plain[i]); rh += h }
+              // The theme page's "Get more", where the menu offers it.
+              Rectangle {
+                id: moreButton
+                readonly property var entry: win.ctx.items["update.themes"]
+                visible: win.nativePage === "theme" && !!entry && Model.shown(win.ctx, entry)
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: moreText.width + Style.space(24)
+                height: Style.space(32)
+                color: "transparent"
+                border.width: 1
+                border.color: win.line
+                Text {
+                  id: moreText
+                  anchors.centerIn: parent
+                  text: moreButton.entry ? moreButton.entry.label : ""
+                  color: win.text
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                }
+                TapHandler { onTapped: win.run(moreButton.entry.action) }
               }
-              return [left, right]
             }
+
+            Text {
+              visible: win.searching && win.groups.length === 0
+              text: win.t("settings.noResults")
+              color: win.faint
+              font.family: Style.font.family
+              font.pixelSize: Style.font.subtitle
+            }
+
+            Loader {
+              width: parent.width
+              active: win.nativePage !== ""
+              visible: active
+              sourceComponent: win.nativePage === "theme" ? themePage
+                : win.nativePage === "background" ? backgroundPage
+                : win.nativePage === "icons" ? iconsPage
+                : win.nativePage === "about" ? aboutPage : null
+            }
+
+            // The section's groups: the card first, then two columns where the
+            // window is wide enough, one otherwise.
             Repeater {
-              model: columns.split ? 2 : 1
-              Column {
-                required property int index
-                width: columns.split ? (columns.width - columns.spacing) / 2 : columns.width
-                spacing: Style.space(14)
-                Repeater {
-                  model: columns.halves[index]
-                  Group {
-                    required property var modelData
-                    width: parent.width
-                    group: modelData
+              model: win.groups.filter(function(g) { return g.card })
+              ThemeCard {
+                required property var modelData
+                width: pageColumn.width
+                row: modelData.rows[0]
+              }
+            }
+            Row {
+              id: columns
+              visible: win.nativePage === "" || win.nativePage === "about"
+              width: parent.width
+              spacing: Style.space(18)
+              readonly property var plain: win.groups.filter(function(g) { return !g.card })
+              readonly property bool split: win.twoColumns && plain.length > 1 && !win.top && !win.searching
+              // Groups go to the shorter column, in order.
+              readonly property var halves: {
+                var left = [], right = [], lh = 0, rh = 0
+                for (var i = 0; i < plain.length; i++) {
+                  var h = plain[i].rows.length + (plain[i].label ? 1 : 0) + 1
+                  if (!split || lh <= rh) { left.push(plain[i]); lh += h } else { right.push(plain[i]); rh += h }
+                }
+                return [left, right]
+              }
+              Repeater {
+                model: columns.split ? 2 : 1
+                Column {
+                  required property int index
+                  width: columns.split ? (columns.width - columns.spacing) / 2 : columns.width
+                  spacing: Style.space(14)
+                  Repeater {
+                    model: columns.halves[index]
+                    Group {
+                      required property var modelData
+                      width: parent.width
+                      group: modelData
+                    }
                   }
                 }
               }
             }
-          }
 
+          }
         }
       }
     }
