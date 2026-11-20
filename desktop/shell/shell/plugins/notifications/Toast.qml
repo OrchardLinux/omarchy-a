@@ -272,32 +272,62 @@ Item {
   onActionsChanged: keepShown()
   onReplyChanged: keepShown()
   Component.onCompleted: keepShown()
+  // Let go, the card keeps the finger's speed (the control center's way):
+  // thrown, it goes on at that speed, a little braked but never slower than
+  // it takes to leave, until it has faded out; kept, the control center's
+  // spring carries it back from where and as fast as it was moving.
+  property string fling: ""        // "away", "back" or ""
+  property real flingVelocity: 0   // px/s along the swipe's axis
   function swipeEnded(velocity) {
     var flick = Style.space(500)
+    var along = swipeAxis === "x" ? velocity.x : velocity.y
     var away = swipeAxis === "x"
       ? Math.abs(swipeX) > width * 0.35 || Math.abs(velocity.x) > flick
       : swipeAxis === "y" && (swipeY < -height * 0.4 || velocity.y < -flick)
+    if (!gpu) {
+      if (away) card.dismissed()
+      else { swipeX = 0; swipeY = 0; swipeAxis = "" }
+      return
+    }
     if (away) {
-      swipeOut.to = swipeAxis === "x" ? (swipeX + velocity.x * 0.05 >= 0 ? width * 0.6 : -width * 0.6) : -height * 1.5
-      swipeOut.property = swipeAxis === "x" ? "swipeX" : "swipeY"
-      if (gpu) swipeOut.restart()
-      else card.dismissed()
+      var position = swipeAxis === "x" ? swipeX : swipeY
+      var direction = swipeAxis === "y" ? -1 : (position + along * 0.05 >= 0 ? 1 : -1)
+      flingVelocity = direction * Math.max(Math.abs(along), Style.space(900))
+      fling = "away"
     } else {
-      swipeBack.restart()
+      flingVelocity = swipeAxis === "x" || swipeAxis === "y" ? along : 0
+      fling = "back"
     }
   }
-  NumberAnimation {
-    id: swipeOut
-    target: card
-    duration: Style.duration(140)
-    easing.type: Easing.OutCubic
-    onFinished: card.dismissed()
-  }
-  ParallelAnimation {
-    id: swipeBack
-    NumberAnimation { target: card; property: "swipeX"; to: 0; duration: card.gpu ? Style.duration(180) : 0; easing.type: Easing.OutCubic }
-    NumberAnimation { target: card; property: "swipeY"; to: 0; duration: card.gpu ? Style.duration(180) : 0; easing.type: Easing.OutCubic }
-    onFinished: card.swipeAxis = ""
+  FrameAnimation {
+    running: card.fling !== ""
+    onTriggered: {
+      var elapsed = Math.min(frameTime, 0.05)
+      var steps = Math.max(1, Math.ceil(elapsed / (1 / 240)))
+      var dt = elapsed / steps
+      var horizontal = card.swipeAxis === "x"
+      var position = horizontal ? card.swipeX : card.swipeY
+      var velocity = card.flingVelocity
+      for (var i = 0; i < steps; i++) {
+        if (card.fling === "away") {
+          var floor = Style.space(900)
+          velocity *= Math.pow(0.35, dt)
+          if (Math.abs(velocity) < floor) velocity = (velocity < 0 ? -1 : 1) * floor
+        } else {
+          var stiffness = 260
+          var damping = 2 * Math.sqrt(stiffness) * 0.85
+          velocity += (-stiffness * position - damping * velocity) * dt
+        }
+        position += velocity * dt
+      }
+      card.flingVelocity = velocity
+      if (horizontal) card.swipeX = position; else card.swipeY = position
+      if (card.fling === "away") {
+        if (card.swipeFade <= 0) { card.fling = ""; card.dismissed() }
+      } else if (Math.abs(position) < 0.5 && Math.abs(velocity) < Style.space(10)) {
+        card.swipeX = 0; card.swipeY = 0; card.swipeAxis = ""; card.fling = ""
+      }
+    }
   }
   DragHandler {
     id: swipe
@@ -306,7 +336,7 @@ Item {
     grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
     onActiveChanged: {
       if (active) {
-        swipeBack.stop(); swipeOut.stop()
+        card.fling = ""
         card.swipeAxis = ""
         card.swipeFromSet = false
       } else if (card.swipeAxis !== "") {
@@ -379,7 +409,7 @@ Item {
     width: card.width + 2 * card.exitPad
     height: bannerBox.height + 2 * card.exitPad
     // Also while a finger slides it, it is thrown or it springs back.
-    layer.enabled: card.gpu && (card.exiting || card.swipeAxis !== "" || swipeOut.running || swipeBack.running)
+    layer.enabled: card.gpu && (card.exiting || card.swipeAxis !== "" || card.fling !== "")
     layer.smooth: true
 
     Rectangle {
