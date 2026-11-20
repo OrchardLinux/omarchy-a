@@ -1,0 +1,64 @@
+# Upstream commands the package does not ship yet: the tablet's shell or
+# scripts call each of these themselves, so shipping one changes what the
+# running desktop does, not only what a tap does. Each is to be checked on
+# the tablet and taken off this list. One a line: the command, then where
+# it is called.
+omarchy-agent	plugins/agents/Agent.qml
+omarchy-agent-account-add	plugins/agents/Panel.qml
+omarchy-agent-account-mode	plugins/agents/Panel.qml
+omarchy-agent-account-rename	plugins/agents/Panel.qml
+omarchy-agent-account-use	plugins/agents/Panel.qml
+omarchy-agent-local	plugins/agents/Main.qml plugins/agents/Panel.qml
+omarchy-agent-local-launchers	plugins/agents/Main.qml
+omarchy-agent-logo	plugins/agents/Main.qml
+omarchy-agent-make	plugins/agents/Panel.qml
+omarchy-agent-usage-update	plugins/agents/Agent.qml plugins/agents/collectors.py
+omarchy-audio-input-set-default	plugins/panels/audio/Panel.qml
+omarchy-audio-output-set-default	plugins/panels/audio/Panel.qml plugins/panels/bluetooth/Panel.qml
+omarchy-audio-output-sink	plugins/panels/audio/Panel.qml
+omarchy-audio-output-volume	plugins/services/media/MediaModel.js plugins/services/media/Service.qml
+omarchy-audio-sink-availability	plugins/panels/audio/Panel.qml
+omarchy-bar	plugins/bar/Bar.qml
+omarchy-bar-text-color	plugins/bar/Bar.qml
+omarchy-battery-low	plugins/services/battery/Service.qml
+omarchy-brightness-keyboard	plugins/lock/Service.qml
+omarchy-capture-screenrecording	plugins/bar/indicators/ScreenRecording.qml
+omarchy-clipboard-open	plugins/clipboard/Clipboard.qml
+omarchy-clipboard-paste-file	plugins/clipboard/Clipboard.qml
+omarchy-clipboard-paste-text	plugins/clipboard/Clipboard.qml
+omarchy-disk-speedtest	plugins/panels/disk-speedtest/Panel.qml
+omarchy-dock	launcher/Launcher.qml
+omarchy-font-set	bin/omarchy-display-text-size Commons/Style.qml
+omarchy-hw-display	services/BrightnessKeys.qml
+omarchy-hw-laptop-closed	plugins/polkit/PolkitAgent.qml
+omarchy-hyprland-focus-app	plugins/notifications/Service.qml
+omarchy-hyprland-monitor-internal-mirror	plugins/panels/monitor/Panel.qml
+omarchy-hyprland-monitor-layout	bin/omarchy-hyprland-monitor-scaling plugins/panels/monitor/Panel.qml
+omarchy-hyprland-monitor-resolution	plugins/panels/monitor/Panel.qml
+omarchy-hyprland-monitor-rotate	plugins/panels/monitor/Panel.qml
+omarchy-hyprland-session-lock-stranded	plugins/lock/Service.qml
+omarchy-hyprland-workspace-layout-current	plugins/bar/widgets/Workspaces.qml
+omarchy-hyprland-workspace-layout-toggle	plugins/bar/widgets/Workspaces.qml
+omarchy-language	bin/omarchy-i18n Commons/I18n.qml
+omarchy-launch-screensaver	plugins/services/idle/Service.qml
+omarchy-launch-versions	services/AppLibrary.qml
+omarchy-menu	bin/omarchy-icons-switcher bin/omarchy-menu-images
+omarchy-menu-emoji-insert	plugins/emojis/Emojis.qml
+omarchy-menu-timezone	plugins/panels/clock/BarWidget.qml
+omarchy-network-password	plugins/panels/wifiqr/Panel.qml
+omarchy-network-qr	plugins/panels/wifiqr/Model.js plugins/panels/wifiqr/Panel.qml
+omarchy-reminder	plugins/bar/indicators/Reminder.qml
+omarchy-remove-launcher-entry	bin/omarchy-remove-launcher-entry services/AppLibrary.qml
+omarchy-restart-hyprctl	services/BackgroundSwitch.qml
+omarchy-shell-config	plugins/bar/BarModel.js
+omarchy-sudo-passwordless	plugins/bar/indicators/PasswordlessSudo.qml
+omarchy-system-sleep-lock	plugins/lock/Service.qml
+omarchy-tailscale-send	plugins/panels/tailscale/Service.qml
+omarchy-theme-bg-boot-intro	bin/omarchy-theme-bg-set plugins/image-picker/ImagePicker.qml
+omarchy-theme-remove	plugins/image-picker/ImagePicker.qml
+omarchy-toggle-nightlight	plugins/services/nightlight/NightlightModel.js
+omarchy-tray-context-menu	plugins/bar/widgets/Tray.qml
+omarchy-update-available	plugins/bar/widgets/SystemUpdate.qml
+omarchy-weather-icon	plugins/panels/weather/Panel.qml
+omarchy-weather-location	plugins/panels/weather/Model.js plugins/panels/weather/Panel.qml
+omarchy-weather-status	plugins/panels/weather/BarWidget.qml

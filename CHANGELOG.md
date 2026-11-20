@@ -51,6 +51,19 @@ is missing or empty.
   A swipe up from the bottom puts it, or the control center, away.
 - The control center's Focus tile switches Do Not Disturb, as the
   notification center does.
+- Settings, as an app: Wi-Fi, Bluetooth, display, sound, appearance with
+  themes, backgrounds and icon sets to pick from, behaviour, keyboard,
+  privacy, apps, updates and this device's details, searchable, in the
+  launcher and in Exposé like any app (`omarchy-settings` opens any page).
+- Much more of the Omarchy menu works on the tablet: fonts, language,
+  default apps, kernels, installing and removing software, security
+  setup and more. Docker's entries show once Docker is installed.
+- Focus shows as a bell in the status bar and on the lock screen while on.
+- Title bars can be hidden on maximized windows (Settings > Behaviour);
+  floating windows keep theirs.
+- The notification center slides down from the top when the clock is
+  clicked, as when it is pulled.
+- About shows an icon on its renderer line, as on every other.
 
 ## [0.3.2] - 2026-11-19
 

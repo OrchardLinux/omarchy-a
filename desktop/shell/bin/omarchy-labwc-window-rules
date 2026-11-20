@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# omarchy:summary=Write labwc's window rules for the window toggles
+# omarchy:hidden=true
+# The rules the window toggles ask for, in a labwc config the session
+# merges (labwc -m) before ~/.config/labwc/rc.xml, so updates that replace
+# rc.xml keep them; login writes them for the current choices.
+#   Maximize windows (on unless maximize-windows-off): new windows open
+#     maximized; About (org.omarchy.about) and Omacalc keep their own size,
+#     which fits what they show, except on a phone, where every window fills
+#     the screen.
+#   Title bars when maximized (on unless window-titlebars-off): off, a
+#     maximized window has none; a floating one keeps its own, for a mouse.
+set -euo pipefail
+toggles=$HOME/.local/state/omarchy/toggles
+rules=$HOME/.local/state/omarchy/xdg-config/labwc/rc.xml
+
+# A phone: the panel's short side under 480 logical pixels (the shell's
+# narrow bar), at the scale omarchy-hyprland-monitor-persist saved for it,
+# else 2 (as scale-output). Read from the kernel: at login labwc is not up.
+phone() {
+  local modes mode short scale=2 settings
+  for modes in "${OMARCHY_DRM_ROOT:-/sys/class/drm}"/card*-*/modes; do
+    [[ -r $modes ]] || continue
+    mode=$(head -1 "$modes")
+    [[ $mode =~ ^([0-9]+)x([0-9]+) ]] || continue
+    short=$(( BASH_REMATCH[1] < BASH_REMATCH[2] ? BASH_REMATCH[1] : BASH_REMATCH[2] ))
+    settings=$HOME/.local/state/omarchy/monitors/settings
+    if [[ -r $settings ]]; then
+      local saved
+      saved=$(awk -F'\t' 'NF >= 3 { s = $3 } END { print s }' "$settings")
+      [[ $saved =~ ^[0-9]+([.][0-9]+)?$ ]] && scale=$saved
+    fi
+    awk -v s="$short" -v k="$scale" 'BEGIN { exit !(k > 0 && s / k < 480) }'
+    return
+  done
+  return 1
+}
+
+# The flag for "on" from when maximizing was off by default.
+rm -f "$toggles/maximize-windows"
+
+rows=()
+if [[ ! -e $toggles/maximize-windows-off ]]; then
+  rows+=('    <windowRule identifier="*"><action name="Maximize" /></windowRule>')
+  if ! phone; then
+    rows+=('    <windowRule identifier="org.omarchy.about"><action name="UnMaximize" /></windowRule>'
+      '    <windowRule identifier="omacalc"><action name="UnMaximize" /></windowRule>')
+  fi
+fi
+bare=
+[[ ! -e $toggles/window-titlebars-off ]] || bare=1
+
+if ((${#rows[@]} == 0)) && [[ -z $bare ]]; then
+  rm -f "$rules"
+  exit 0
+fi
+mkdir -p "${rules%/*}"
+{
+  printf '%s\n' '<?xml version="1.0"?>' '<labwc_config>'
+  [[ -z $bare ]] || printf '%s\n' '  <theme><maximizedDecoration>none</maximizedDecoration></theme>'
+  if ((${#rows[@]} > 0)); then
+    printf '%s\n' '  <windowRules>' "${rows[@]}" '  </windowRules>'
+  fi
+  printf '%s\n' '</labwc_config>'
+} >"$rules.tmp"
+mv "$rules.tmp" "$rules"
+

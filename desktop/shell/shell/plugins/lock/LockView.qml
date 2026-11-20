@@ -22,6 +22,7 @@ Item {
   property string passwordText: ""
   // Stay Awake, for the status cluster (the shell's idle service knows it).
   property bool stayAwake: false
+  property bool focusMode: false
   property bool syncingPasswordText: false
 
   readonly property bool touchPin: Quickshell.env("OMARCHY_TOUCH_MODE") === "1"
@@ -201,6 +202,7 @@ Item {
       anchors.right: parent.right
       anchors.rightMargin: Style.space(root.phone ? 12 : 16)
       stayAwake: root.stayAwake
+      focusMode: root.focusMode
       color: Commons.Color.lock.text
     }
 

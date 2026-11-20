@@ -34,6 +34,8 @@ Item {
   property bool startupLifted: false
   readonly property var idleService: shell ? shell.firstPartyServiceFor("omarchy.idle") : null
   readonly property bool stayAwake: idleService ? idleService.stayAwake === true : false
+  readonly property var notificationService: shell ? shell.firstPartyServiceFor("omarchy.notifications") : null
+  readonly property bool focusMode: notificationService ? notificationService.doNotDisturb === true : false
   property bool fingerprintConfigured: false
   property int fingerprintUnreachedStreak: 0
   property bool fingerprintAttemptReachedDevice: false
@@ -539,6 +541,7 @@ Item {
         loadBackground: root.locked
         passwordText: root.enteredPassword
         stayAwake: root.stayAwake
+        focusMode: root.focusMode
         onPasswordTextEdited: function(password) { root.enteredPassword = password }
         onSubmitPassword: function(password) { root.submitPassword(password) }
         onClearFailureRequested: root.failureMessage = ""
@@ -586,6 +589,7 @@ Item {
       loadBackground: root.previewVisible
       passwordText: ""
       stayAwake: root.stayAwake
+      focusMode: root.focusMode
     }
 
     MouseArea {

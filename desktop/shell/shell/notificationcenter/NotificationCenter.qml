@@ -13,8 +13,8 @@ import "../plugins/panels/weather" as Weather
 // history: what is on screen and what timed out, was swiped away or was
 // replaced, grouped by app. An iPad in landscape has the two side by side,
 // portrait and a phone have them stacked. A finger pulls it down from the
-// bar's left two thirds (the control center has the right third), the clock
-// opens it as a popup, Home, Escape or a tap on the empty screen put it away.
+// bar's left two thirds (the control center has the right third) or the
+// clock slides it down; Home, Escape or a tap on the empty screen put it away.
 // It moves as the control center does: the finger holds the bottom of what
 // it shows, a spring carries it on, and software rendering skips the fades.
 Item {
@@ -203,41 +203,18 @@ Item {
     if (panel.contentRevealed) root.animateIn()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
-  function open() { root.popupStyle = false; root.show() }
+  function open() { root.show() }
   function close() {
     root.touchSpent = false
     if (!root.opened) return
     root.closingFromOpen = true
     root.opened = false
-    if (root.popupStyle) { spring.running = false; popupOut.restart() }
-    else root.settle(0, 0)
+    root.settle(0, 0)
   }
   function toggle() { root.opened ? root.close() : root.open() }
-  // From the clock, with a mouse: a popup's fade, no slide, the bar not dimmed.
-  property bool popupStyle: false
-  function togglePopup() {
-    if (root.opened) { root.close(); return }
-    root.popupStyle = !root.phone
-    root.show()
-  }
-  function animateIn() {
-    if (root.popupStyle) { spring.running = false; popupOut.stop(); popupIn.restart() }
-    else root.settle(1, 0)
-  }
-  NumberAnimation {
-    id: popupIn
-    target: root; property: "reveal"; to: 1
-    duration: root.gpu ? Style.duration(180) : 0
-    easing.type: Easing.Bezier
-    easing.bezierCurve: Style.easeOut
-  }
-  NumberAnimation {
-    id: popupOut
-    target: root; property: "reveal"; to: 0
-    duration: root.gpu ? Style.duration(140) : 0
-    easing.type: Easing.InOutCubic
-    onFinished: if (!root.opened) root.mapped = false
-  }
+  // The clock opens it as a pull does: it slides down from the bar.
+  function togglePopup() { root.toggle() }
+  function animateIn() { root.settle(1, 0) }
 
   // While open, a note for the Home button (omarchy-home-button closes it),
   // written by one writer until it matches.
@@ -279,9 +256,6 @@ Item {
 
   function beginPull() {
     spring.running = false
-    popupIn.stop()
-    popupOut.stop()
-    root.popupStyle = false
     if (!root.opened) {
       root.clearOthers()
       root.everOpened = true
@@ -343,7 +317,7 @@ Item {
       }
     }
   }
-  readonly property bool moving: spring.running || root.pulling || popupIn.running || popupOut.running
+  readonly property bool moving: spring.running || root.pulling
 
   // ------------------------------------------------------------ keyboard
 
@@ -493,7 +467,7 @@ Item {
     PointHandler { onActiveChanged: if (active) root.focusIndex = -1 }
 
     // What it shows, sliding down from under the bar: its bottom is where the
-    // finger is. As a popup it fades and grows from 97 % instead.
+    // finger is.
     Item {
       id: sheet
       y: root.barInset
@@ -503,15 +477,10 @@ Item {
       layer.enabled: root.moving && root.gpu
       layer.smooth: true
       readonly property real follow: Math.min(content.height, height)
-      // Pulled, it slides (the bottom of what it shows at the finger) and
-      // lands with the spring's small swing past its place; as a popup it
-      // grows from 97 %.
-      readonly property real grow: !root.gpu ? 1 : (root.popupStyle ? 0.97 + 0.03 * root.reveal : 1)
-      transform: [
-        Scale { origin.x: sheet.width / 2; origin.y: 0; xScale: sheet.grow; yScale: sheet.grow },
-        Translate { y: root.popupStyle ? 0 : (root.reveal - 1) * sheet.follow }
-      ]
-      opacity: !root.gpu ? (root.reveal > 0 ? 1 : 0) : root.popupStyle ? root.reveal : root.leaving
+      // It slides (pulled, the bottom of what it shows at the finger) and
+      // lands with the spring's small swing past its place.
+      transform: Translate { y: (root.reveal - 1) * sheet.follow }
+      opacity: !root.gpu ? (root.reveal > 0 ? 1 : 0) : root.leaving
         ? Math.max(0, Math.min(1, root.reveal * 1.2 - 0.2))
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.3)), 2)
 
@@ -777,7 +746,7 @@ Item {
       anchors.bottom: parent.bottom
       width: parent.width
       height: Style.space(28)
-      visible: root.mapped && !root.popupStyle
+      visible: root.mapped
       DragHandler {
         target: null
         xAxis.enabled: false

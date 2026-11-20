@@ -1,4 +1,8 @@
 //@ pragma OmarchyLoadPatch
+// Orchard: the shell's one ordinary window is Settings, so its windows carry
+// Settings' identity (desktop entry org.omarchy.settings) in Exposé and the
+// dock rather than Quickshell's.
+//@ pragma AppId org.omarchy.settings
 import QtQuick
 import QtQml.Models
 import Quickshell
@@ -12,6 +16,7 @@ import "plugins/bar"
 import "launcher"
 import "controlcenter"
 import "notificationcenter"
+import "settings"
 import "services"
 import "services/AuthServiceStore.js" as AuthServiceStore
 
@@ -33,9 +38,11 @@ ShellRoot {
   // Orchard: the control center (`omarchy-shell omarchy.controlcenter toggle`).
   ControlCenter { id: controlCenter; shell: shell }
   NotificationCenter { id: notificationCenter; shell: shell }
+  Settings { id: settings; shell: shell }
   // The bar pulls it down from the top edge's right third (Bar.qml).
   readonly property var controlCenter: controlCenter
   readonly property var notificationCenter: notificationCenter
+  readonly property var settings: settings
   readonly property var launcher: appGrid
   ShellIpc {
     target: "omarchy.dock"

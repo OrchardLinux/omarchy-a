@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+Comment=Appearance, behaviour, apps, updates and this device
+Exec=omarchy-settings
+Icon=org.omarchy.settings
+Categories=Settings;System;
+Keywords=preferences;configuration;theme;background;
+StartupNotify=false

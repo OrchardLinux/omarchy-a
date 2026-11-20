@@ -7,14 +7,16 @@ import "../panels/network" as Network
 import "../panels/bluetooth" as BluetoothStatus
 import "../panels/power" as Power
 
-// The status cluster (SHELL-SPEC, step 2): mic muted, rotation lock and Stay
-// Awake while on, Bluetooth while on, Wi-Fi, battery percentage and glyph.
-// The bar's and the lock's: the host passes what only the shell knows (Stay
-// Awake) and decides whether a tap does anything (activated, with the module).
+// The status cluster (SHELL-SPEC, step 2): mic muted, rotation lock, Focus
+// and Stay Awake while on, Bluetooth while on, Wi-Fi, battery percentage and
+// glyph. The bar's and the lock's: the host passes what only the shell knows
+// (Focus, Stay Awake) and decides whether a tap does anything (activated,
+// with the module).
 Row {
   id: root
 
   property bool stayAwake: false
+  property bool focusMode: false
   property bool rotationLocked: rotation.locked
   property color color: Commons.Color.bar.text
   property int glyphSize: Style.font.body
@@ -39,6 +41,7 @@ Row {
   readonly property var items: [
     { module: "microphone", glyph: "󰍭", shown: root.micMuted },
     { module: "rotation", glyph: "󰝳", shown: root.rotationLocked },
+    { module: "focus", glyph: "󰂛", shown: root.focusMode },
     { module: "stayAwake", glyph: "", shown: root.stayAwake },
     { module: "bluetooth", glyph: bluetooth.icon, shown: bluetooth.enabled },
     { module: "network", glyph: network.icon, shown: network.icon !== "" },

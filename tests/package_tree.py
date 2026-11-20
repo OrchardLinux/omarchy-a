@@ -47,6 +47,11 @@ def inputs(base):
     outside.mkdir(mode=0o711)
     outside.chmod(0o711)
     (upstream / 'themes/external-theme').symlink_to(outside, target_is_directory=True)
+    # Upstream's commands: one the package ships, one it holds back, one of
+    # its own replaces.
+    (upstream / 'bin').mkdir()
+    for name in ('omarchy-upstream-only', 'omarchy-battery-low', 'omarchy-theme-set'):
+        (upstream / 'bin' / name).write_text('#!/bin/bash\necho upstream\n')
     (upstream / 'applications').mkdir()
     (upstream / 'applications/foot.desktop').write_text('[Desktop Entry]\nName=Terminal\n')
     (wheel / 'dbus_next/aio').mkdir(parents=True)
