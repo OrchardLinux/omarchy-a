@@ -38,6 +38,8 @@ is missing or empty.
   bottom, or use the control center.
 - The launcher opens with a gentle zoom, and can use an opaque background
   instead of the blurred wallpaper (Trigger > Toggle).
+- A touch no longer leaves hover highlights, tooltips or close marks behind,
+  in the shell and in apps.
 
 ## [0.3.2] - 2026-11-19
 
