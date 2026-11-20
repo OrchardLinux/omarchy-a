@@ -699,7 +699,10 @@ Item {
         ? Math.max(0, Math.min(1, (root.reveal - barShare) / (1 - barShare)))
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal / 0.25)), 2)
 
-      MouseArea { anchors.fill: parent }  // taps inside never close
+      // Taps on it never close it; on a phone, where the card is the whole
+      // screen, only its content counts, and a tap on the empty sheet below
+      // closes as a tap beside an iPad's card does.
+      MouseArea { width: parent.width; height: root.phone ? Math.min(parent.height, card.follow) : parent.height }
 
       Column {
         id: content
