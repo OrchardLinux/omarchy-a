@@ -788,12 +788,20 @@ Item {
     else root.appLibrary.launch(app.id, root.appLibrary.entryName(app))
   }
 
-  // An entry runs as the menu runs it; a submenu opens in the menu (the
-  // Settings window will take those over).
+  // An entry runs as the menu runs it; a submenu opens in Settings when
+  // Settings has a page for it, in the menu otherwise.
   function runEntry(e) {
     if (!e || root.isOff(e)) return
     if (e.kind === "menu" || e.kind === "link") {
-      root.openMenu(e.kind === "link" ? e.target : e.id)
+      var id = e.kind === "link" ? e.target : e.id
+      // A setting's page opens in Settings; anything else (Capture, Share)
+      // in the menu.
+      if (root.shell && root.shell.settings && root.shell.settings.places(id)) {
+        root.close()
+        root.shell.settings.open(id)
+        return
+      }
+      root.openMenu(id)
       return
     }
     root.close()
@@ -815,9 +823,9 @@ Item {
     if (root.shell) root.shell.summon("omarchy.menu", JSON.stringify({ menu: id }))
   }
 
-  // Until the Settings window exists, Settings is the Omarchy menu.
   function openSettings() {
-    root.openMenu("root")
+    root.close()
+    if (root.shell && root.shell.settings) root.shell.settings.open("")
   }
 
   function ageText(time) {

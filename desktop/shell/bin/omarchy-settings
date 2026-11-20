@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# omarchy:summary=Open Settings, or a page in it
+# omarchy:args=[page]
+# omarchy:examples=omarchy-settings appearance | omarchy-settings appearance/theme | omarchy-settings setup.security
+
+# A page is a section (appearance), a page in one (appearance/theme), or a
+# menu entry Settings has a place for (setup.security). Without one, Settings
+# opens where it was.
+[[ $# -le 1 ]] || { echo 'Usage: omarchy-settings [page]' >&2; exit 2; }
+exec omarchy-shell omarchy.settings open "${1:-}"

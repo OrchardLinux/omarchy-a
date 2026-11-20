@@ -112,6 +112,8 @@ put "$here/login/greetd.toml" "$overrides/etc/greetd/config.toml"
 while read -r source name mode; do
   put "$source" "$root/$name" "$mode"
 done <<EOF
+$shell/applications/org.omarchy.settings.desktop usr/share/applications/org.omarchy.settings.desktop 644
+$shell/applications/org.omarchy.settings.svg usr/share/icons/hicolor/scalable/apps/org.omarchy.settings.svg 644
 $config/first-theme usr/libexec/arch-ipad-first-theme 755
 $config/scale-output usr/libexec/arch-ipad-scale-output 755
 $config/auto-brightness usr/libexec/arch-ipad-auto-brightness 755
