@@ -91,3 +91,45 @@ class TitleTap(unittest.TestCase):
         tree=ET.parse(PROJECT/'desktop/shell/labwc-rc.xml')
         self.assertFalse(tree.findall('./windowRules/windowRule/action[@name="Maximize"]'))
 
+
+
+@unittest.skipUnless(__import__('shutil').which('node'), 'node is required for the shortcuts page')
+class ShortcutsPageTests(unittest.TestCase):
+    # Settings > Keyboard > Keyboard Shortcuts names each binding; a binding
+    # added to labwc-rc.xml needs a name there (ShortcutsModel.js) and a text.
+    def test_every_shipped_binding_has_a_name_and_a_text(self):
+        import json, subprocess
+        script = r'''
+const fs = require('fs');
+const S = require(process.argv[1] + '/desktop/shell/shell/settings/ShortcutsModel.js');
+const texts = JSON.parse(fs.readFileSync(process.argv[1] + '/desktop/shell/default/i18n/en/shell.json', 'utf8'));
+const groups = S.groups(fs.readFileSync(process.argv[1] + '/desktop/shell/labwc-rc.xml', 'utf8'));
+const unnamed = [], untexted = [];
+for (const g of groups) for (const r of g.rows) {
+  if (!r.label) unnamed.push(r.keys.join(' / ') + ': ' + r.command);
+  else if (!texts[r.label]) untexted.push(r.label);
+  if (!texts['shortcuts.group.' + g.group]) untexted.push('shortcuts.group.' + g.group);
+}
+console.log(JSON.stringify({ unnamed, untexted, groups: groups.length }));
+'''
+        result = subprocess.run(['node', '-e', script, str(PROJECT)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        found = json.loads(result.stdout)
+        self.assertEqual(found['unnamed'], [])
+        self.assertEqual(found['untexted'], [])
+        self.assertGreater(found['groups'], 3)
+
+    def test_keys_read_as_on_a_keyboard(self):
+        import subprocess
+        script = r'''
+const S = require(process.argv[1] + '/desktop/shell/shell/settings/ShortcutsModel.js');
+const assert = require('assert');
+assert.equal(S.keyLabel('W-S-b'), 'Super Shift B');
+assert.equal(S.keyLabel('W-C-1'), 'Super Ctrl 1');
+assert.equal(S.keyLabel('XF86AudioMute'), 'Mute');
+// Commented-out bindings are not bindings; a swallowed key is not listed.
+const g = S.groups('<!-- <keybind key="W-x"><action name="Close"/></keybind> --><keybind key="XF86HomePage"><action name="Execute" command="/usr/bin/true"/></keybind><keybind key="W-w"><action name="Close"/></keybind>');
+assert.deepEqual(g.map(x => x.rows.map(r => r.keys[0])), [['Super W']]);
+'''
+        result = subprocess.run(['node', '-e', script, str(PROJECT)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)

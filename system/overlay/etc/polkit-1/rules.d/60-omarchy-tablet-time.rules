@@ -1,0 +1,10 @@
+// The local active tablet session may pick its time zone and whether the
+// clock sets itself (Settings > General > Date & Time), as a phone lets its
+// owner without a password. Setting the clock by hand, the RTC mode, remote
+// or inactive sessions and other users keep the default policy.
+polkit.addRule(function(action, subject) {
+  if ((action.id === "org.freedesktop.timedate1.set-timezone" ||
+       action.id === "org.freedesktop.timedate1.set-ntp") &&
+      subject.user === "tablet" && subject.local && subject.active)
+    return polkit.Result.YES;
+});

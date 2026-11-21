@@ -186,6 +186,14 @@ FloatingWindow {
       }
     }
   }
+  // Back to the page shown under it: a native page's pick (a time zone) puts
+  // its list away.
+  function backTo(page) {
+    var at = -1
+    for (var i = 0; i < win.stack.length; i++) if (win.stack[i].page === page) at = i
+    if (at < 0 || at === win.stack.length - 1) return
+    win.navigate(-1, function() { win.stack = win.stack.slice(0, at + 1); win.cursor = -1 })
+  }
   function back() {
     if (win.searching) { win.query = ""; searchField.text = ""; return true }
     if (win.stack.length > 0) {
@@ -219,6 +227,7 @@ FloatingWindow {
     if (win.searching) return win.t("settings.searchResults")
     if (top) {
       if (top.kind === "native") {
+        if (top.title) return top.title
         var nativeEntry = { theme: "appearance.theme", background: "appearance.background", icons: "appearance.icons" }[top.page]
         return nativeEntry && ctx.items[nativeEntry] ? ctx.items[nativeEntry].label : top.page
       }
@@ -233,6 +242,7 @@ FloatingWindow {
     if (!top) return ""
     if (stack.length > 1) {
       var prev = stack[stack.length - 2]
+      if (prev.kind === "native" && prev.title) return prev.title
       var e = prev.kind === "native" ? null : ctx.items[prev.id]
       return e ? e.label : ""
     }
@@ -288,7 +298,7 @@ FloatingWindow {
     if (row.kind === "page") { win.push({ kind: "menu", id: row.entry.id }); return }
     if (row.kind === "native") {
       if (sectionById(win.section) && sectionById(win.section).page === row.page && !top) return
-      win.push({ kind: "native", page: row.page })
+      win.push({ kind: "native", page: row.page, title: row.label })
       return
     }
     if (row.kind === "option" || row.kind === "action") run(row.entry.action)
@@ -779,7 +789,10 @@ FloatingWindow {
               : win.nativePage === "wifi" ? wifiPage
               : win.nativePage === "bluetooth" ? bluetoothPage
               : win.nativePage === "sound" ? soundPage
-              : win.nativePage === "display" ? displayPage : null
+              : win.nativePage === "display" ? displayPage
+              : win.nativePage === "datetime" ? dateTimePage
+              : win.nativePage === "timezone" ? timezonePage
+              : win.nativePage === "shortcuts" ? shortcutsPage : null
             }
 
             // The section's groups: the card first, then two columns where the
@@ -1059,4 +1072,7 @@ FloatingWindow {
   Component { id: bluetoothPage; BluetoothPage { settings: win } }
   Component { id: soundPage; SoundPage { settings: win } }
   Component { id: displayPage; DisplayPage { settings: win } }
+  Component { id: dateTimePage; DateTimePage { settings: win } }
+  Component { id: timezonePage; TimezonePage { settings: win } }
+  Component { id: shortcutsPage; ShortcutsPage { settings: win } }
 }
