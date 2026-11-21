@@ -60,7 +60,7 @@ Item {
     var then = new Date(t)
     var locale = Qt.locale(I18n.formatLocale)
     var sameDay = new Date(now).toDateString() === then.toDateString()
-    if (sameDay) return locale.toString(then, "HH:mm")
+    if (sameDay) return locale.toString(then, TimeFormat.time)
     var yest = new Date(now - 86400000).toDateString() === then.toDateString()
     if (yest) return I18n.t("notifications.yesterday")
     return locale.toString(then, "ddd")

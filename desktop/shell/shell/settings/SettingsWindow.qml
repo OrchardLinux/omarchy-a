@@ -55,7 +55,8 @@ FloatingWindow {
     disabledResults: menu ? menu.disabledResults : ({}),
     values: values,
     missing: missing,
-    hyprland: hyprland
+    hyprland: hyprland,
+    labwcChecked: Layout.LABWC_CHECKED
   })
   readonly property var providers: menu ? menu.providers : ({})
   function t(key) { return Commons.I18n.t(key) }

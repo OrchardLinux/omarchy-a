@@ -254,7 +254,7 @@ Item {
             id: clockTime
             x: root.landscape ? 0 : (parent.width - width) / 2
             textFormat: Text.PlainText
-            text: Qt.formatTime(root.now, "HH:mm")
+            text: Qt.formatTime(root.now, TimeFormat.time)
             color: Commons.Color.lock.text
             font.family: Style.font.family
             font.pixelSize: root.pt("time")

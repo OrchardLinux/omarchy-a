@@ -580,7 +580,7 @@ Item {
 
             Text {
               textFormat: Text.PlainText
-              text: Qt.locale(I18n.formatLocale).toString(new Date(root.now), "HH:mm")
+              text: Qt.locale(I18n.formatLocale).toString(new Date(root.now), Commons.TimeFormat.time)
               color: root.text
               font.family: Style.font.family
               font.pixelSize: Style.space(72)
@@ -610,7 +610,7 @@ Item {
               spacing: Style.space(2)
               Text {
                 textFormat: Text.PlainText
-                text: Qt.locale(I18n.formatLocale).toString(new Date(root.now), "HH:mm")
+                text: Qt.locale(I18n.formatLocale).toString(new Date(root.now), Commons.TimeFormat.time)
                 color: root.text
                 font.family: Style.font.family
                 font.pixelSize: Style.space(root.phone ? 34 : 40)

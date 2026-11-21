@@ -782,5 +782,6 @@
   "shortcuts.snapLeft": "Snap to Left",
   "shortcuts.snapRight": "Snap to Right",
   "shortcuts.switchWindows": "Switch Windows",
-  "shortcuts.switchWindowsBack": "Switch Windows Backwards"
+  "shortcuts.switchWindowsBack": "Switch Windows Backwards",
+  "settings.time24": "24-Hour Time"
 }

@@ -50,6 +50,14 @@ const specs = M.menuSpecs(ctx(), 'appearance.top-bar.indicators');
 assert.deepEqual(specs[0], { toggle: ['appearance.top-bar.indicators.battery-percentage-on', 'appearance.top-bar.indicators.battery-percentage-off'] });
 ''')
 
+    def test_a_command_checked_under_labwc_is_not_taken_for_hyprland(self):
+        # omarchy-bar mentions Hyprland (a glassy bar's blur) but works here.
+        self.run_node(r'''
+assert.ok(L.LABWC_CHECKED.includes('omarchy-bar'));
+const script = M.stateScript(L.SECTIONS, ctx({ labwcChecked: L.LABWC_CHECKED }), {});
+assert.match(script, / omarchy-bar " != \*" \$c "\*/);
+''')
+
     def test_a_page_whose_rows_are_all_hidden_is_dimmed(self):
         # Touchpad Haptics on anything but a Dell XPS: every level's guard says no.
         self.run_node(r'''

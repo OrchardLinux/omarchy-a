@@ -90,7 +90,6 @@ var SECTIONS = [
       ] },
       { label: "settings.bar", rows: [
         { toggle: ["appearance.top-bar.show", "appearance.top-bar.hide"], label: "settings.showBar" },
-        { entry: "appearance.top-bar.position", value: "omarchy-bar position" },
         { entry: "appearance.top-bar.background" },
         { toggle: ["appearance.top-bar.indicators.battery-percentage-on", "appearance.top-bar.indicators.battery-percentage-off"], label: "settings.batteryPercentage" },
         { entry: "appearance.top-bar.indicators.clock" }
@@ -273,8 +272,19 @@ var ELSEWHERE = [
   "trigger.toggle.idle-lock-on", "trigger.toggle.idle-lock-off",
   "system.lock", "system.suspend", "system.hibernate", "system.logout", "system.reboot",
   "system.shutdown", "system.screensaver",
+  // The bar stays at the top: a finger pulls the control and notification
+  // centers down from it, and a phone's bar is laid out for it.
+  "appearance.top-bar.position",
   // Date & Time (General) does what these do.
   "update.timezone", "update.time"
 ]
 
-if (typeof module !== "undefined") module.exports = { SECTIONS: SECTIONS, ELSEWHERE: ELSEWHERE }
+// Upstream commands that mention Hyprland but were checked to work under
+// labwc: Settings does not dim their rows (SettingsModel.stateScript).
+var LABWC_CHECKED = [
+  // Bar style, clock format, battery %: the shell's config, through
+  // omarchy-shell-config; it reloads Hyprland only for a glassy bar's blur.
+  "omarchy-bar"
+]
+
+if (typeof module !== "undefined") module.exports = { SECTIONS: SECTIONS, ELSEWHERE: ELSEWHERE, LABWC_CHECKED: LABWC_CHECKED }

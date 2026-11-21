@@ -52,6 +52,8 @@ def inputs(base):
     (upstream / 'bin').mkdir()
     for name in ('omarchy-upstream-only', 'omarchy-battery-low', 'omarchy-theme-set'):
         (upstream / 'bin' / name).write_text('#!/bin/bash\necho upstream\n')
+    (upstream / 'default/hypr/toggles').mkdir(parents=True)
+    (upstream / 'default/hypr/toggles/bar-glassy.lua').write_text('-- glassy\n')
     (upstream / 'applications').mkdir()
     (upstream / 'applications/foot.desktop').write_text('[Desktop Entry]\nName=Terminal\n')
     (wheel / 'dbus_next/aio').mkdir(parents=True)

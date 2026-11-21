@@ -85,11 +85,20 @@ Item {
     SettingsBox {
       settings: page.settings
       width: parent.width
+      // Every clock's hours, through the bar clock's format (TimeFormat).
       SettingsItem {
         settings: page.settings
         first: true
+        label: Commons.I18n.t("settings.time24")
+        isSwitch: true
+        switchOn: Commons.TimeFormat.use24
+        onActivated: Quickshell.execDetached(["omarchy-bar", "set", "omarchy.clock", "format",
+          Commons.TimeFormat.flipped(Commons.TimeFormat.barFormat, !Commons.TimeFormat.use24)])
+      }
+      SettingsItem {
+        settings: page.settings
         label: Commons.I18n.t("settings.timeNow")
-        value: page.now.toLocaleDateString(Qt.locale(), "d MMMM yyyy") + ", " + page.now.toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
+        value: page.now.toLocaleDateString(Qt.locale(), "d MMMM yyyy") + ", " + Qt.formatTime(page.now, Commons.TimeFormat.time)
       }
     }
   }

@@ -443,9 +443,12 @@ function stateScript(sections, ctx, providers) {
     if (entry.provider && providers && providers[entry.provider]) names = names.concat(commandsIn(providers[entry.provider].script))
     for (var n = 0; n < names.length; n++) commands[names[n]] = true
   }
+  var checked = (ctx.labwcChecked || [])
   var list = Object.keys(commands).sort()
-  // Missing, or (outside a Hyprland session) calling hyprctl.
-  if (list.length) lines.push("for c in " + list.join(" ") + "; do p=$(command -v \"$c\" 2>/dev/null) || { printf 'm\\t%s\\n' \"$c\"; continue; }; [[ -z $HYPRLAND_INSTANCE_SIGNATURE ]] && grep -qE '\\bhyprctl\\b|\\bomarchy-hyprland-' \"$p\" 2>/dev/null && printf 'h\\t%s\\n' \"$c\"; done")
+  // Missing, or (outside a Hyprland session) calling hyprctl: in doubt a row
+  // stays dimmed. A command checked to work under labwc too (layout's
+  // LABWC_CHECKED: omarchy-bar reloads Hyprland only for its blur) is not.
+  if (list.length) lines.push("for c in " + list.join(" ") + "; do p=$(command -v \"$c\" 2>/dev/null) || { printf 'm\\t%s\\n' \"$c\"; continue; }; [[ -z $HYPRLAND_INSTANCE_SIGNATURE ]] && [[ \" " + checked.join(" ") + " \" != *\" $c \"* ]] && grep -qE '\\bhyprctl\\b|\\bomarchy-hyprland-' \"$p\" 2>/dev/null && printf 'h\\t%s\\n' \"$c\"; done")
   for (var s = 0; s < sections.length; s++)
     for (var g = 0; g < sections[s].groups.length; g++)
       for (var r = 0; r < sections[s].groups[g].rows.length; r++) {
