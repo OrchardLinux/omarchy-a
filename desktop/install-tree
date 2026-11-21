@@ -20,7 +20,7 @@ project=$(dirname "$here")
 shell=$here/shell config=$here/configuration
 omarchy=$root/usr/share/omarchy
 for input in "$build/wvkbd-mobintl" "$build/wtype" "$build/wtype.LICENSE" "$upstream/themes" "$upstream/bin" \
-    "$upstream/themes/jade-horse/colors.toml" "$upstream/icons/papercraft" "$upstream/applications/foot.desktop" "$dbus_next/dbus_next/__init__.py"; do
+    "$upstream/themes/jade-horse/colors.toml" "$upstream/icons/papercraft" "$upstream/applications/foot.desktop" "$upstream/default/hypr/toggles/bar-glassy.lua" "$dbus_next/dbus_next/__init__.py"; do
   [[ -e $input ]] || { echo "Missing input: $input" >&2; exit 1; }
 done
 umask 022
@@ -54,6 +54,9 @@ find "$omarchy" \( -name __pycache__ -o -name '*.pyc' \) -prune -exec rm -rf {} 
 cp -RP "$upstream/themes" "$omarchy/themes"
 # Upstream's app icon sets (Papercraft, the default; Arcade; Original).
 cp -RP "$upstream/icons" "$omarchy/icons"
+# Upstream's glassy-bar toggle: labwc never reads it, but omarchy-bar puts it
+# where Hyprland would, and refuses the Glassy background without it.
+put "$upstream/default/hypr/toggles/bar-glassy.lua" "$omarchy/default/hypr/toggles/bar-glassy.lua"
 # Our drawings for the tablet's own apps, in upstream's sets: Firefox, the
 # default browser, which upstream's sets do not draw.
 cp -R "$here/icons/." "$omarchy/icons/"

@@ -64,6 +64,13 @@ is missing or empty.
 - The notification center slides down from the top when the clock is
   clicked, as when it is pulled.
 - About shows an icon on its renderer line, as on every other.
+- The control center and the notification center can be used fully from
+  the keyboard (Super+Ctrl+1 and Super+Ctrl+2).
+- Settings has Date & Time: the time zone, automatic time and a 24-hour
+  switch for every clock.
+- Settings lists every keyboard shortcut (Settings > Keyboard).
+- The bar's background and clock format can be changed in Settings, and
+  rows that do nothing on this device are dimmed.
 
 ## [0.3.2] - 2026-11-19
 

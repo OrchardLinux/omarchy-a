@@ -50,6 +50,28 @@ const specs = M.menuSpecs(ctx(), 'appearance.top-bar.indicators');
 assert.deepEqual(specs[0], { toggle: ['appearance.top-bar.indicators.battery-percentage-on', 'appearance.top-bar.indicators.battery-percentage-off'] });
 ''')
 
+    def test_a_command_checked_under_labwc_is_not_taken_for_hyprland(self):
+        # omarchy-bar mentions Hyprland (a glassy bar's blur) but works here.
+        self.run_node(r'''
+assert.ok(L.LABWC_CHECKED.includes('omarchy-bar'));
+const script = M.stateScript(L.SECTIONS, ctx({ labwcChecked: L.LABWC_CHECKED }), {});
+assert.match(script, / omarchy-bar " != \*" \$c "\*/);
+''')
+
+    def test_a_page_whose_rows_are_all_hidden_is_dimmed(self):
+        # Touchpad Haptics on anything but a Dell XPS: every level's guard says no.
+        self.run_node(r'''
+const id = 'trigger.hardware.touchpad-haptics';
+const kids = menu.itemOrder.filter(k => menu.items[k].parent === id);
+assert.ok(kids.length > 0);
+const hidden = {}; for (const k of kids) hidden[k] = false;
+assert.equal(M.resolveRow({ entry: id }, ctx({ whenResults: hidden }), {}).available, false);
+// Unanswered yet, or with one level shown, it opens.
+assert.equal(M.resolveRow({ entry: id }, ctx(), {}).available, true);
+hidden[kids[0]] = true;
+assert.equal(M.resolveRow({ entry: id }, ctx({ whenResults: hidden }), {}).available, true);
+''')
+
     def test_a_row_whose_command_is_missing_is_dimmed_and_tagged(self):
         self.run_node(r'''
 const gaps = { toggle: ['appearance.windows.gaps-on', 'appearance.windows.gaps-off'] };
@@ -66,6 +88,9 @@ assert.deepEqual(M.commandsIn('a=$(omarchy-foo x); omarchy-bar-set "$a" | grep o
 
     def test_deep_links_and_state(self):
         self.run_node(r'''
+// Every native page has a link of its own: Date & Time, Keyboard Shortcuts.
+assert.deepEqual(M.route('datetime', L.SECTIONS, ctx()), { section: 'general', page: { kind: 'native', page: 'datetime', titleKey: 'settings.dateTime' } });
+assert.deepEqual(M.route('keyboard/shortcuts', L.SECTIONS, ctx()).page.page, 'shortcuts');
 assert.deepEqual(M.route('appearance/theme', L.SECTIONS, ctx()), { section: 'appearance', page: { kind: 'native', page: 'theme' } });
 assert.deepEqual(M.route('setup.security', L.SECTIONS, ctx()), { section: 'security', page: { kind: 'menu', id: 'setup.security' } });
 assert.deepEqual(M.route('nowhere', L.SECTIONS, ctx()), { section: '', page: null });
