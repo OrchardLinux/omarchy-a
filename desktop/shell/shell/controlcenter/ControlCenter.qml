@@ -57,6 +57,14 @@ Item {
   readonly property var source: Pipewire.defaultAudioSource
   PwObjectTracker { objects: [root.sink, root.source].filter(function(n) { return !!n }) }
   readonly property real volume: sink && sink.audio ? sink.audio.volume : 0
+  // The output's name when it is not the built-in one: Bluetooth, USB or a
+  // display's (HDMI, DisplayPort). PipeWire names the node after its bus.
+  readonly property string externalOutput: {
+    if (!sink) return ""
+    var node = String(sink.name || "")
+    if (!/^bluez_output\.|\.usb-|hdmi|displayport/i.test(node)) return ""
+    return String(sink.nickname || sink.description || "")
+  }
   readonly property bool micMuted: UntypedInput.active
     ? (!UntypedInput.known || UntypedInput.muted)
     : !(source && source.audio) || source.audio.muted
@@ -778,6 +786,8 @@ Item {
             glyph: root.volume <= 0 || (root.sink && root.sink.audio && root.sink.audio.muted) ? "󰝟" : "󰕾"
             value: root.volume
             available: !!(root.sink && root.sink.audio)
+            // Where the sound goes, as plain text, unless it is the device's own.
+            note: root.externalOutput
             pageArrow: true
             focusKey: "volume"
             page: "omarchy.audio"
@@ -1058,23 +1068,34 @@ Item {
       }
     }
 
+    // Placed by what they draw, not by their line boxes: a symbol and a
+    // word of another size centred by their boxes sit at different heights.
+    function inkCentre(item, ink) { return (slider.height - ink.height) / 2 - ink.y - item.baselineOffset }
+    TextMetrics { id: glyphInk; font: glyphText.font; text: slider.glyph }
+    TextMetrics { id: capInk; font: noteText.font; text: "H" }
+    TextMetrics { id: arrowInk; font: arrow.font; text: arrow.text }
     Text {
+      id: glyphText
       x: slider.vertical ? (parent.width - width) / 2 : Style.space(12)
-      y: slider.vertical ? parent.height - height - Style.space(12) : (parent.height - height) / 2
+      y: slider.vertical ? parent.height - height - Style.space(12) : slider.inkCentre(glyphText, glyphInk.tightBoundingRect)
       text: slider.glyph
       color: slider.value > 0.08 ? Commons.Color.background : root.text
       font.family: Style.font.family
       font.pixelSize: Style.font.heading
     }
     Text {
+      id: noteText
       visible: slider.note !== ""
-      // Left of the arrow, which takes the right end.
+      // Left of the arrow, which takes the right end; a long name gives way.
       x: slider.vertical ? Style.space(12)
         : parent.width - width - Style.space(12) - (arrow.visible ? arrow.width + Style.space(8) : 0)
-      y: slider.vertical ? Style.space(12) : (parent.height - height) / 2
+      y: slider.vertical ? Style.space(12) : slider.inkCentre(noteText, capInk.tightBoundingRect)
+      width: Math.min(implicitWidth, parent.width * 0.5)
+      elide: Text.ElideRight
       textFormat: Text.PlainText
       text: slider.note
-      color: root.text
+      // Dark on the fill, light beside it, as the arrow.
+      color: !slider.vertical && (x + width / 2) / slider.width < slider.value ? Commons.Color.background : root.text
       opacity: 0.7
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -1144,7 +1165,7 @@ Item {
       // sets the level like anywhere else on the slider.
       visible: slider.pageArrow
       x: parent.width - width - Style.space(14)
-      y: slider.vertical ? Style.space(10) : (parent.height - height) / 2
+      y: slider.vertical ? Style.space(10) : slider.inkCentre(arrow, arrowInk.tightBoundingRect)
       readonly property bool onFillPart: slider.vertical
         ? (1 - (y + height / 2) / slider.height) < slider.value
         : (x + width / 2) / slider.width < slider.value
