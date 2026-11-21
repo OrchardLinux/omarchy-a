@@ -38,7 +38,37 @@ diff -ruN a/keyboard.c b/keyboard.c
              kb->mods ^= Shift;
      } else {
          // normal behaviour: switch to the next layout in the layer sequence
-@@ -406,6 +406,9 @@
+@@ -207,14 +207,18 @@
+     uint32_t x = 0, y = 0;
+     uint8_t rows = kbd_get_rows(l);
+ 
+-    l->keyheight = height / rows;
++    /* Orchard: a toolbar layout's first row is 0.55 of a row's height. */
++    double units = rows - (l->toolbar ? 1 - 0.55 : 0);
++    l->keyheight = height / units;
++    uint32_t rowheight = l->toolbar ? (uint32_t)(l->keyheight * 0.55) : l->keyheight;
+ 
+     struct key *k = l->keys;
+     double rowlength = kbd_get_row_length(k);
+     double rowwidth = 0.0;
+     while (k->type != Last) {
+         if (k->type == EndRow) {
+-            y += l->keyheight;
++            y += rowheight;
++            rowheight = l->keyheight;
+             x = 0;
+             rowwidth = 0.0;
+             rowlength = kbd_get_row_length(k + 1);
+@@ -229,7 +233,7 @@
+                 x++;
+             }
+         }
+-        k->h = l->keyheight;
++        k->h = rowheight;
+         k++;
+     }
+ }
+@@ -406,6 +410,9 @@
  void
  kbd_press_key(struct kbd *kb, struct key *k, uint32_t time)
  {
@@ -48,7 +78,7 @@ diff -ruN a/keyboard.c b/keyboard.c
      if ((kb->compose == 1) && (k->type != Compose) && (k->type != Mod)) {
          if ((k->type == NextLayer) || (k->type == BackLayer) ||
              ((k->type == Code) && (k->code == KEY_SPACE))) {
-@@ -461,6 +464,19 @@
+@@ -461,6 +468,19 @@
          }
          break;
      case Mod:
@@ -68,7 +98,7 @@ diff -ruN a/keyboard.c b/keyboard.c
          kb->mods ^= k->code;
          if (kb->mods & k->code) {
              if (kb->debug)
-@@ -631,6 +647,8 @@
+@@ -631,6 +651,8 @@
  {
      const char *label = ((kb->mods & Shift)||((kb->mods & CapsLock) && 
          strlen(k->label) == 1 && isalpha(k->label[0]))) ? k->shift_label : k->label;
@@ -77,7 +107,7 @@ diff -ruN a/keyboard.c b/keyboard.c
      if (kb->debug)
          fprintf(stderr, "Draw key +%d+%d %dx%d -> %s\n", k->x, k->y, k->w, k->h,
                  label);
-@@ -702,6 +720,7 @@
+@@ -702,6 +724,7 @@
              continue;
          }
          if ((next_key->type == Mod && kb->mods & next_key->code) ||
@@ -96,7 +126,15 @@ diff -ruN a/keyboard.h b/keyboard.h
  
  enum key_type;
  enum key_modifier_type;
-@@ -108,6 +109,7 @@
+@@ -89,6 +90,7 @@
+ 	const char *name;
+ 	bool abc; //is this an alphabetical/abjad layout or not? (i.e. something that is a primary input layout)
+ 	uint32_t keyheight; // absolute height (pixels)
++	bool toolbar; // Orchard: the first row is a short row
+ };
+ 
+ struct kbd {
+@@ -108,6 +110,7 @@
  	bool shift_space_is_tab;
  	bool exclusive;
  	uint8_t mods;
@@ -116,7 +154,36 @@ diff -ruN a/layout.mobintl.h b/layout.mobintl.h
  
  /* layout declarations */
  enum layout_id {
-@@ -173,75 +173,72 @@
+@@ -26,6 +26,9 @@
+ 	Nav,
+ 	Landscape,
+ 	LandscapeSpecial,
++	Phone,
++	PhoneNum,
++	PhoneSym,
+ 	ComposeA,
+ 	ComposeE,
+ 	ComposeY,
+@@ -70,7 +73,7 @@
+ 
+ static struct key keys_full[], keys_full_wide[], keys_special[], keys_specialpad[], keys_simple[],
+   keys_cyrillic[], keys_arabic[], keys_persian[], keys_georgian[], keys_greek[], keys_hebrew[],
+-  keys_emoji[], keys_nav[], keys_landscape[], keys_landscape_special[], keys_compose_a[],
++  keys_emoji[], keys_nav[], keys_landscape[], keys_landscape_special[], keys_phone[], keys_phone_num[], keys_phone_sym[], keys_compose_a[],
+   keys_compose_e[], keys_compose_y[], keys_compose_u[], keys_compose_i[],
+   keys_compose_o[], keys_compose_w[], keys_compose_r[], keys_compose_t[],
+   keys_compose_p[], keys_compose_s[], keys_compose_d[], keys_compose_f[],
+@@ -102,6 +105,9 @@
+   [Nav] = {keys_nav, "latin", "nav", false},
+   [Landscape] = {keys_landscape, "latin", "landscape", true},
+   [LandscapeSpecial] = {keys_landscape_special, "latin", "landscapespecial", true},
++  [Phone] = {keys_phone, "latin", "phone", true, 0, true},
++  [PhoneNum] = {keys_phone_num, "latin", "phonenum", false, 0, true},
++  [PhoneSym] = {keys_phone_sym, "latin", "phonesym", false, 0, true},
+   [ComposeA] = {keys_compose_a, "latin"},
+   [ComposeE] = {keys_compose_e, "latin"},
+   [ComposeY] = {keys_compose_y, "latin"},
+@@ -173,75 +179,72 @@
   * - layout: layout to switch to when key is pressed
   */
  static struct key keys_full[] = {
@@ -258,7 +325,7 @@ diff -ruN a/layout.mobintl.h b/layout.mobintl.h
  };
  
  static struct key keys_full_wide[] = {
-@@ -319,62 +316,58 @@
+@@ -319,62 +322,58 @@
  };
  
  static struct key keys_special[] = {
@@ -373,7 +440,7 @@ diff -ruN a/layout.mobintl.h b/layout.mobintl.h
  };
  
  static struct key keys_specialpad[] = {
-@@ -1102,122 +1095,129 @@
+@@ -1102,122 +1101,279 @@
  };
  
  static struct key keys_landscape[] = {
@@ -548,18 +615,6 @@ diff -ruN a/layout.mobintl.h b/layout.mobintl.h
 -  {"", "", 0.5, Pad, .scheme = 1},
 -  {"⌫", "⌫", 1.5, Code, KEY_BACKSPACE, .scheme = 1},
 -  {"", "", 0.0, EndRow},
--
--  {"Abc", "Abc", 1.0, BackLayer, .scheme = 1},
--  {"⌨͕", "⌨͔", 1.0, NextLayer, .scheme = 1},
--  {"Ctr", "Ctr", 1.0, Mod, Ctrl, .scheme = 1},
--  {"Sup", "Sup", 1.0, Mod, Super, .scheme = 1},
--  {"", "Tab", 5.0, Code, KEY_SPACE},
--  {"Alt", "Alt", 1.0, Mod, Alt, .scheme = 1},
--  {"AGr", "AGr", 1.0, Mod, AltGr, .scheme = 1},
--  {"Enter", "Enter", 2.0, Code, KEY_ENTER, .scheme = 1},
--
--  /* end of layout */
--  {"", "", 0.0, Last},
 +  {"F1", "F1", 1.25, Code, KEY_F1, .scheme = 1},
 +  {"F2", "F2", 1.25, Code, KEY_F2, .scheme = 1},
 +  {"F3", "F3", 1.25, Code, KEY_F3, .scheme = 1},
@@ -612,6 +667,166 @@ diff -ruN a/layout.mobintl.h b/layout.mobintl.h
 +  {"←", "←", 1, Code, KEY_LEFT, .scheme = 4},
 +  {"↓", "↓", 1, Code, KEY_DOWN, .scheme = 4},
 +  {"→", "→", 1, Code, KEY_RIGHT, .scheme = 4},
++  {"", "", 0, Last},
++};
++
++static struct key keys_phone[] = {
++  {"Esc", "Esc", 1.25, Code, KEY_ESC, .scheme = 1},
++  {"Tab", "Tab", 1.25, Code, KEY_TAB, .scheme = 1},
++  {"Ctrl", "Ctrl", 1.25, Mod, Ctrl, .scheme = 1},
++  {"Alt", "Alt", 1.25, Mod, Alt, .scheme = 1},
++  {"←", "←", 1.25, Code, KEY_LEFT, .scheme = 4},
++  {"↓", "↓", 1.25, Code, KEY_DOWN, .scheme = 4},
++  {"↑", "↑", 1.25, Code, KEY_UP, .scheme = 4},
++  {"→", "→", 1.25, Code, KEY_RIGHT, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"q", "Q", 1, Code, KEY_Q},
++  {"w", "W", 1, Code, KEY_W},
++  {"e", "E", 1, Code, KEY_E},
++  {"r", "R", 1, Code, KEY_R},
++  {"t", "T", 1, Code, KEY_T},
++  {"y", "Y", 1, Code, KEY_Y},
++  {"u", "U", 1, Code, KEY_U},
++  {"i", "I", 1, Code, KEY_I},
++  {"o", "O", 1, Code, KEY_O},
++  {"p", "P", 1, Code, KEY_P},
++  {"", "", 0, EndRow},
++  {"", "", 0.5, Pad, 0},
++  {"a", "A", 1, Code, KEY_A},
++  {"s", "S", 1, Code, KEY_S},
++  {"d", "D", 1, Code, KEY_D},
++  {"f", "F", 1, Code, KEY_F},
++  {"g", "G", 1, Code, KEY_G},
++  {"h", "H", 1, Code, KEY_H},
++  {"j", "J", 1, Code, KEY_J},
++  {"k", "K", 1, Code, KEY_K},
++  {"l", "L", 1, Code, KEY_L},
++  {"", "", 0.5, Pad, 0},
++  {"", "", 0, EndRow},
++  {"⇧", "⇫", 1.5, Mod, Shift, .scheme = 1},
++  {"z", "Z", 1, Code, KEY_Z},
++  {"x", "X", 1, Code, KEY_X},
++  {"c", "C", 1, Code, KEY_C},
++  {"v", "V", 1, Code, KEY_V},
++  {"b", "B", 1, Code, KEY_B},
++  {"n", "N", 1, Code, KEY_N},
++  {"m", "M", 1, Code, KEY_M},
++  {"⌫", "⌫", 1.5, Code, KEY_BACKSPACE, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"123", "123", 1.25, Layout, 0, .layout = &layouts[PhoneNum], .scheme = 1},
++  {"", "", 1.25, Mod, Super, .scheme = 2},
++  {",", ",", 1, Code, KEY_COMMA},
++  {"space", "space", 3.5, Code, KEY_SPACE, .scheme = 3},
++  {".", ".", 1, Code, KEY_DOT},
++  {"Enter", "Enter", 2, Code, KEY_ENTER, .scheme = 1},
++  {"", "", 0, Last},
++};
+ 
+-  {"Abc", "Abc", 1.0, BackLayer, .scheme = 1},
+-  {"⌨͕", "⌨͔", 1.0, NextLayer, .scheme = 1},
+-  {"Ctr", "Ctr", 1.0, Mod, Ctrl, .scheme = 1},
+-  {"Sup", "Sup", 1.0, Mod, Super, .scheme = 1},
+-  {"", "Tab", 5.0, Code, KEY_SPACE},
+-  {"Alt", "Alt", 1.0, Mod, Alt, .scheme = 1},
+-  {"AGr", "AGr", 1.0, Mod, AltGr, .scheme = 1},
+-  {"Enter", "Enter", 2.0, Code, KEY_ENTER, .scheme = 1},
++static struct key keys_phone_num[] = {
++  {"Esc", "Esc", 1.25, Code, KEY_ESC, .scheme = 1},
++  {"Tab", "Tab", 1.25, Code, KEY_TAB, .scheme = 1},
++  {"Ctrl", "Ctrl", 1.25, Mod, Ctrl, .scheme = 1},
++  {"Alt", "Alt", 1.25, Mod, Alt, .scheme = 1},
++  {"←", "←", 1.25, Code, KEY_LEFT, .scheme = 4},
++  {"↓", "↓", 1.25, Code, KEY_DOWN, .scheme = 4},
++  {"↑", "↑", 1.25, Code, KEY_UP, .scheme = 4},
++  {"→", "→", 1.25, Code, KEY_RIGHT, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"1", "1", 1, Code, KEY_1},
++  {"2", "2", 1, Code, KEY_2},
++  {"3", "3", 1, Code, KEY_3},
++  {"4", "4", 1, Code, KEY_4},
++  {"5", "5", 1, Code, KEY_5},
++  {"6", "6", 1, Code, KEY_6},
++  {"7", "7", 1, Code, KEY_7},
++  {"8", "8", 1, Code, KEY_8},
++  {"9", "9", 1, Code, KEY_9},
++  {"0", "0", 1, Code, KEY_0},
++  {"", "", 0, EndRow},
++  {"-", "-", 1, Code, KEY_MINUS},
++  {"/", "/", 1, Code, KEY_SLASH},
++  {":", ":", 1, Code, KEY_SEMICOLON, .code_mod = Shift},
++  {";", ";", 1, Code, KEY_SEMICOLON},
++  {"(", "(", 1, Code, KEY_9, .code_mod = Shift},
++  {")", ")", 1, Code, KEY_0, .code_mod = Shift},
++  {"$", "$", 1, Code, KEY_4, .code_mod = Shift},
++  {"&", "&", 1, Code, KEY_7, .code_mod = Shift},
++  {"@", "@", 1, Code, KEY_2, .code_mod = Shift},
++  {"\"", "\"", 1, Code, KEY_APOSTROPHE, .code_mod = Shift},
++  {"", "", 0, EndRow},
++  {"#+=", "#+=", 1.5, Layout, 0, .layout = &layouts[PhoneSym], .scheme = 1},
++  {".", ".", 1.4, Code, KEY_DOT},
++  {",", ",", 1.4, Code, KEY_COMMA},
++  {"?", "?", 1.4, Code, KEY_SLASH, .code_mod = Shift},
++  {"!", "!", 1.4, Code, KEY_1, .code_mod = Shift},
++  {"'", "'", 1.4, Code, KEY_APOSTROPHE},
++  {"⌫", "⌫", 1.5, Code, KEY_BACKSPACE, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"ABC", "ABC", 1.25, Layout, 0, .layout = &layouts[Phone], .scheme = 1},
++  {"", "", 1.25, Mod, Super, .scheme = 2},
++  {"_", "_", 1, Code, KEY_MINUS, .code_mod = Shift},
++  {"space", "space", 3.5, Code, KEY_SPACE, .scheme = 3},
++  {"|", "|", 1, Code, KEY_BACKSLASH, .code_mod = Shift},
++  {"Enter", "Enter", 2, Code, KEY_ENTER, .scheme = 1},
++  {"", "", 0, Last},
++};
+ 
+-  /* end of layout */
+-  {"", "", 0.0, Last},
++static struct key keys_phone_sym[] = {
++  {"Esc", "Esc", 1.25, Code, KEY_ESC, .scheme = 1},
++  {"Tab", "Tab", 1.25, Code, KEY_TAB, .scheme = 1},
++  {"Ctrl", "Ctrl", 1.25, Mod, Ctrl, .scheme = 1},
++  {"Alt", "Alt", 1.25, Mod, Alt, .scheme = 1},
++  {"←", "←", 1.25, Code, KEY_LEFT, .scheme = 4},
++  {"↓", "↓", 1.25, Code, KEY_DOWN, .scheme = 4},
++  {"↑", "↑", 1.25, Code, KEY_UP, .scheme = 4},
++  {"→", "→", 1.25, Code, KEY_RIGHT, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"[", "[", 1, Code, KEY_LEFTBRACE},
++  {"]", "]", 1, Code, KEY_RIGHTBRACE},
++  {"{", "{", 1, Code, KEY_LEFTBRACE, .code_mod = Shift},
++  {"}", "}", 1, Code, KEY_RIGHTBRACE, .code_mod = Shift},
++  {"#", "#", 1, Code, KEY_3, .code_mod = Shift},
++  {"%", "%", 1, Code, KEY_5, .code_mod = Shift},
++  {"^", "^", 1, Code, KEY_6, .code_mod = Shift},
++  {"*", "*", 1, Code, KEY_8, .code_mod = Shift},
++  {"+", "+", 1, Code, KEY_EQUAL, .code_mod = Shift},
++  {"=", "=", 1, Code, KEY_EQUAL},
++  {"", "", 0, EndRow},
++  {"\\", "\\", 1, Code, KEY_BACKSLASH},
++  {"~", "~", 1, Code, KEY_GRAVE, .code_mod = Shift},
++  {"<", "<", 1, Code, KEY_COMMA, .code_mod = Shift},
++  {">", ">", 1, Code, KEY_DOT, .code_mod = Shift},
++  {"`", "`", 1, Code, KEY_GRAVE},
++  {"Home", "Home", 1, Code, KEY_HOME, .scheme = 1},
++  {"End", "End", 1, Code, KEY_END, .scheme = 1},
++  {"PgUp", "PgUp", 1, Code, KEY_PAGEUP, .scheme = 1},
++  {"PgDn", "PgDn", 1, Code, KEY_PAGEDOWN, .scheme = 1},
++  {"Del", "Del", 1, Code, KEY_DELETE, .scheme = 1},
++  {"", "", 0, EndRow},
++  {"123", "123", 1.5, Layout, 0, .layout = &layouts[PhoneNum], .scheme = 1},
++  {".", ".", 1.4, Code, KEY_DOT},
++  {",", ",", 1.4, Code, KEY_COMMA},
++  {"?", "?", 1.4, Code, KEY_SLASH, .code_mod = Shift},
++  {"!", "!", 1.4, Code, KEY_1, .code_mod = Shift},
++  {"'", "'", 1.4, Code, KEY_APOSTROPHE},
++  {"⌫", "⌫", 1.5, Code, KEY_BACKSPACE, .scheme = 4},
++  {"", "", 0, EndRow},
++  {"ABC", "ABC", 1.25, Layout, 0, .layout = &layouts[Phone], .scheme = 1},
++  {"", "", 1.25, Mod, Super, .scheme = 2},
++  {"_", "_", 1, Code, KEY_MINUS, .code_mod = Shift},
++  {"space", "space", 3.5, Code, KEY_SPACE, .scheme = 3},
++  {"|", "|", 1, Code, KEY_BACKSLASH, .code_mod = Shift},
++  {"Enter", "Enter", 2, Code, KEY_ENTER, .scheme = 1},
 +  {"", "", 0, Last},
  };
  

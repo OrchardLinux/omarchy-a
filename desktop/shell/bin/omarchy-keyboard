@@ -265,6 +265,23 @@ def listen():
         policy.tick()
 
 
+def phone():
+    """A phone: the screen's short side under 480 logical pixels, the width
+    under which the shell lays itself out as on a phone too."""
+    import json
+    try:
+        outputs = json.loads(subprocess.run(["wlr-randr", "--json"], capture_output=True,
+                                            text=True, timeout=5).stdout)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+    for output in outputs:
+        mode = next((m for m in output.get("modes", []) if m.get("current")), None)
+        scale = output.get("scale") or 1
+        if output.get("enabled") and mode and scale > 0:
+            return min(mode["width"], mode["height"]) / scale < 480
+    return False
+
+
 def run():
     import tomllib
     if (pid := live_pid()) and pid != os.getpid():
@@ -280,6 +297,10 @@ def run():
             "--fg-sp", color("selection"), "--press", color("accent"),
             "--press-sp", color("accent"), "--text", color("foreground"),
             "--text-sp", color("bright_foreground", "foreground")]
+    # Upright on a phone: ten keys across under a short row of terminal keys,
+    # and 123 and #+= for the rest (desktop/keyboard/friendly-layout.py).
+    if phone():
+        args += ["-l", "phone,phonenum,phonesym"]
     state_file.write_text("0\n")
     pid_file.write_text(str(os.getpid()) + "\n")
     os.environ["WVKBD_STATE_FILE"] = str(state_file)

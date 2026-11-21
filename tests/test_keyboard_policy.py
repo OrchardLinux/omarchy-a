@@ -267,5 +267,33 @@ class KeyboardPolicyTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
 
+class PhoneLayoutTests(unittest.TestCase):
+    """A phone-width screen starts the keyboard with the phone layers."""
+
+    def phone(self, width, height, scale):
+        module = load()
+        import json
+        import subprocess
+        output = [{'name': 'DSI-1', 'enabled': True, 'scale': scale,
+                   'modes': [{'width': width, 'height': height, 'current': True}]}]
+        from unittest import mock
+        result = subprocess.CompletedProcess([], 0, stdout=json.dumps(output))
+        with mock.patch.object(module.subprocess, 'run', return_value=result):
+            return module.phone()
+
+    def test_phone_width_screens_are_phones(self):
+        self.assertTrue(self.phone(640, 1136, 2))    # iPod touch 6
+        self.assertTrue(self.phone(1334, 750, 2))    # iPhone 7, turned
+        self.assertTrue(self.phone(1125, 2436, 3))   # iPhone X
+        self.assertFalse(self.phone(1536, 2048, 2))  # iPad
+        self.assertFalse(self.phone(750, 1334, 1))   # a phone at scale 1 is as wide as a small tablet
+
+    def test_the_layers_exist_in_the_layout(self):
+        layout = (PROJECT / 'desktop/keyboard/wvkbd-0.20-layout.patch').read_text()
+        for name in ('phone', 'phonenum', 'phonesym'):
+            self.assertIn('"latin", "%s"' % name, layout)
+        self.assertIn('"-l", "phone,phonenum,phonesym"', SCRIPT.read_text())
+
+
 if __name__ == '__main__':
     unittest.main()
