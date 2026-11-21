@@ -606,9 +606,7 @@ Item {
         case Qt.Key_Left:
           if (cell && cell.adjust) cell.adjust(-0.05); else root.moveFocus(-1, 0); break
         case Qt.Key_Right:
-          if (cell && cell.adjust) cell.adjust(0.05)
-          else if (cell && cell.page) root.openPage(cell.page)
-          else root.moveFocus(1, 0); break
+          if (cell && cell.adjust) cell.adjust(0.05); else root.moveFocus(1, 0); break
         // Enter opens a cell's page, where it has one; Space switches it.
         case Qt.Key_Return: case Qt.Key_Enter:
           if (cell && cell.page) root.openPage(cell.page)
