@@ -20,6 +20,8 @@ Item {
     path: (Quickshell.env("HOME") || "") + "/.config/labwc/rc.xml"
     watchChanges: true
     printErrors: false
+    // Read before the page shows, so it comes in whole.
+    blockLoading: true
     onFileChanged: reload()
   }
   readonly property var groups: Shortcuts.groups(rc.text())

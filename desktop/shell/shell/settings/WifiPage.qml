@@ -8,7 +8,8 @@ import "../plugins/panels/network" as Network
 import "../plugins/panels/network/Model.js" as NetModel
 
 // Wi-Fi: the switch, the network in use, known and other networks (a tap
-// joins; a network that needs a password asks for it in place), through the
+// joins; a network that needs a password asks for it in place; a known
+// network's info button opens its page, WifiNetworkPage), through the
 // same NetworkManager calls as the control center's network page. The list
 // holds plain rows, never the networks themselves, which a scan can delete
 // while a row is being built (the control center's Model.wifiRow says why).
@@ -79,6 +80,9 @@ Item {
       return
     }
     page.askingSsid = page.askingSsid === row.ssid ? "" : row.ssid
+  }
+  function details(row) {
+    if (page.settings) page.settings.push({ kind: "native", page: "wifinetwork", title: row.ssid, ssid: row.ssid })
   }
   function submit(ssid, identity, secret) {
     var network = page.networkFor(ssid)
@@ -177,7 +181,11 @@ Item {
               label: entry.modelData.ssid
               value: page.stateOf(entry.modelData)
               trailingGlyph: !entry.modelData.known && page.needsPassword(entry.modelData) ? "󰌾" : ""
-              onActivated: page.join(entry.modelData)
+              // A known network's page behind its info button; the one in
+              // use opens it with a tap anywhere.
+              info: entry.modelData.known
+              onInfoActivated: page.details(entry.modelData)
+              onActivated: entry.modelData.connected ? page.details(entry.modelData) : page.join(entry.modelData)
             }
             PasswordRow {
               visible: page.askingSsid === entry.modelData.ssid

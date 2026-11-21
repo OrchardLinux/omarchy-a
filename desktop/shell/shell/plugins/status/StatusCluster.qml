@@ -41,7 +41,7 @@ Row {
   readonly property var items: [
     { module: "microphone", glyph: "󰍭", shown: root.micMuted },
     { module: "rotation", glyph: "󰝳", shown: root.rotationLocked },
-    { module: "focus", glyph: "󰂛", shown: root.focusMode },
+    { module: "focus", glyph: "󰖔", shown: root.focusMode },
     { module: "stayAwake", glyph: "", shown: root.stayAwake },
     { module: "bluetooth", glyph: bluetooth.icon, shown: bluetooth.enabled },
     { module: "network", glyph: network.icon, shown: network.icon !== "" },

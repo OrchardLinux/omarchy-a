@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 
@@ -11,42 +10,15 @@ Item {
   id: page
 
   property var settings: null
-  property var facts: []
+  // Read by Settings as its window opens (Settings.qml), so the table is
+  // whole when the page comes in instead of growing under the finger; read
+  // again here, as storage changes.
+  readonly property var facts: settings && settings.host ? settings.host.aboutFacts : []
+  Component.onCompleted: if (settings && settings.host) settings.host.readAbout()
+  readonly property bool ready: facts.length > 0
 
   width: parent ? parent.width : 0
   height: box.height
-
-  Process {
-    id: reader
-    running: true
-    command: ["bash", "-lc", [
-      "model=$(tr -d '\\0' < /proc/device-tree/model 2>/dev/null); [[ -n $model ]] || model=$(cat /sys/class/dmi/id/product_name 2>/dev/null)",
-      "printf 'device\\t%s\\n' \"$model\"",
-      "printf 'name\\t%s\\n' \"$(cat /etc/hostname 2>/dev/null || uname -n)\"",
-      "printf 'system\\t%s\\n' \"$(. /etc/os-release 2>/dev/null; echo \"$PRETTY_NAME\")\"",
-      "printf 'version\\t%s\\n' \"$(omarchy-version 2>/dev/null || cat \"$OMARCHY_PATH/version\" 2>/dev/null)\"",
-      "printf 'kernel\\t%s\\n' \"$(uname -r)\"",
-      "printf 'memory\\t%s\\n' \"$(awk '/^MemTotal:/ { printf \"%.1f GB\", $2 / 1048576 }' /proc/meminfo)\"",
-      "printf 'storage\\t%s\\n' \"$(df -B1 / 2>/dev/null | awk 'NR == 2 { printf \"%.0f GB of %.0f GB free\", $4 / 1e9, $2 / 1e9 }')\""
-    ].join("\n")]
-    property string collected: ""
-    stdout: SplitParser { onRead: function(data) { reader.collected += data + "\n" } }
-    onExited: {
-      var labels = {
-        device: "settings.aboutDevice", name: "settings.aboutName", system: "settings.aboutSystem",
-        version: "settings.aboutVersion", kernel: "settings.aboutKernel", memory: "settings.aboutMemory",
-        storage: "settings.aboutStorage"
-      }
-      var out = []
-      var lines = reader.collected.split("\n")
-      for (var i = 0; i < lines.length; i++) {
-        var parts = lines[i].split("\t")
-        if (!labels[parts[0]] || !parts[1] || !parts[1].trim()) continue
-        out.push({ label: Commons.I18n.t(labels[parts[0]]), value: parts[1].trim() })
-      }
-      page.facts = out
-    }
-  }
 
   Rectangle {
     id: box

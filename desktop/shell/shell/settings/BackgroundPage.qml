@@ -12,6 +12,8 @@ Item {
   id: page
 
   property var settings: null
+  // Its data read: Settings shows it (and slides it in) only then.
+  property bool ready: false
   property var images: []
   property string current: ""
 
@@ -47,6 +49,7 @@ Item {
         out.push({ path: file, real: parts[2] || file, name: name, video: /\.(mp4|webm|mov|mkv)$/i.test(file) })
       }
       page.images = out
+      page.ready = true
     }
   }
 

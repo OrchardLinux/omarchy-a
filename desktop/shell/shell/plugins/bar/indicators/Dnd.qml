@@ -9,8 +9,8 @@ BarIndicator {
   readonly property bool dnd: notificationService ? notificationService.doNotDisturb : false
 
   active: dnd
-  activeText: "󰂛"
-  inactiveText: "󰂛"
+  activeText: "󰖔"
+  inactiveText: "󰖔"
   activeTooltipText: I18n.t("bar.allowNotifications")
   inactiveTooltipText: I18n.t("bar.silenceNotifications")
 

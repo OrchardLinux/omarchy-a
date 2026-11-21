@@ -12,6 +12,8 @@ Item {
   id: page
 
   property var settings: null
+  // Its data read: Settings shows it (and slides it in) only then.
+  property bool ready: false
   property var sets: []
   property string current: ""
 
@@ -51,6 +53,7 @@ Item {
         out.push({ id: parts[1], name: Model.displayName(parts[1]), preview: parts[2] || "" })
       }
       page.sets = out
+      page.ready = true
     }
   }
 

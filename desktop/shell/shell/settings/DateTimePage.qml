@@ -12,6 +12,8 @@ Item {
   id: page
 
   property var settings: null
+  // Its data read: Settings shows it (and slides it in) only then.
+  property bool ready: false
 
   width: parent ? parent.width : 0
   height: column.height
@@ -37,6 +39,7 @@ Item {
           else if (key === "NTP") page.automatic = value === "yes"
           else if (key === "CanNTP") page.canAutomatic = value === "yes"
         }
+        page.ready = true
       }
     }
   }

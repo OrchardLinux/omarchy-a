@@ -2009,6 +2009,18 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
         }
 
+        // Orchard: the status icons are a pointer's. A finger's tap on them
+        // does nothing (they only show state; the control center pulled down
+        // from here has the controls), while a pull still takes the touch to
+        // the centers (BarPanel's DragHandlers take over from this).
+        Item {
+          anchors.fill: rightModules
+          TapHandler {
+            acceptedDevices: PointerDevice.TouchScreen
+            gesturePolicy: TapHandler.WithinBounds
+          }
+        }
+
         // Where a display notch covers the middle of the bar, the center
         // sections run on just left of the right one. They keep their regions,
         // so settings pushes, drag and drop, and panel routing still address

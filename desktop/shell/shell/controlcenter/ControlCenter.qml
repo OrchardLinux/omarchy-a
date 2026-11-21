@@ -9,7 +9,6 @@ import qs.Commons as Commons
 import qs.Ui
 import "../plugins/panels/network" as Network
 import "../plugins/panels/bluetooth" as BluetoothStatus
-import "../plugins/panels/power" as Power
 import "../plugins/panels/bluetooth/Model.js" as BluetoothModel
 import "../plugins/status" as StatusParts
 import "../plugins/panels/monitor" as Monitor
@@ -19,8 +18,7 @@ import "../plugins/panels/audio" as AudioPanel
 // The control center (SHELL-SPEC, step 2): the main view. States you flip
 // and the two sliders, over the same status objects the bar and the lock
 // read. On an iPad a panel below the bar at the right with the screen dimmed;
-// on a phone the whole screen. Until its module pages exist, a tile's chevron
-// and the battery line open the bar's panels.
+// on a phone the whole screen. A tile's chevron opens its module's page.
 Item {
   id: root
 
@@ -50,7 +48,6 @@ Item {
 
   Network.Status { id: network }
   BluetoothStatus.Status { id: bluetooth }
-  Power.Status { id: battery }
   StatusParts.RotationLock { id: rotation }
 
   readonly property var idleService: shell ? shell.firstPartyServiceFor("omarchy.idle") : null
@@ -60,6 +57,14 @@ Item {
   readonly property var source: Pipewire.defaultAudioSource
   PwObjectTracker { objects: [root.sink, root.source].filter(function(n) { return !!n }) }
   readonly property real volume: sink && sink.audio ? sink.audio.volume : 0
+  // The output's name when it is not the built-in one: Bluetooth, USB or a
+  // display's (HDMI, DisplayPort). PipeWire names the node after its bus.
+  readonly property string externalOutput: {
+    if (!sink) return ""
+    var node = String(sink.name || "")
+    if (!/^bluez_output\.|\.usb-|hdmi|displayport/i.test(node)) return ""
+    return String(sink.nickname || sink.description || "")
+  }
   readonly property bool micMuted: UntypedInput.active
     ? (!UntypedInput.known || UntypedInput.muted)
     : !(source && source.audio) || source.audio.muted
@@ -91,13 +96,6 @@ Item {
     if (n === 1) return BluetoothModel.deviceLabel(bluetooth.connectedDevices[0])
     if (n > 1) return Commons.I18n.t("controlCenter.connectedCount").arg(Commons.I18n.formatNumber(n))
     return Commons.I18n.t("controlCenter.notConnected")
-  }
-  readonly property string outputName: sink ? String(sink.nickname || sink.description || "") : ""
-  readonly property string batteryLine: {
-    if (battery.displayedPercentage === null) return ""
-    var line = Commons.I18n.formatNumber(battery.displayedPercentage) + "%"
-    var time = String(battery.batteryInfo.time || "")
-    return time !== "" && !battery.externalPower ? line + " · " + time : line
   }
 
   // ---------------------------------------------------------- actions
@@ -159,14 +157,12 @@ Item {
     NetworkPanel.Panel { id: networkModule; host: pageHost; bar: pageHost; moduleName: "omarchy.network" }
     AudioPanel.Panel { id: audioModule; host: pageHost; bar: pageHost; moduleName: "omarchy.audio" }
     BluetoothStatus.Panel { id: bluetoothModule; host: pageHost; bar: pageHost; moduleName: "omarchy.bluetooth" }
-    Power.Panel { id: powerModule; host: pageHost; bar: pageHost; moduleName: "omarchy.power" }
   }
   readonly property var modules: ({
     "omarchy.monitor": displayModule,
     "omarchy.network": networkModule,
     "omarchy.audio": audioModule,
-    "omarchy.bluetooth": bluetoothModule,
-    "omarchy.power": powerModule
+    "omarchy.bluetooth": bluetoothModule
   })
 
   property var page: null
@@ -790,7 +786,9 @@ Item {
             glyph: root.volume <= 0 || (root.sink && root.sink.audio && root.sink.audio.muted) ? "󰝟" : "󰕾"
             value: root.volume
             available: !!(root.sink && root.sink.audio)
-            chip: root.outputName
+            // Where the sound goes, as plain text, unless it is the device's own.
+            note: root.externalOutput
+            pageArrow: true
             focusKey: "volume"
             page: "omarchy.audio"
             onMoved: function(v) { root.setVolume(v) }
@@ -832,26 +830,6 @@ Item {
             }
           }
         }
-
-        // The battery line (iPad: here; phone: at the foot).
-        Item {
-          id: footer
-          width: content.width
-          height: root.touchMin
-          // Only with a battery to show: nothing else lives here.
-          visible: !root.phone && root.batteryLine !== ""
-          FooterParts { anchors.fill: parent }
-        }
-      }
-
-      Item {
-        visible: root.phone && root.pageShift < 1 && root.batteryLine !== ""
-        x: root.pad - root.pageShift * card.width
-        width: parent.width - root.pad * 2
-        height: root.touchMin
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Style.space(24)
-        FooterParts { anchors.fill: parent }
       }
 
       // The page: the panel's content, whose own title row is the header (its
@@ -1065,8 +1043,7 @@ Item {
     property string glyph: ""
     property real value: 0
     property string note: ""
-    property string chip: ""
-    // A page with no chip of its own shows the arrow alone.
+    // The arrow at the right end: the slider has a page.
     property bool pageArrow: false
     signal moved(real value)
     signal longPressed()
@@ -1091,23 +1068,34 @@ Item {
       }
     }
 
+    // Placed by what they draw, not by their line boxes: a symbol and a
+    // word of another size centred by their boxes sit at different heights.
+    function inkCentre(item, ink) { return (slider.height - ink.height) / 2 - ink.y - item.baselineOffset }
+    TextMetrics { id: glyphInk; font: glyphText.font; text: slider.glyph }
+    TextMetrics { id: capInk; font: noteText.font; text: "H" }
+    TextMetrics { id: arrowInk; font: arrow.font; text: arrow.text }
     Text {
+      id: glyphText
       x: slider.vertical ? (parent.width - width) / 2 : Style.space(12)
-      y: slider.vertical ? parent.height - height - Style.space(12) : (parent.height - height) / 2
+      y: slider.vertical ? parent.height - height - Style.space(12) : slider.inkCentre(glyphText, glyphInk.tightBoundingRect)
       text: slider.glyph
       color: slider.value > 0.08 ? Commons.Color.background : root.text
       font.family: Style.font.family
       font.pixelSize: Style.font.heading
     }
     Text {
+      id: noteText
       visible: slider.note !== ""
-      // Left of the chip, which takes the right end.
+      // Left of the arrow, which takes the right end; a long name gives way.
       x: slider.vertical ? Style.space(12)
-        : parent.width - width - Style.space(12) - (chipBox.visible ? chipBox.width + Style.space(8) : 0)
-      y: slider.vertical ? Style.space(12) : (parent.height - height) / 2
+        : parent.width - width - Style.space(12) - (arrow.visible ? arrow.width + Style.space(8) : 0)
+      y: slider.vertical ? Style.space(12) : slider.inkCentre(noteText, capInk.tightBoundingRect)
+      width: Math.min(implicitWidth, parent.width * 0.5)
+      elide: Text.ElideRight
       textFormat: Text.PlainText
       text: slider.note
-      color: root.text
+      // Dark on the fill, light beside it, as the arrow.
+      color: !slider.vertical && (x + width / 2) / slider.width < slider.value ? Commons.Color.background : root.text
       opacity: 0.7
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
@@ -1169,80 +1157,23 @@ Item {
       onCanceled: { held = false; used = false; sliderHoldOpen.stop() }
       onPressAndHold: if (!moving) { held = true; sliderHoldOpen.restart() }
     }
-    Rectangle {
-      id: chipBox
-      // The way to the slider's page, always in sight: a named chip (the
-      // output) or the arrow alone. While a long press holds the slider, it
-      // lights up: lifting goes there.
-      visible: slider.chip !== "" || slider.pageArrow
-      x: slider.vertical && slider.chip !== "" ? Style.space(10) : parent.width - width - Style.space(10)
-      y: slider.vertical ? Style.space(10) : (parent.height - height) / 2
-      width: Math.min(chipRow.implicitWidth + Style.space(16), parent.width - Style.space(20))
-      height: Style.space(26)
-      // The arrow alone is only a glyph in the slider's own ink: dark on the
-      // fill, light beside it.
-      readonly property bool arrowOnly: slider.chip === ""
+    Text {
+      id: arrow
+      // The way to the slider's page, always in sight: only a glyph in the
+      // slider's own ink, dark on the fill and light beside it. While a long
+      // press holds the slider it lights up: lifting goes there. A tap here
+      // sets the level like anywhere else on the slider.
+      visible: slider.pageArrow
+      x: parent.width - width - Style.space(14)
+      y: slider.vertical ? Style.space(10) : slider.inkCentre(arrow, arrowInk.tightBoundingRect)
       readonly property bool onFillPart: slider.vertical
         ? (1 - (y + height / 2) / slider.height) < slider.value
         : (x + width / 2) / slider.width < slider.value
-      readonly property color ink: drag.holding
-        ? (arrowOnly ? Commons.Color.accent : root.onText)
-        : (arrowOnly && onFillPart ? Commons.Color.background : root.text)
-      color: arrowOnly ? "transparent" : (drag.holding ? root.onFill : Commons.Color.popups.background)
-      border.width: arrowOnly ? 0 : Math.max(1, Style.space(1))
-      border.color: drag.holding ? root.onFill : Style.normalBorderColor
-      radius: Style.cornerRadius
-      Row {
-        id: chipRow
-        anchors.centerIn: parent
-        spacing: Style.space(6)
-        Text {
-          visible: slider.chip !== ""
-          width: Math.min(implicitWidth, chipBox.parent.width - Style.space(48))
-          textFormat: Text.PlainText
-          text: slider.chip
-          color: chipBox.ink
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-          font.bold: true
-          elide: Text.ElideRight
-        }
-        Text {
-          text: "󰅂"
-          color: chipBox.ink
-          opacity: chipBox.arrowOnly && !drag.holding ? 0.7 : 1
-          font.family: Style.font.family
-          font.pixelSize: chipBox.arrowOnly ? Style.font.heading : Style.font.body
-        }
-      }
-      // Only a hint that there is a page: a long press opens it, and a tap
-      // here sets the level like anywhere else on the slider.
-    }
-  }
-
-  component FooterParts: Item {
-    // Battery line: opens the battery page. Ending the session is the
-    // launcher's (its footer, a phone's System tab), not the control center's.
-    Cell {
-      id: batteryCell
-      visible: root.batteryLine !== ""
-      page: "omarchy.power"
-      focusKey: "battery"
-      color: "transparent"
-      border.width: 0
-      width: batteryRow.implicitWidth + Style.space(16)
-      height: parent.height
-      onActivated: root.openPage("omarchy.power")
-      Row {
-        id: batteryRow
-        x: Style.space(8)
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.space(6)
-        Text { anchors.verticalCenter: parent.verticalCenter; text: battery.icon; color: root.text; font.family: Style.font.family; font.pixelSize: Style.font.body }
-        Text { anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: root.batteryLine; color: root.text; font.family: Style.font.family; font.pixelSize: Style.font.caption }
-        Text { anchors.verticalCenter: parent.verticalCenter; text: "󰅂"; color: root.text; opacity: 0.6; font.family: Style.font.family; font.pixelSize: Style.font.body }
-      }
-      MouseArea { anchors.fill: parent; onClicked: batteryCell.activate() }
+      text: "󰅂"
+      color: drag.holding ? Commons.Color.accent : (onFillPart ? Commons.Color.background : root.text)
+      opacity: drag.holding ? 1 : 0.7
+      font.family: Style.font.family
+      font.pixelSize: Style.font.heading
     }
   }
 }

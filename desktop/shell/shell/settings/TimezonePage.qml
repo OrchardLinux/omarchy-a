@@ -18,6 +18,8 @@ Item {
   height: column.height
 
   property var zones: []
+  // The list read: Settings shows the page (and slides it in) only then.
+  readonly property bool ready: zones.length > 0
   property string current: ""
   Process {
     running: true

@@ -12,6 +12,10 @@ Item {
   id: page
 
   property var settings: null
+  // Its data read: Settings shows it (and slides it in) only then.
+  readonly property bool ready: brightnessDone && autoDone
+  property bool brightnessDone: false
+  property bool autoDone: false
 
   width: parent ? parent.width : 0
   height: column.height
@@ -30,6 +34,7 @@ Item {
       onStreamFinished: {
         var value = parseInt(String(text).trim(), 10)
         page.brightness = isNaN(value) ? -1 : value
+        page.brightnessDone = true
       }
     }
   }
@@ -41,6 +46,7 @@ Item {
       onStreamFinished: {
         page.autoAvailable = /auto-brightness: (on|off)/.test(text)
         page.autoOn = /auto-brightness: on/.test(text)
+        page.autoDone = true
       }
     }
   }

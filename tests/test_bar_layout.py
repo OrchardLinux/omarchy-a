@@ -32,7 +32,7 @@ console.log(JSON.stringify({narrow, pages: model.narrowPages(layout)}));
         self.assertEqual(ids['left'], ['omarchy.menu', 'omarchy.clock'])
         self.assertEqual(ids['center'], [])
         self.assertEqual(ids['right'], ['omarchy.indicators', 'omarchy.audio', 'omarchy.bluetooth', 'omarchy.network',
-                                        'omarchy.monitor', 'omarchy.power', 'ipadlinux.controlcenter'])
+                                        'omarchy.monitor', 'omarchy.power'])
         self.assertEqual(narrow['pages'], 1)
         # Every icon stays on a phone's bar for now: nothing is hidden there.
         configured = [entry for entries in json.loads(CONFIG.read_text())['bar']['layout'].values() for entry in entries]

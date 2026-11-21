@@ -22,8 +22,11 @@ Item {
   property bool opens: false
   property bool usable: true
   property bool accent: false
+  // A second way in at the very end (a network's details): its own tap.
+  property bool info: false
 
   signal activated()
+  signal infoActivated()
 
   width: parent ? parent.width : 0
   height: (settings ? settings.rowHeight : 42) + (detail !== "" ? Style.space(12) : 0)
@@ -120,6 +123,15 @@ Item {
       cursorRing: false
     }
     Text {
+      id: infoButton
+      visible: row.info
+      anchors.verticalCenter: parent.verticalCenter
+      text: "󰋼"
+      color: row.settings ? row.settings.accent : "white"
+      font.family: Style.font.menuFamily
+      font.pixelSize: Style.font.title
+    }
+    Text {
       visible: row.opens
       anchors.verticalCenter: parent.verticalCenter
       text: "›"
@@ -132,6 +144,10 @@ Item {
   TapHandler {
     id: press
     enabled: row.usable
-    onTapped: row.activated()
+    onTapped: function(point) {
+      // The info button's end of the row, with room around it for a finger.
+      if (row.info && point.position.x >= tail.x + infoButton.x - Style.space(14)) row.infoActivated()
+      else row.activated()
+    }
   }
 }
