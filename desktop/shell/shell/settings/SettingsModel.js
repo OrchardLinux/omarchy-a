@@ -482,11 +482,11 @@ function route(path, sections, ctx) {
   var parts = text.split("/")
   for (var s = 0; s < sections.length; s++) {
     if (sections[s].id !== parts[0]) continue
-    var page = parts.length > 1 ? nativeOrEntry(parts.slice(1).join("/"), ctx) : null
+    var page = parts.length > 1 ? nativeOrEntry(parts.slice(1).join("/"), ctx, sections) : null
     return { section: sections[s].id, page: page }
   }
-  var native = { theme: "appearance", background: "appearance", icons: "appearance" }
-  if (native[text]) return { section: native[text], page: { kind: "native", page: text } }
+  var native = nativePages(sections)
+  if (native[text]) return { section: native[text].section, page: nativePage(text, native[text]) }
   var entry = item(ctx, text)
   if (entry) {
     var home = sectionFor(sections, ctx, text)
@@ -496,8 +496,30 @@ function route(path, sections, ctx) {
   return { section: "", page: null }
 }
 
-function nativeOrEntry(rest, ctx) {
-  if (rest === "theme" || rest === "background" || rest === "icons") return { kind: "native", page: rest }
+// The native pages a row opens (Theme, Date & Time, Keyboard Shortcuts, ...),
+// by name: the section each lives in and its label, for a deep link.
+function nativePages(sections) {
+  var out = {}
+  for (var s = 0; s < sections.length; s++)
+    for (var g = 0; g < sections[s].groups.length; g++)
+      for (var r = 0; r < sections[s].groups[g].rows.length; r++) {
+        var spec = sections[s].groups[g].rows[r]
+        if (spec.page && !out[spec.page]) out[spec.page] = { section: sections[s].id, label: spec.entry ? "" : (spec.label || "") }
+      }
+  return out
+}
+
+// A page for the window's stack; its title from its label, where the row has
+// one of its own (an entry's page takes the entry's).
+function nativePage(name, found) {
+  var page = { kind: "native", page: name }
+  if (found.label) page.titleKey = found.label
+  return page
+}
+
+function nativeOrEntry(rest, ctx, sections) {
+  var native = nativePages(sections || [])
+  if (native[rest]) return nativePage(rest, native[rest])
   var entry = item(ctx, rest)
   if (entry && entry.kind === "menu") return { kind: isChoice(ctx, entry) ? "choice" : "menu", id: rest }
   return null
@@ -528,7 +550,7 @@ function swatchesOf(colors) {
   return out
 }
 
-if (typeof module !== "undefined") module.exports = {
+if (typeof module !== "undefined") module.exports = { nativePages: nativePages,
   parseColors: parseColors, displayName: displayName, swatchesOf: swatchesOf,
   commandsIn: commandsIn, resolveRow: resolveRow, resolveRows: resolveRows, menuSpecs: menuSpecs,
   choiceRows: choiceRows, sectionGroups: sectionGroups, sectionFor: sectionFor, unplaced: unplaced,

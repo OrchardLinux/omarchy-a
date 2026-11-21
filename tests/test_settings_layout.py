@@ -80,6 +80,9 @@ assert.deepEqual(M.commandsIn('a=$(omarchy-foo x); omarchy-bar-set "$a" | grep o
 
     def test_deep_links_and_state(self):
         self.run_node(r'''
+// Every native page has a link of its own: Date & Time, Keyboard Shortcuts.
+assert.deepEqual(M.route('datetime', L.SECTIONS, ctx()), { section: 'general', page: { kind: 'native', page: 'datetime', titleKey: 'settings.dateTime' } });
+assert.deepEqual(M.route('keyboard/shortcuts', L.SECTIONS, ctx()).page.page, 'shortcuts');
 assert.deepEqual(M.route('appearance/theme', L.SECTIONS, ctx()), { section: 'appearance', page: { kind: 'native', page: 'theme' } });
 assert.deepEqual(M.route('setup.security', L.SECTIONS, ctx()), { section: 'security', page: { kind: 'menu', id: 'setup.security' } });
 assert.deepEqual(M.route('nowhere', L.SECTIONS, ctx()), { section: '', page: null });

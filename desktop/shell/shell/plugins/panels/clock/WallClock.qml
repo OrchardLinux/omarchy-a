@@ -1,4 +1,5 @@
 import QtQuick
+import qs.Commons
 import "Model.js" as Model
 
 // Stands in for Quickshell's SystemClock, which schedules its next tick from
@@ -19,6 +20,11 @@ Timer {
   }
 
   onStepChanged: arm()
+
+  // A new time zone (Settings > Date & Time) shows at once, not at the
+  // next tick.
+  readonly property int zoneRevision: TimeZone.revision
+  onZoneRevisionChanged: { date = new Date(); arm() }
   onTriggered: {
     date = new Date()
     arm()

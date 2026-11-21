@@ -9,7 +9,7 @@ import "Model.js" as Model
 //
 // Left click reveals the calendar — asking "what is the date?" is what a
 // click on a clock means — right click walks the common label formats, and
-// middle click opens the timezone picker.
+// middle click opens the time zone (Settings > Date & Time).
 BarWidget {
   id: root
   moduleName: "omarchy.clock"
@@ -169,7 +169,8 @@ BarWidget {
 
     onPressed: function(b) {
       if (b === Qt.RightButton) root.cycleFormat()
-      else if (b === Qt.MiddleButton) { if (root.bar) root.bar.run("omarchy-menu-timezone") }
+      // Orchard: the time zone is Settings' Date & Time.
+      else if (b === Qt.MiddleButton) { if (root.bar) root.bar.run("omarchy-settings datetime") }
       // Orchard: the date and time open the notification center (SHELL-SPEC,
       // step 3); upstream's calendar panel stays where there is none.
       else if (root.bar && root.bar.shell && root.bar.shell.notificationCenter) root.bar.shell.notificationCenter.togglePopup()

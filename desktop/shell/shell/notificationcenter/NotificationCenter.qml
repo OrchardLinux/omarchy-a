@@ -114,6 +114,9 @@ Item {
       if (Math.floor(t / 60000) !== Math.floor(root.now / 60000)) root.now = t
     }
   }
+  // A new time zone moves the hour at once (Settings > Date & Time).
+  readonly property int zoneRevision: Commons.TimeZone.revision
+  onZoneRevisionChanged: root.now = Date.now()
   function ago(ts) {
     var s = Math.max(0, (root.now - ts * 1000) / 1000)
     if (s < 60) return I18n.t("agents.durationNow")

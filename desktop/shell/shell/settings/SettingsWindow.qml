@@ -228,6 +228,7 @@ FloatingWindow {
     if (top) {
       if (top.kind === "native") {
         if (top.title) return top.title
+        if (top.titleKey) return win.t(top.titleKey)
         var nativeEntry = { theme: "appearance.theme", background: "appearance.background", icons: "appearance.icons" }[top.page]
         return nativeEntry && ctx.items[nativeEntry] ? ctx.items[nativeEntry].label : top.page
       }
@@ -242,7 +243,7 @@ FloatingWindow {
     if (!top) return ""
     if (stack.length > 1) {
       var prev = stack[stack.length - 2]
-      if (prev.kind === "native" && prev.title) return prev.title
+      if (prev.kind === "native" && (prev.title || prev.titleKey)) return prev.title || win.t(prev.titleKey)
       var e = prev.kind === "native" ? null : ctx.items[prev.id]
       return e ? e.label : ""
     }

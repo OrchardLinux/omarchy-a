@@ -71,7 +71,9 @@ Item {
     id: writer
     stderr: StdioCollector { onStreamFinished: if (text !== "") console.warn("settings: time zone:", text.trim()) }
     onExited: function(code) {
-      if (code === 0 && page.settings) page.settings.backTo("datetime")
+      if (code !== 0) return
+      Commons.TimeZone.changed()
+      if (page.settings) page.settings.backTo("datetime")
     }
   }
   function choose(zone) {
