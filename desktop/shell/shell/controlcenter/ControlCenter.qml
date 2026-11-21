@@ -609,7 +609,12 @@ Item {
           if (cell && cell.adjust) cell.adjust(0.05)
           else if (cell && cell.page) root.openPage(cell.page)
           else root.moveFocus(1, 0); break
-        case Qt.Key_Return: case Qt.Key_Enter: case Qt.Key_Space:
+        // Enter opens a cell's page, where it has one; Space switches it.
+        case Qt.Key_Return: case Qt.Key_Enter:
+          if (cell && cell.page) root.openPage(cell.page)
+          else if (cell && cell.activate) cell.activate()
+          break
+        case Qt.Key_Space:
           if (cell && cell.activate) cell.activate(); break
         default: return
         }
@@ -763,6 +768,7 @@ Item {
             available: root.brightness >= 0
             note: root.autoBrightness ? Commons.I18n.t("controlCenter.auto") : ""
             pageArrow: true
+            page: "omarchy.monitor"
             onMoved: function(v) { root.setBrightness(v * 100) }
             onLongPressed: root.openPage("omarchy.monitor")
           }
@@ -774,6 +780,7 @@ Item {
             value: root.volume
             available: !!(root.sink && root.sink.audio)
             chip: root.outputName
+            page: "omarchy.audio"
             onMoved: function(v) { root.setVolume(v) }
             onLongPressed: root.openPage("omarchy.audio")
           }
@@ -865,7 +872,9 @@ Item {
     property bool on: false
     property bool available: true
     property string page: ""
-    property bool focusable: available
+    // A cell that can't be used is skipped, unless it has a page: the page
+    // says why (no adapter, no device), and Enter is the way there.
+    property bool focusable: available || page !== ""
     readonly property bool focused: root.focusables[root.focusIndex] === cell
     property bool pressed: false
     signal activated()
