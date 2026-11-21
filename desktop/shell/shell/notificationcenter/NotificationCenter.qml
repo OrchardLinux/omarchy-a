@@ -197,7 +197,7 @@ Item {
     root.openGroups = ({})
     root.markAllSeen()
     scroller.contentY = 0
-    root.focusIndex = -1
+    root.focusRow = ""
     root.opened = true
     root.mapped = true
     if (panel.contentRevealed) root.animateIn()
@@ -321,22 +321,83 @@ Item {
 
   // ------------------------------------------------------------ keyboard
 
-  // Up and Down walk Focus, Clear all and the cards; Enter opens or presses,
-  // Delete clears a card, Escape closes.
-  property int focusIndex: -1
-  readonly property int focusCount: 2 + root.groups.length
-  function moveFocus(step) {
-    if (root.focusCount === 0) return
-    root.focusIndex = root.focusIndex < 0 ? (step > 0 ? 0 : root.focusCount - 1)
-      : Math.max(0, Math.min(root.focusCount - 1, root.focusIndex + step))
+  // Rows, top to bottom: the header (Focus, Clear all), then each card, an
+  // open stack's all. Up and Down go between rows, Left and Right along one
+  // (a card, then its buttons and its reply field). Enter opens or presses,
+  // Space opens or closes a stack, Delete clears a card, Escape closes.
+  // The row is a card's notification key, so it stays put as cards come
+  // and go; "" until the keyboard is used.
+  property string focusRow: ""
+  property int focusCol: 0
+  property int lastRowIndex: 0
+  readonly property var focusRows: {
+    var rows = ["header"]
+    for (var i = 0; i < root.groups.length; i++) {
+      var g = root.groups[i]
+      if (!g.rows.length) continue
+      rows.push(String(g.rows[0].key))
+      if (root.openGroups[g.key]) for (var j = 1; j < g.rows.length; j++) rows.push(String(g.rows[j].key))
+    }
+    return rows
   }
-  function activateFocused() {
-    if (root.focusIndex === 0) root.toggleFocus()
-    else if (root.focusIndex === 1) root.clearAll()
-    else if (root.focusIndex >= 2) root.openGroup(root.groups[root.focusIndex - 2])
+  onFocusRowsChanged: {
+    if (root.focusRow === "" || root.focusRows.indexOf(root.focusRow) >= 0) return
+    // Its card went: the one now in its place.
+    root.focusRow = root.focusRows[Math.min(root.lastRowIndex, root.focusRows.length - 1)]
+    root.focusCol = 0
+  }
+  // The cards on screen, by key, for what only a card knows (its buttons).
+  property var cardItems: ({})
+  function rowParts(row) {
+    if (row === "header") return root.groups.length > 0 ? 2 : 1
+    var card = root.cardItems[row]
+    return card ? card.parts : 1
+  }
+  function moveRow(step) {
+    var rows = root.focusRows
+    var at = rows.indexOf(root.focusRow)
+    var next = at < 0 ? (step > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, at + step))
+    root.lastRowIndex = next
+    if (rows[next] !== root.focusRow) root.focusCol = 0
+    root.focusRow = rows[next]
+  }
+  function moveCol(step) {
+    if (root.focusRow === "") { root.moveRow(1); return }
+    root.focusCol = Math.max(0, Math.min(root.rowParts(root.focusRow) - 1, root.focusCol + step))
+  }
+  function groupOf(key) {
+    for (var i = 0; i < root.groups.length; i++) {
+      var rows = root.groups[i].rows
+      for (var j = 0; j < rows.length; j++) if (String(rows[j].key) === key) return { group: root.groups[i], entry: rows[j], head: j === 0 }
+    }
+    return null
+  }
+  function activateFocused(space) {
+    if (root.focusRow === "header") {
+      if (root.focusCol === 0) root.toggleFocus(); else root.clearAll()
+      return
+    }
+    var found = root.groupOf(root.focusRow)
+    if (!found) return
+    var stack = found.head && found.group.rows.length > 1
+    if (space && stack && root.focusCol === 0) { root.toggleGroup(found.group.key); return }
+    var card = root.cardItems[root.focusRow]
+    if (card) card.press(root.focusCol)
   }
   function forgetFocused() {
-    if (root.focusIndex >= 2) root.forgetGroup(root.groups[root.focusIndex - 2], false)
+    var found = root.groupOf(root.focusRow)
+    if (!found) return
+    var single = !found.head || !!root.openGroups[found.group.key]
+    root.forgetGroup(found.group, single, found.entry)
+  }
+  // Keeps what the keyboard is on in sight.
+  function showItem(item) {
+    if (!item) return
+    var p = item.mapToItem(scroller.contentItem, 0, 0)
+    var margin = Style.space(12)
+    if (p.y - margin < scroller.contentY) scroller.contentY = Math.max(0, p.y - margin)
+    else if (p.y + item.height + margin > scroller.contentY + scroller.height)
+      scroller.contentY = Math.min(Math.max(0, scroller.contentHeight - scroller.height), p.y + item.height + margin - scroller.height)
   }
 
   // ------------------------------------------------------------ actions
@@ -455,16 +516,19 @@ Item {
       Keys.onPressed: function(event) {
         switch (event.key) {
         case Qt.Key_Escape: root.close(); break
-        case Qt.Key_Down: case Qt.Key_Tab: root.moveFocus(1); break
-        case Qt.Key_Up: case Qt.Key_Backtab: root.moveFocus(-1); break
-        case Qt.Key_Return: case Qt.Key_Enter: case Qt.Key_Space: root.activateFocused(); break
+        case Qt.Key_Down: case Qt.Key_Tab: root.moveRow(1); break
+        case Qt.Key_Up: case Qt.Key_Backtab: root.moveRow(-1); break
+        case Qt.Key_Right: root.moveCol(1); break
+        case Qt.Key_Left: root.moveCol(-1); break
+        case Qt.Key_Return: case Qt.Key_Enter: root.activateFocused(false); break
+        case Qt.Key_Space: root.activateFocused(true); break
         case Qt.Key_Delete: case Qt.Key_Backspace: root.forgetFocused(); break
         default: return
         }
         event.accepted = true
       }
     }
-    PointHandler { onActiveChanged: if (active) root.focusIndex = -1 }
+    PointHandler { onActiveChanged: if (active) root.focusRow = "" }
 
     // What it shows, sliding down from under the bar: its bottom is where the
     // finger is.
@@ -604,13 +668,13 @@ Item {
                   glyph: "󰽥"
                   label: root.focusOn ? I18n.t("notificationCenter.focusOn") : I18n.t("notificationCenter.focusOff")
                   lit: root.focusOn
-                  focused: root.focusIndex === 0
+                  focused: root.focusRow === "header" && root.focusCol === 0
                   onActivated: root.toggleFocus()
                 }
                 HeaderButton {
                   label: I18n.t("notificationCenter.clearAll")
                   enabled: root.groups.length > 0
-                  focused: root.focusIndex === 1
+                  focused: root.focusRow === "header" && root.focusCol === 1
                   onActivated: root.clearAll()
                 }
               }
@@ -692,7 +756,6 @@ Item {
                   // The shapes fade and fold away with the opening, not at once.
                   stacked: groupColumn.more
                   shade: 1 - groupColumn.openness
-                  focused: root.focusIndex === groupColumn.index + 2
                   onOpened: root.openEntry(entry)
                   onSwiped: root.forgetGroup(groupColumn.modelData, groupColumn.open, entry)
                   onMoreToggled: root.toggleGroup(groupColumn.modelData.key)
@@ -761,6 +824,16 @@ Item {
   // ------------------------------------------------------------ parts
 
   // The weather, as the weather panel reads it.
+  // The keyboard's place, as in the control center: a ring just outside.
+  component FocusRing: Rectangle {
+    z: 100
+    anchors.fill: parent
+    anchors.margins: -Style.space(4)
+    color: "transparent"
+    border.width: Math.max(2, Style.space(2))
+    border.color: Commons.Color.accent
+  }
+
   component WeatherCard: Rectangle {
     id: weatherCard
     // Room the text has inside the card as it is laid out.
@@ -829,8 +902,10 @@ Item {
     height: Style.space(30)
     color: lit ? Util.alpha(Commons.Color.accent, 0.18) : "transparent"
     border.width: root.hairline
-    border.color: focused ? Commons.Color.accent : root.outline
+    border.color: root.outline
     opacity: enabled ? 1 : 0.45
+    onFocusedChanged: if (focused) root.showItem(button)
+    FocusRing { visible: button.focused }
     scale: buttonArea.pressed && buttonArea.containsMouse ? 0.96 : 1
     Row {
       id: buttonRow
@@ -876,7 +951,29 @@ Item {
     property int stacked: more > 0 ? more : 0
     // How much of a closed stack's shapes behind it shows (1 closed, 0 open).
     property real shade: 1
-    property bool focused: false
+    // The keyboard: on this card, and on which part of it (0 the card, then
+    // its buttons, then its reply field).
+    readonly property string rowKey: String(entry.key || "")
+    readonly property bool focused: rowKey !== "" && root.focusRow === rowKey
+    readonly property int part: focused ? root.focusCol : -1
+    readonly property int actionCount: (entry.actions || []).length
+    readonly property bool canReply: String(entry.reply || "") !== ""
+    readonly property int parts: 1 + actionCount + (canReply ? 1 : 0)
+    onRowKeyChanged: register()
+    Component.onCompleted: register()
+    Component.onDestruction: if (root.cardItems[registered] === card) delete root.cardItems[registered]
+    property string registered: ""
+    function register() {
+      if (registered !== "" && root.cardItems[registered] === card) delete root.cardItems[registered]
+      registered = rowKey
+      if (rowKey !== "") root.cardItems[rowKey] = card
+    }
+    onFocusedChanged: if (focused) root.showItem(card)
+    function press(at) {
+      if (at <= 0) card.opened()
+      else if (at <= actionCount) card.actionPressed(String(entry.actions[at - 1].id))
+      else if (canReply) { root.beginReply(false); replyInput.forceActiveFocus() }
+    }
     signal opened()
     signal swiped()
     signal moreToggled()
@@ -921,8 +1018,9 @@ Item {
       width: card.width
       height: content.implicitHeight + Style.space(24)
       color: root.cardFill
-      border.width: root.focused ? Math.max(1, root.hairline) : root.hairline
-      border.color: card.focused ? Commons.Color.accent : root.outline
+      border.width: root.hairline
+      border.color: root.outline
+      FocusRing { visible: card.part === 0 }
       opacity: Math.max(0, 1 - Math.abs(card.swipeX) / (card.width * 0.5))
       layer.enabled: root.gpu && (card.fling !== "" || swipe.active)
 
@@ -1068,6 +1166,7 @@ Item {
               border.width: index === 0 ? 0 : root.hairline
               border.color: root.outline
               scale: actionArea.pressed && actionArea.containsMouse ? 0.96 : 1
+              FocusRing { visible: card.part === parent.index + 1 }
               Text {
                 anchors.centerIn: parent
                 width: parent.width - Style.space(12)
@@ -1102,6 +1201,7 @@ Item {
             color: Util.alpha(Commons.Color.background, 0.7)
             border.width: replyInput.activeFocus && root.typing ? Math.max(1, root.hairline) : root.hairline
             border.color: replyInput.activeFocus && root.typing ? Commons.Color.accent : root.outline
+            FocusRing { visible: card.canReply && card.part === card.parts - 1 && !(replyInput.activeFocus && root.typing) }
             TextInput {
               id: replyInput
               anchors.fill: parent

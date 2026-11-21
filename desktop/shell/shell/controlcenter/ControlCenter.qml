@@ -272,15 +272,25 @@ Item {
     { glyph: "󰝚", label: Commons.I18n.t("controlCenter.media") }
   ]
 
-  // Keyboard: the focused cell, or none until the keyboard is used.
+  // Keyboard: the focused cell, by its name, or none until the keyboard is
+  // used. By name, since a switch remakes the toggles (their list is
+  // rebuilt with every state) and the focus stays on the new cell.
   property var focusables: []
-  property int focusIndex: -1
+  property string focusKey: ""
   function registerCell(item) {
-    var list = root.focusables.slice()
+    var list = root.focusables.filter(function(c) { return !!c })
     if (list.indexOf(item) < 0) list.push(item)
     root.focusables = list
   }
-  function focusedCell() { return focusIndex >= 0 && focusIndex < focusables.length ? focusables[focusIndex] : null }
+  function unregisterCell(item) {
+    root.focusables = root.focusables.filter(function(c) { return !!c && c !== item })
+  }
+  function focusedCell() {
+    if (root.focusKey === "") return null
+    var cells = visibleCells()
+    for (var i = 0; i < cells.length; i++) if (cells[i].focusKey === root.focusKey) return cells[i]
+    return null
+  }
   // In reading order: rows top to bottom, each left to right.
   function visibleCells() {
     var cells = focusables.filter(function(c) { return c && c.visible && c.focusable })
@@ -294,7 +304,7 @@ Item {
     var cells = visibleCells()
     if (cells.length === 0) return
     var current = focusedCell()
-    if (!current || cells.indexOf(current) < 0) { root.focusIndex = focusables.indexOf(cells[0]); return }
+    if (!current) { root.focusKey = cells[0].focusKey; return }
     var a = current.mapToItem(card, current.width / 2, current.height / 2)
     var best = null, bestScore = 1e9
     for (var i = 0; i < cells.length; i++) {
@@ -307,14 +317,14 @@ Item {
       var score = along + across * 2
       if (score < bestScore) { bestScore = score; best = c }
     }
-    if (best) root.focusIndex = focusables.indexOf(best)
+    if (best) root.focusKey = best.focusKey
   }
   function stepFocus(delta) {
     var cells = visibleCells()
     if (cells.length === 0) return
     var at = cells.indexOf(focusedCell())
     var next = at < 0 ? (delta > 0 ? 0 : cells.length - 1) : (at + delta + cells.length) % cells.length
-    root.focusIndex = focusables.indexOf(cells[next])
+    root.focusKey = cells[next].focusKey
   }
 
   // ----------------------------------------------------------- lifecycle
@@ -322,7 +332,7 @@ Item {
   function prepare() {
     if (!brightnessRead.running) brightnessRead.running = true
     if (!autoRead.running) autoRead.running = true
-    root.focusIndex = -1
+    root.focusKey = ""
   }
 
   // A bar panel's popup goes first: the control center is never over one.
@@ -622,7 +632,7 @@ Item {
 
     // A pointer clears the keyboard's highlight.
     PointHandler {
-      onActiveChanged: if (active) root.focusIndex = -1
+      onActiveChanged: if (active) root.focusKey = ""
     }
 
     // Pushed up by a finger, it follows and goes away. Above the card, so it
@@ -738,6 +748,7 @@ Item {
             title: Commons.I18n.t("controlCenter.wifi")
             subtitle: root.wifiSubtitle
             on: network.wifiEnabled
+            focusKey: "wifi"
             page: "omarchy.network"
             onActivated: root.toggleWifi()
           }
@@ -748,6 +759,7 @@ Item {
             subtitle: root.bluetoothSubtitle
             on: bluetooth.enabled
             available: !!bluetooth.adapter
+            focusKey: "bluetooth"
             page: "omarchy.bluetooth"
             onActivated: root.toggleBluetooth()
           }
@@ -766,6 +778,7 @@ Item {
             available: root.brightness >= 0
             note: root.autoBrightness ? Commons.I18n.t("controlCenter.auto") : ""
             pageArrow: true
+            focusKey: "brightness"
             page: "omarchy.monitor"
             onMoved: function(v) { root.setBrightness(v * 100) }
             onLongPressed: root.openPage("omarchy.monitor")
@@ -778,6 +791,7 @@ Item {
             value: root.volume
             available: !!(root.sink && root.sink.audio)
             chip: root.outputName
+            focusKey: "volume"
             page: "omarchy.audio"
             onMoved: function(v) { root.setVolume(v) }
             onLongPressed: root.openPage("omarchy.audio")
@@ -798,6 +812,7 @@ Item {
               label: modelData.label
               on: modelData.on
               available: modelData.enabled
+              focusKey: modelData.key
               onActivated: modelData.act()
             }
           }
@@ -812,6 +827,7 @@ Item {
               // Dimmed until its backend exists; then live like the others.
               on: modelData.on === true
               available: !!modelData.act && modelData.enabled === true
+              focusKey: "later:" + modelData.label
               onActivated: if (modelData.act) modelData.act()
             }
           }
@@ -873,11 +889,14 @@ Item {
     // A cell that can't be used is skipped, unless it has a page: the page
     // says why (no adapter, no device), and Enter is the way there.
     property bool focusable: available || page !== ""
-    readonly property bool focused: root.focusables[root.focusIndex] === cell
+    // Its name for the keyboard (see focusKey).
+    property string focusKey: ""
+    readonly property bool focused: focusKey !== "" && root.focusKey === focusKey && visible
     property bool pressed: false
     signal activated()
     function activate() { if (cell.available) cell.activated() }
     Component.onCompleted: root.registerCell(cell)
+    Component.onDestruction: root.unregisterCell(cell)
     radius: Style.cornerRadius
     color: !available ? "transparent"
       : (on ? root.onFill : Style.controlFill(false, false, root.text, Commons.Color.accent))
@@ -1208,6 +1227,7 @@ Item {
       id: batteryCell
       visible: root.batteryLine !== ""
       page: "omarchy.power"
+      focusKey: "battery"
       color: "transparent"
       border.width: 0
       width: batteryRow.implicitWidth + Style.space(16)
