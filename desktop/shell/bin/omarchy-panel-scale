@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# omarchy:summary=Print the scale an Apple panel starts at, by its mode
+# omarchy:args=WIDTHxHEIGHT
+# omarchy:hidden=true
+
+# The built-in panels of the iPads, iPhones and iPod touches, each with the
+# scale iOS gives it (its points), so a screen starts at the size it has
+# under iOS. Either orientation. An unknown mode (a VM, an external monitor)
+# prints nothing and fails: callers leave such a screen alone.
+# The iPhone Plus panels: iOS draws them at 3x and shrinks the picture to the
+# panel, about 2.61 here; 2.5 is the nearest scale that splits the panel into
+# whole pixels.
+set -euo pipefail
+[[ ${1:-} =~ ^([0-9]+)x([0-9]+)$ ]] || { echo "Usage: omarchy-panel-scale WIDTHxHEIGHT" >&2; exit 2; }
+w=${BASH_REMATCH[1]} h=${BASH_REMATCH[2]}
+(( w <= h )) || { t=$w; w=$h; h=$t; }
+case ${w}x$h in
+  # iPad 2, iPad mini.
+  768x1024) echo 1 ;;
+  # iPads: 9.7" and 7.9", 10.2", 10.5", 11", 12.9", 10.9", 8.3", 11" and 13" (M4).
+  1536x2048 | 1620x2160 | 1668x2224 | 1668x2388 | 2048x2732 | 1640x2360 | 1488x2266 | 1668x2420 | 2064x2752) echo 2 ;;
+  # iPhone 4s; iPhone 5 to SE and iPod touch 5 to 7; iPhone 6 to 8 and SE 2/3; iPhone XR and 11.
+  640x960 | 640x1136 | 750x1334 | 828x1792) echo 2 ;;
+  # iPhone 6 Plus to 8 Plus.
+  1080x1920) echo 2.5 ;;
+  # iPhone X to 16 and their Max, Pro and mini models.
+  1125x2436 | 1242x2688 | 1080x2340 | 1170x2532 | 1284x2778 | 1179x2556 | 1290x2796 | 1206x2622 | 1320x2868) echo 3 ;;
+  *) exit 1 ;;
+esac

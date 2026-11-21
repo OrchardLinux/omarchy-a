@@ -18,7 +18,8 @@ class MenuToggleTests(unittest.TestCase):
         # An iPad's panel unless a test says otherwise (the host's own is not asked).
         self.drm = self.home / 'drm'
         self.panel('1536x2048')
-        self.env = {**os.environ, 'HOME': str(self.home), 'OMARCHY_DRM_ROOT': str(self.drm)}
+        self.env = {**os.environ, 'HOME': str(self.home), 'OMARCHY_DRM_ROOT': str(self.drm),
+                    'PATH': f'{BIN}:{os.environ["PATH"]}'}
 
     def panel(self, mode):
         modes = self.drm / 'card0-DSI-1/modes'
@@ -89,6 +90,14 @@ class MenuToggleTests(unittest.TestCase):
         settings.write_text('750x1334\t60\t1\tDSI-1\n')
         self.run_bin('omarchy-toggle-maximize-windows', '--apply')
         self.assert_maximizes(rules)
+
+    def test_a_3x_iphone_is_a_phone_at_its_own_scale(self):
+        # 1125 wide is a tablet at 2, but the iPhone X starts at 3: 375.
+        rules = self.home / '.local/state/omarchy/xdg-config/labwc/rc.xml'
+        self.panel('1125x2436')
+        result = self.run_bin('omarchy-toggle-maximize-windows', '--apply')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_maximizes(rules, phone=True)
 
     def test_the_on_flag_from_before_the_default_goes(self):
         legacy = self.home / '.local/state/omarchy/toggles/maximize-windows'

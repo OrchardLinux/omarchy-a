@@ -158,7 +158,7 @@ class ScaleOutput(unittest.TestCase):
                 (state / 'omarchy/monitors').mkdir(parents=True)
                 (state / 'omarchy/monitors/settings').write_text(settings)
             log = root / 'randr.log'
-            env = {**os.environ, 'PATH': f'{stubs}:{os.environ["PATH"]}', 'XDG_STATE_HOME': str(state),
+            env = {**os.environ, 'PATH': f'{stubs}:{BIN}:{os.environ["PATH"]}', 'XDG_STATE_HOME': str(state),
                    'RANDR_LOG': str(log), 'RANDR_TEXT': str(text)}
             subprocess.run([BASH, str(SCALE_OUTPUT)], env=env, check=True, capture_output=True)
             return log.read_text().splitlines() if log.exists() else []
@@ -166,6 +166,12 @@ class ScaleOutput(unittest.TestCase):
     def test_nothing_saved_scales_the_native_panel_by_two(self):
         self.assertEqual(self.run_script(), ['--output Unknown-1 --scale 2'])
         self.assertEqual(self.run_script(settings='\t\t1.6\t\tDP-1\n'), ['--output Unknown-1 --scale 2'])
+
+    def test_every_apple_panel_starts_at_its_ios_scale(self):
+        # The iPod touch 6 (640x1136) was missing and stayed at 1.
+        for mode, scale in (('640x1136', '2'), ('1136x640', '2'), ('640x960', '2'), ('2224x1668', '2'),
+                            ('2048x2732', '2'), ('768x1024', '1'), ('1080x1920', '2.5'), ('1125x2436', '3')):
+            self.assertEqual(self.run_script(mode=mode), [f'--output Unknown-1 --scale {scale}'], mode)
 
     def test_the_saved_scale_for_the_panel_wins(self):
         self.assertEqual(self.run_script(mode='2160x1620', settings='\t\t1.66667\t\tUnknown-1\n'),
