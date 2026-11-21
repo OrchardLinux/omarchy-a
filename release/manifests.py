@@ -47,7 +47,8 @@ def write(output, version, root, offered, orchard, *, architecture='aarch64'):
     # The tablet user gets the password and the lock-screen PIN at install. The
     # installer waits over this boot's SSH for the session's ready record: its
     # lock, the PIN screen, is on.
-    document += table('install', {'default_root': '/omarchy',
+    # base: the root's package manager, which installs orchard's kernel as its package.
+    document += table('install', {'default_root': '/omarchy', 'base': 'pacman',
                                   'ready': '/run/omarchy-session/ready.json'})
     document += table('install.account', {'user': 'tablet', 'password': True, 'pin': True,
                                           'passwordless_sudo': False})
