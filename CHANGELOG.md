@@ -22,6 +22,8 @@ is missing or empty.
 - The lock and login screen have a new look: a large clock over the
   wallpaper, six PIN slots and the shell's own keypad, and a wrong PIN shown
   in red without anything moving.
+- After a new install, the first lock screen stays lit for ten minutes
+  instead of going dark after 30 seconds; later locks dim as before.
 - The Home button responds to every press: it no longer depends on what the
   keyboard is doing.
 - No more separate login screen: the tablet boots straight to the lock, the

@@ -32,6 +32,13 @@ Item {
   readonly property bool startLocked: Quickshell.env("OMARCHY_START_LOCKED") === "1"
   property bool startLockTaken: false
   property bool startupLifted: false
+  // Orchard: the lock a new install first starts with stays lit for ten minutes,
+  // so the first sight of the system is not a panel going dark after 30 s. It
+  // lasts until the first unlock, which leaves a mark in the state directory.
+  readonly property string firstLockMark: stateHome + "/omarchy/first-lock-done"
+  readonly property int firstLockMs: 600000
+  property bool firstLock: false
+  onFirstLockChanged: if (firstLock && lockRequested) armBlankTimer()
   readonly property var idleService: shell ? shell.firstPartyServiceFor("omarchy.idle") : null
   readonly property bool stayAwake: idleService ? idleService.stayAwake === true : false
   readonly property var notificationService: shell ? shell.firstPartyServiceFor("omarchy.notifications") : null
@@ -258,12 +265,17 @@ Item {
     idleBlankTimer.stop()
     sessionLock.locked = false
     logEvent("unlocked")
+    if (firstLock) {
+      firstLock = false
+      firstLockDone.running = true
+    }
     if (!unlockedProcess.running) unlockedProcess.running = true
     runWake()
   }
 
   function armBlankTimer(delayMs) {
-    idleBlankTimer.interval = delayMs || idleBlankTimer.idleMs
+    var interval = delayMs || idleBlankTimer.idleMs
+    idleBlankTimer.interval = firstLock ? Math.max(interval, firstLockMs) : interval
     idleBlankTimer.armedAt = Date.now()
     idleBlankTimer.restart()
   }
@@ -891,6 +903,19 @@ Item {
     if (!lockRequested) return
     if (authenticatingPassword) idleBlankTimer.stop()
     else armBlankTimer()
+  }
+
+  // Only the session's start lock can be the first; the mark ends it for good.
+  FileView {
+    path: root.startLocked ? root.firstLockMark : ""
+    printErrors: false
+    onLoaded: root.firstLock = false
+    onLoadFailed: root.firstLock = root.startLocked
+  }
+
+  Process {
+    id: firstLockDone
+    command: ["sh", "-c", "mkdir -p \"${1%/*}\" && : > \"$1\"", "sh", root.firstLockMark]
   }
 
   FileView {

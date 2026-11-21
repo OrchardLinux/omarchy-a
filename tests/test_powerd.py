@@ -521,6 +521,15 @@ class Integration(unittest.TestCase):
         self.assertIn('"1" ? 30000 : 5000', lock)
         self.assertEqual(powerd.SETTLE_SECONDS, 10.0)
 
+    def test_a_new_installs_first_lock_stays_lit_ten_minutes_until_its_first_unlock(self):
+        lock = (PROJECT / 'desktop/shell/shell/plugins/lock/Service.qml').read_text()
+        self.assertIn('readonly property int firstLockMs: 600000', lock)
+        self.assertIn('stateHome + "/omarchy/first-lock-done"', lock)
+        self.assertIn('path: root.startLocked ? root.firstLockMark : ""', lock)
+        self.assertIn('firstLock ? Math.max(interval, firstLockMs) : interval', lock)
+        unlock = lock[lock.index('function finishUnlock()'):]
+        self.assertIn('firstLockDone.running = true', unlock[:unlock.index('\n  }\n')])
+
     def test_the_daemon_is_enabled_and_executable(self):
         from package_tree import system_files
         self.assertIn("'omarchy-powerd.service'", (PROJECT / 'release/public_root.py').read_text())
