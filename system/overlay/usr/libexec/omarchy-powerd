@@ -692,7 +692,7 @@ class Daemon:
         panel = self.backlight()
         if self.dim_saved is not None and panel:
             current = int((panel / 'brightness').read_text())
-            if self.machine.state == ON and current == self.dim_level:
+            if self.machine.state == ON:
                 (panel / 'brightness').write_text(f'{self.dim_saved}\n')
         self.dim_saved = self.dim_level = None
 
@@ -994,8 +994,9 @@ class Daemon:
                 elif request == 'dim':
                     panel = self.backlight()
                     if self.machine.state == ON and self.dim_saved is None and panel:
+                        # Half the panel's range, never brighter than it is.
                         current = int((panel / 'brightness').read_text())
-                        level = max(1, int((panel / 'max_brightness').read_text()) // 10)
+                        level = max(1, int((panel / 'max_brightness').read_text()) // 2)
                         if current > level:
                             self.dim_saved, self.dim_level = current, level
                             (panel / 'brightness').write_text(f'{level}\n')

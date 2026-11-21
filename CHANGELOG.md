@@ -24,6 +24,9 @@ is missing or empty.
   in red without anything moving.
 - After a new install, the first lock screen stays lit for ten minutes
   instead of going dark after 30 seconds; later locks dim as before.
+- Before the screen locks after five idle minutes, it dims to half brightness
+  only for the last ten seconds, instead of to 10 % for the last two
+  minutes, and any touch brings the brightness back.
 - The Home button responds to every press: it no longer depends on what the
   keyboard is doing.
 - No more separate login screen: the tablet boots straight to the lock, the

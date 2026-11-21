@@ -894,15 +894,26 @@ class EventLoop(unittest.TestCase):
         self.assertEqual(spawned[0][0][1:], ('omarchy-home-button',))
         self.assertEqual(self.ask('status'), 'ON')
 
-    def test_idle_dim_restore_and_manual_brightness_supersedes_dim(self):
+    def test_idle_dim_halves_the_range_and_any_input_restores_the_level(self):
         self.assertEqual(self.ask('dim'), 'ok')
-        self.assertEqual(self.brightness(), '300')
+        self.assertEqual(self.brightness(), '1500')
         self.assertEqual(self.ask('als-state'), 'dark')
-        self.assertEqual(self.ask('brightness panel 600 300'), 'held')
+        self.assertEqual(self.ask('brightness panel 600 1500'), 'held')
         self.ask('undim'); self.assertEqual(self.brightness(), '1563')
+        # A level changed while dimmed is still restored: a touch must never leave the panel dim.
         self.ask('dim')
         (self.panel / 'brightness').write_text('700\n')
-        self.ask('undim'); self.assertEqual(self.brightness(), '700')
+        self.ask('undim'); self.assertEqual(self.brightness(), '1563')
+
+    def test_idle_dim_never_brightens_a_panel_already_at_half_or_below(self):
+        (self.panel / 'brightness').write_text('900\n')
+        self.assertEqual(self.ask('dim'), 'ok')
+        self.assertEqual(self.brightness(), '900')
+        self.ask('undim'); self.assertEqual(self.brightness(), '900')
+
+    def test_the_idle_dim_comes_ten_seconds_before_the_lock(self):
+        idle = (PROJECT / 'desktop/shell/shell/plugins/services/idle/Service.qml').read_text()
+        self.assertIn('timeout: Math.max(1, root.lockTimeoutSeconds - 10)', idle)
 
     def test_automatic_brightness_obeys_power_state_and_manual_changes(self):
         self.assertEqual(self.ask('brightness panel 1800 1563'), 'ok')
