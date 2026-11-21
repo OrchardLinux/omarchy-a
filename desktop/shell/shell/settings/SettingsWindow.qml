@@ -102,7 +102,7 @@ FloatingWindow {
   property bool navPhone: false
   property var navPicture: null
   function navigate(direction, change) {
-    if (!win.gpu || direction === 0 || content.width <= 0 || navAnim.running || navWait.running) {
+    if (!win.gpu || direction === 0 || content.width <= 0 || navAnim.running || navWait.running || win.navHeld) {
       if (navAnim.running) navAnim.complete()
       change()
       return
@@ -134,14 +134,27 @@ FloatingWindow {
       win.navChange()
       win.navChange = null
       win.navT = 0
+      // A page still reading what it shows comes in once it has it: the old
+      // one stays put till then.
+      if (win.holdPage) { win.navHeld = true; return }
       navAnim.restart()
     }
   }
+  property bool navHeld: false
+  // A native page with data to read (About's facts, the themes) is shown
+  // only once it has them, or half a second on, so it never comes in short
+  // and then grows.
+  readonly property bool pageReady: !nativeLoader.item || nativeLoader.item.ready !== false
+  property bool holdPage: false
+  onPageReadyChanged: if (pageReady) holdPage = false
+  onHoldPageChanged: if (!holdPage && navHeld) { navHeld = false; navAnim.restart() }
+  Timer { id: readyCap; interval: 500; onTriggered: win.holdPage = false }
   NumberAnimation {
     id: navAnim
     target: win; property: "navT"; from: 0; to: 1
     duration: Style.duration(340)
     easing.type: Easing.OutCubic
+    onStopped: win.navHeld = false
     onFinished: {
       if (win.navPicture) { win.navPicture.visible = false; win.navPicture.sourceItem = null }
       win.navPicture = null
@@ -375,7 +388,7 @@ FloatingWindow {
   // ---------------------------------------------------------------- layout
 
   // The old page during a transition: under the new one going forward, over
-  // it going back; a shade deepens on it as it moves under.
+  // it going back, fading as it goes.
   ShaderEffectSource {
     id: shot
     visible: false
@@ -386,11 +399,6 @@ FloatingWindow {
     opacity: Math.max(0.01, 1 - win.navT)
     z: win.navDirection < 0 ? 2 : -1
     transform: Translate { x: win.slideOld }
-    Rectangle {
-      anchors.fill: parent
-      color: "black"
-      opacity: win.navDirection > 0 ? 0.18 * win.navT : 0
-    }
   }
 
   Item {
@@ -654,11 +662,6 @@ FloatingWindow {
         opacity: Math.max(0.01, 1 - win.navT)
         z: win.navDirection < 0 ? 2 : 0
         transform: Translate { x: win.slideOld }
-        Rectangle {
-          anchors.fill: parent
-          color: "black"
-          opacity: win.navDirection > 0 ? 0.18 * win.navT : 0
-        }
       }
 
       Item {
@@ -683,6 +686,8 @@ FloatingWindow {
             y: win.pad
             width: parent.width - win.pad * 2
             spacing: Style.space(14)
+            // Shown in place (a wide window's section) only with its data in.
+            opacity: win.holdPage && win.navDirection === 0 ? 0 : 1
 
             // Back and the title. On a phone the back reads "‹ Settings" at
             // the top of a section.
@@ -781,7 +786,9 @@ FloatingWindow {
             }
 
             Loader {
+              id: nativeLoader
               width: parent.width
+              onLoaded: if (!win.pageReady) { win.holdPage = true; readyCap.restart() }
               active: win.nativePage !== ""
               visible: active
               sourceComponent: win.nativePage === "theme" ? themePage
@@ -789,6 +796,7 @@ FloatingWindow {
                 : win.nativePage === "icons" ? iconsPage
                 : win.nativePage === "about" ? aboutPage
               : win.nativePage === "wifi" ? wifiPage
+              : win.nativePage === "wifinetwork" ? wifiNetworkPage
               : win.nativePage === "bluetooth" ? bluetoothPage
               : win.nativePage === "sound" ? soundPage
               : win.nativePage === "display" ? displayPage
@@ -1076,5 +1084,6 @@ FloatingWindow {
   Component { id: displayPage; DisplayPage { settings: win } }
   Component { id: dateTimePage; DateTimePage { settings: win } }
   Component { id: timezonePage; TimezonePage { settings: win } }
+  Component { id: wifiNetworkPage; WifiNetworkPage { settings: win } }
   Component { id: shortcutsPage; ShortcutsPage { settings: win } }
 }

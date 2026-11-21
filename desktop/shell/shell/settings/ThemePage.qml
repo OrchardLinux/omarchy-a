@@ -11,6 +11,8 @@ Item {
   id: page
 
   property var settings: null
+  // Its data read: Settings shows it (and slides it in) only then.
+  property bool ready: false
   property var themes: []
   property string current: ""
 
@@ -48,6 +50,7 @@ Item {
         out.push({ slug: parts[1], name: Model.displayName(parts[1]), colors: Model.parseColors((parts[2] || "").split(";").join("\n")) })
       }
       page.themes = out
+      page.ready = true
     }
   }
 

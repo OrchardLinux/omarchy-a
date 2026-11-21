@@ -6,6 +6,8 @@ import qs.Commons
 // The control center's button: one click opens it as a popup, as the bar's
 // other icons open theirs (a finger pulls it down from the top right). The bar's other icons stay
 // upstream's, each opening its own panel.
+// Not on the default bar (a finger pulls the center down, the keyboard has
+// Super+Ctrl+1); a user can still add "ipadlinux.controlcenter" to their layout.
 BarWidget {
   id: root
   moduleName: "ipadlinux.controlcenter"

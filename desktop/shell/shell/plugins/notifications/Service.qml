@@ -974,11 +974,13 @@ Item {
     if (!liveKeys[key]) return
     releaseLive(key)
     release(key, reason)
+    // A placeholder (the empty-history notice) was never recorded.
+    // Orchard: recorded before the row goes, so the notification center,
+    // which lists both, never sees it in neither.
+    if (key.indexOf("placeholder") !== 0) storeClose(key, reason)
     if (at >= 0) toasts.remove(at)
     delete heights[key]
     delete fresh[key]
-    // A placeholder (the empty-history notice) was never recorded.
-    if (key.indexOf("placeholder") !== 0) storeClose(key, reason)
     layoutRevision += 1
   }
 
@@ -1406,7 +1408,10 @@ Item {
     for (var i = 0; i < toasts.count; i++) {
       var live = toasts.get(i)
       var key = String(live.key)
-      if (leaving[key] || key.indexOf("placeholder") === 0) continue
+      // A banner on its way out stays listed unless it is done with: one
+      // that timed out goes on to history under the same key, and dropping
+      // it for its exit made it blink out and back.
+      if ((leaving[key] && centerDone[leaving[key]]) || key.indexOf("placeholder") === 0) continue
       seen[key] = true
       out.push({ key: key, live: true, app: String(live.app || ""), appIcon: String(live.appIcon || ""),
                  glyph: String(live.glyph || ""), source: String(live.source || ""),

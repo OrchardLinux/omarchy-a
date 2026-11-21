@@ -255,6 +255,8 @@ Item {
   property bool pulling: false
   property bool touchSpent: false
   property real pullFrom: 0
+  // Where the finger is, as a reveal (past 1 the sheet only stretches).
+  property real pullRaw: 0
   readonly property real pullSpan: Math.max(1, root.barInset + Math.min(content.height, root.screenHeight - root.barInset))
 
   function beginPull() {
@@ -269,11 +271,13 @@ Item {
       root.mapped = true
     }
     root.pullFrom = root.reveal
+    root.pullRaw = root.reveal
     root.pulling = true
   }
   function pullTo(distance) {
     if (!root.pulling) return
     var r = root.pullFrom + distance / root.pullSpan
+    root.pullRaw = r
     if (r > 1) r = 1 + (1 - 1 / (1 + (r - 1) * 2)) * 0.08
     root.reveal = Math.max(0, r)
   }
@@ -284,7 +288,11 @@ Item {
     var keep = velocity > flick || (velocity > -flick && root.reveal > 0.4)
     root.closingFromOpen = !keep && root.pullFrom > 0.5
     root.opened = keep
-    root.settle(keep ? 1 : 0, velocity / root.pullSpan)
+    // Stretched past open, the sheet moves a fraction of the finger: so does
+    // the speed it is let go with, or it would jump further out first.
+    var speed = velocity / root.pullSpan
+    if (root.pullRaw > 1) speed *= 0.16 / Math.pow(1 + (root.pullRaw - 1) * 2, 2)
+    root.settle(keep ? 1 : 0, speed)
     if (keep) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -324,7 +332,7 @@ Item {
 
   // ------------------------------------------------------------ keyboard
 
-  // Rows, top to bottom: the header (Focus, Clear all), then each card, an
+  // Rows, top to bottom: the header (Clear all), then each card, an
   // open stack's all. Up and Down go between rows, Left and Right along one
   // (a card, then its buttons and its reply field). Enter opens or presses,
   // Space opens or closes a stack, Delete clears a card, Escape closes.
@@ -334,7 +342,8 @@ Item {
   property int focusCol: 0
   property int lastRowIndex: 0
   readonly property var focusRows: {
-    var rows = ["header"]
+    // Clear all only with something to clear.
+    var rows = root.groups.length > 0 ? ["header"] : []
     for (var i = 0; i < root.groups.length; i++) {
       var g = root.groups[i]
       if (!g.rows.length) continue
@@ -352,12 +361,13 @@ Item {
   // The cards on screen, by key, for what only a card knows (its buttons).
   property var cardItems: ({})
   function rowParts(row) {
-    if (row === "header") return root.groups.length > 0 ? 2 : 1
+    if (row === "header") return 1
     var card = root.cardItems[row]
     return card ? card.parts : 1
   }
   function moveRow(step) {
     var rows = root.focusRows
+    if (!rows.length) return
     var at = rows.indexOf(root.focusRow)
     var next = at < 0 ? (step > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, at + step))
     root.lastRowIndex = next
@@ -377,7 +387,7 @@ Item {
   }
   function activateFocused(space) {
     if (root.focusRow === "header") {
-      if (root.focusCol === 0) root.toggleFocus(); else root.clearAll()
+      root.clearAll()
       return
     }
     var found = root.groupOf(root.focusRow)
@@ -405,8 +415,6 @@ Item {
 
   // ------------------------------------------------------------ actions
 
-  readonly property bool focusOn: !!service && service.doNotDisturb === true
-  function toggleFocus() { if (service) service.setDoNotDisturb(!root.focusOn) }
   function clearAll() { if (service) service.clearCenter() }
   function openEntry(entry) {
     if (!service || !entry) return
@@ -648,7 +656,7 @@ Item {
               NumberAnimation { properties: "y"; duration: Style.duration(320); easing.type: Easing.Bezier; easing.bezierCurve: Style.easeOut }
             }
 
-            // The header: Focus (Do Not Disturb) and Clear all.
+            // The header: the title and Clear all (Focus is the control center's).
             Item {
               width: parent.width
               height: Math.max(heading.implicitHeight, headerButtons.height)
@@ -668,16 +676,9 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Style.space(8)
                 HeaderButton {
-                  glyph: "󰽥"
-                  label: root.focusOn ? I18n.t("notificationCenter.focusOn") : I18n.t("notificationCenter.focusOff")
-                  lit: root.focusOn
-                  focused: root.focusRow === "header" && root.focusCol === 0
-                  onActivated: root.toggleFocus()
-                }
-                HeaderButton {
                   label: I18n.t("notificationCenter.clearAll")
                   enabled: root.groups.length > 0
-                  focused: root.focusRow === "header" && root.focusCol === 1
+                  focused: root.focusRow === "header"
                   onActivated: root.clearAll()
                 }
               }
@@ -893,44 +894,29 @@ Item {
     }
   }
 
-  // A small outlined button of the header; lit in the accent while on.
+  // A small outlined button of the header.
   component HeaderButton: Rectangle {
     id: button
-    property string glyph: ""
     property string label: ""
-    property bool lit: false
     property bool focused: false
     signal activated()
-    width: buttonRow.implicitWidth + Style.space(20)
+    width: buttonLabel.implicitWidth + Style.space(20)
     height: Style.space(30)
-    color: lit ? Util.alpha(Commons.Color.accent, 0.18) : "transparent"
+    color: "transparent"
     border.width: root.hairline
     border.color: root.outline
     opacity: enabled ? 1 : 0.45
     onFocusedChanged: if (focused) root.showItem(button)
     FocusRing { visible: button.focused }
     scale: buttonArea.pressed && buttonArea.containsMouse ? 0.96 : 1
-    Row {
-      id: buttonRow
+    Text {
+      id: buttonLabel
       anchors.centerIn: parent
-      spacing: Style.space(6)
-      Text {
-        visible: button.glyph !== ""
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: button.glyph
-        color: button.lit ? Commons.Color.accent : root.dim
-        font.family: Style.font.family
-        font.pixelSize: Style.font.body
-      }
-      Text {
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: button.label
-        color: button.lit ? Commons.Color.accent : root.text
-        font.family: Style.font.family
-        font.pixelSize: Style.font.body
-      }
+      textFormat: Text.PlainText
+      text: button.label
+      color: root.text
+      font.family: Style.font.family
+      font.pixelSize: Style.font.body
     }
     MouseArea {
       id: buttonArea
