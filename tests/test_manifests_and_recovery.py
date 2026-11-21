@@ -61,6 +61,18 @@ class Publication(unittest.TestCase):
             path.write_text(path.read_text() + '# modified\n')
             self.assertNotEqual(index['release']['sha256'], manifests.receipt(path)['sha256'])
 
+    def test_orchards_board_data_is_pinned_when_offered(self):
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            root, offered = release_files(Path(first))
+            path = manifests.write(Path(first), 'test-1', root, offered, ORCHARD)
+            self.assertNotIn('board_data', manifests.tomllib.loads(path.read_text()))
+            output = Path(second)
+            root, offered = release_files(output)
+            (output / 'board-data.tar.gz').write_bytes(b'boards')
+            offered['board_data'] = manifests.receipt(output / 'board-data.tar.gz')
+            path = manifests.write(output, 'test-2', root, offered, ORCHARD)
+            self.assertEqual(manifests.tomllib.loads(path.read_text())['board_data'], offered['board_data'])
+
     def test_another_distro_is_not_accepted_by_omarchy_auditor_adapter(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'manifest.toml'

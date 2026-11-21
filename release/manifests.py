@@ -63,6 +63,8 @@ def write(output, version, root, offered, orchard, *, architecture='aarch64'):
         for board, row in sorted(offered['loaders']['cascadia'].items()):
             document += table(f'cascadia.{board}', row)
     document += table('install_tools', offered['install_tools'])
+    if 'board_data' in offered:     # orchard's board data, for installers that read only the release
+        document += table('board_data', offered['board_data'])
     for name, layer in sorted(offered['platforms'].items()):
         document += f'\n[platforms.{name}]\nboards = {json.dumps(layer["boards"])}\n'
         document += table(f'platforms.{name}.layer', {key: value for key, value in layer.items() if key != 'boards'})
