@@ -281,7 +281,15 @@ Item {
     root.focusables = list
   }
   function focusedCell() { return focusIndex >= 0 && focusIndex < focusables.length ? focusables[focusIndex] : null }
-  function visibleCells() { return focusables.filter(function(c) { return c && c.visible && c.focusable }) }
+  // In reading order: rows top to bottom, each left to right.
+  function visibleCells() {
+    var cells = focusables.filter(function(c) { return c && c.visible && c.focusable })
+    var at = function(c) { return c.mapToItem(card, 0, 0) }
+    return cells.sort(function(a, b) {
+      var p = at(a), q = at(b)
+      return Math.abs(p.y - q.y) > 4 ? p.y - q.y : p.x - q.x
+    })
+  }
   function moveFocus(dx, dy) {
     var cells = visibleCells()
     if (cells.length === 0) return
@@ -870,8 +878,20 @@ Item {
     scale: pressed ? 0.96 : 1
     Behavior on scale { NumberAnimation { duration: Style.duration(120); easing.type: Easing.OutCubic } }
     border.width: Math.max(1, Style.space(1))
-    border.color: focused ? Commons.Color.accent : (on && available ? root.onFill : Style.normalBorderColor)
+    border.color: on && available ? root.onFill : Style.normalBorderColor
     opacity: available ? 1 : 0.45
+    // The keyboard's place: a ring just outside the cell, clear of its fill
+    // (a lit tile is the accent itself) and of its border.
+    Rectangle {
+      z: 100
+      visible: cell.focused
+      anchors.fill: parent
+      anchors.margins: -Style.space(4)
+      radius: cell.radius > 0 ? cell.radius + Style.space(4) : 0
+      color: "transparent"
+      border.width: Math.max(2, Style.space(2))
+      border.color: Commons.Color.accent
+    }
   }
 
   component Tile: Cell {
@@ -1028,17 +1048,21 @@ Item {
     onActivated: slider.longPressed()
     function adjust(delta) { if (slider.available) slider.moved(Math.max(0, Math.min(1, slider.value + delta))) }
     color: Style.controlFill(false, false, root.text, Commons.Color.accent)
-    clip: true
     scale: drag.holding ? 0.96 : 1
     Behavior on scale { NumberAnimation { duration: Style.duration(140); easing.type: Easing.OutCubic } }
 
-    Rectangle {
-      x: 0
-      y: slider.vertical ? parent.height * (1 - slider.value) : 0
-      width: slider.vertical ? parent.width : parent.width * slider.value
-      height: slider.vertical ? parent.height * slider.value : parent.height
-      color: root.text
-      opacity: 0.85
+    // The level, clipped to the cell (the focus ring lies outside it).
+    Item {
+      anchors.fill: parent
+      clip: true
+      Rectangle {
+        x: 0
+        y: slider.vertical ? parent.height * (1 - slider.value) : 0
+        width: slider.vertical ? parent.width : parent.width * slider.value
+        height: slider.vertical ? parent.height * slider.value : parent.height
+        color: root.text
+        opacity: 0.85
+      }
     }
 
     Text {
@@ -1178,7 +1202,7 @@ Item {
       visible: root.batteryLine !== ""
       page: "omarchy.power"
       color: "transparent"
-      border.width: focused ? Math.max(1, Style.space(1)) : 0
+      border.width: 0
       width: batteryRow.implicitWidth + Style.space(16)
       height: parent.height
       onActivated: root.openPage("omarchy.power")
