@@ -18,6 +18,10 @@ is missing or empty.
 - Every iPad, iPhone and iPod touch screen now starts at the size it has
   under iOS. Before, only the iPad 6, iPad 7 and iPhone 7 did; on the others,
   such as the iPod touch 6, everything was drawn at half size.
+- On a phone held upright, the on-screen keyboard has ten keys across as on
+  iOS, under a short row of Esc, Tab, Ctrl, Alt and the arrows. 123 holds the
+  digits and common symbols, and #+= the rest, plus Home, End, Page Up/Down
+  and Delete.
 - A new launcher replaces the app grid: Home, Super and the bar's logo open
   apps, actions and (on a phone) the system controls in swipeable tabs, with
   search, recent apps and files, long-press app menus and full keyboard
