@@ -17,7 +17,8 @@ rules=$HOME/.local/state/omarchy/xdg-config/labwc/rc.xml
 
 # A phone: the panel's short side under 480 logical pixels (the shell's
 # narrow bar), at the scale omarchy-hyprland-monitor-persist saved for it,
-# else 2 (as scale-output). Read from the kernel: at login labwc is not up.
+# else the panel's own (omarchy-panel-scale, as scale-output), else 2. Read
+# from the kernel: at login labwc is not up.
 phone() {
   local modes mode short scale=2 settings
   for modes in "${OMARCHY_DRM_ROOT:-/sys/class/drm}"/card*-*/modes; do
@@ -25,6 +26,7 @@ phone() {
     mode=$(head -1 "$modes")
     [[ $mode =~ ^([0-9]+)x([0-9]+) ]] || continue
     short=$(( BASH_REMATCH[1] < BASH_REMATCH[2] ? BASH_REMATCH[1] : BASH_REMATCH[2] ))
+    scale=$(omarchy-panel-scale "${BASH_REMATCH[1]}x${BASH_REMATCH[2]}" 2>/dev/null) || scale=2
     settings=$HOME/.local/state/omarchy/monitors/settings
     if [[ -r $settings ]]; then
       local saved

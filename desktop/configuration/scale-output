@@ -1,19 +1,19 @@
 #!/bin/bash
-# Scale the single native panel (the iPads' and the iPhone 7's), accepting both
-# current/preferred flag lists.
+# Scale the single built-in panel of an iPad, iPhone or iPod touch, accepting
+# both current/preferred flag lists.
 # Never change its timing or force the VM's Virtual-1 mode.
 # The scale is the one omarchy-hyprland-monitor-persist saved for this output
 # (upstream Omarchy's monitors/settings file, scale in the third field, the
-# output last), else 2.
+# output last), else the one iOS gives that panel (omarchy-panel-scale).
 set -euo pipefail
 state=$(wlr-randr)
 mapfile -t outputs < <(awk '/^[^[:space:]]/ {print $1}' <<< "$state")
+mode=$(awk '/^[[:space:]]+[0-9]+x[0-9]+ px, .*current/ {print $1; exit}' <<< "$state")
 if (( ${#outputs[@]} != 1 )) || ! grep -q '  Enabled: yes' <<< "$state" ||
-   ! grep -Eq '^[[:space:]]+(1536x2048|2048x1536|1620x2160|2160x1620|750x1334|1334x750) px, .*current' <<< "$state"; then
+   ! scale=$(omarchy-panel-scale "${mode:-none}" 2>/dev/null); then
   echo 'Native single-panel mode not established; left scale unchanged' >&2
   exit 0
 fi
-scale=2
 settings="${XDG_STATE_HOME:-${HOME:-}/.local/state}/omarchy/monitors/settings"
 if [[ -r $settings ]]; then
   saved=$(awk -F'\t' -v output="${outputs[0]}" '$NF == output { scale = $3 } END { print scale }' "$settings")
