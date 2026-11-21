@@ -50,6 +50,20 @@ const specs = M.menuSpecs(ctx(), 'appearance.top-bar.indicators');
 assert.deepEqual(specs[0], { toggle: ['appearance.top-bar.indicators.battery-percentage-on', 'appearance.top-bar.indicators.battery-percentage-off'] });
 ''')
 
+    def test_a_page_whose_rows_are_all_hidden_is_dimmed(self):
+        # Touchpad Haptics on anything but a Dell XPS: every level's guard says no.
+        self.run_node(r'''
+const id = 'trigger.hardware.touchpad-haptics';
+const kids = menu.itemOrder.filter(k => menu.items[k].parent === id);
+assert.ok(kids.length > 0);
+const hidden = {}; for (const k of kids) hidden[k] = false;
+assert.equal(M.resolveRow({ entry: id }, ctx({ whenResults: hidden }), {}).available, false);
+// Unanswered yet, or with one level shown, it opens.
+assert.equal(M.resolveRow({ entry: id }, ctx(), {}).available, true);
+hidden[kids[0]] = true;
+assert.equal(M.resolveRow({ entry: id }, ctx({ whenResults: hidden }), {}).available, true);
+''')
+
     def test_a_row_whose_command_is_missing_is_dimmed_and_tagged(self):
         self.run_node(r'''
 const gaps = { toggle: ['appearance.windows.gaps-on', 'appearance.windows.gaps-off'] };

@@ -166,8 +166,10 @@ function resolveRow(spec, ctx, providers, t) {
   if (!entry || !shown(ctx, entry)) return null
   var all = entryText(ctx, entry, providers)
   var gone = missingIn(ctx, all)
-  // A submenu works as long as something in it does.
-  var available = gone.length === 0 || (entry.kind === "menu" && !entry.provider && submenuWorks(ctx, entry, providers))
+  // A submenu works as long as something in it does, and only then: one
+  // whose rows are all hidden (no touchpad, say) would open an empty page.
+  var submenu = entry.kind === "menu" && !entry.provider
+  var available = submenu ? submenuWorks(ctx, entry, providers) : gone.length === 0
   var row = {
     key: key, entry: entry, label: entry.label, icon: entry.icon || "", iconFont: entry.iconFont || "",
     value: values[key] || "", available: available, tag: available ? "" : tagFor(gone, all, ctx),
