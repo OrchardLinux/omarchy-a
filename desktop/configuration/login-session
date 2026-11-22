@@ -50,11 +50,16 @@ if [[ -n $gpu ]]; then
   done
   gpu_desktop=(WLR_RENDERER=gles2 "WLR_RENDER_DRM_DEVICE=/dev/dri/${gpu##*/}"
     MESA_LOADER_DRIVER_OVERRIDE=zink PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1)
-  # The display's card cannot scan out a buffer the GPU drew (simpledrm takes
-  # no dma-buf), so wlroots' direct scan-out of a fullscreen client fails, and
-  # on simpledrm that client was then never shown: always composite.
   if [[ -n $display ]]; then
-    gpu_desktop+=("WLR_DRM_DEVICES=$display" WLR_SCENE_DISABLE_DIRECT_SCANOUT=1)
+    gpu_desktop+=("WLR_DRM_DEVICES=$display")
+    # simpledrm cannot scan out a buffer the GPU drew (it takes no dma-buf), so
+    # wlroots' direct scan-out of a fullscreen client fails, and that client
+    # was then never shown: always composite there. A display driver that
+    # imports the GPU's buffers keeps direct scan-out.
+    display_driver=$(basename "$(readlink -f "/sys/class/drm/${display##*/}/device/driver")")
+    if [[ $display_driver == simple-framebuffer || $display_driver == simpledrm ]]; then
+      gpu_desktop+=(WLR_SCENE_DISABLE_DIRECT_SCANOUT=1)
+    fi
   fi
   if [[ ! -e /usr/share/vulkan/icd.d/powervr_mesa_icd.json ]]; then
     gpu_verdict='software desktop: this image has no Vulkan driver for the GPU'
