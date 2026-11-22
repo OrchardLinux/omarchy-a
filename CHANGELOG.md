@@ -15,6 +15,9 @@ is missing or empty.
 
 ### Desktop
 
+- On the GPU desktop, the shell and Qt apps draw without depth and stencil
+  buffers, as iOS draws its interface. On the iPod touch 6 the shell uses
+  about 50 MB less memory, and every Qt app about 18 MB less.
 - Every iPad, iPhone and iPod touch screen now starts at the size it has
   under iOS. Before, only the iPad 6, iPad 7 and iPhone 7 did; on the others,
   such as the iPod touch 6, everything was drawn at half size.
