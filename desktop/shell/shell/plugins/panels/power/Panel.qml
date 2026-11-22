@@ -144,10 +144,21 @@ Panel {
   }
   readonly property bool rotatingPhrases: activePhrases.length > 0
 
-  // The battery script's readings in the current language's digits; the
-  // time field already comes translated, so it is shown as it arrives.
+  // The battery script's readings in the current language's digits.
   function reading(raw) {
     return Model.localizeReading(raw, Commons.I18n.formatNumber)
+  }
+
+  function batteryTime() {
+    var device = UPower.displayDevice
+    if (root.batteryFlowIdle || !device || !device.ready) return "—"
+    var seconds = root.discharging ? device.timeToEmpty : device.timeToFull
+    if (!Number.isFinite(seconds) || seconds <= 0) return "—"
+    var minutes = Math.ceil(seconds / 60)
+    var hours = Math.floor(minutes / 60)
+    var remainder = Commons.I18n.formatNumber(minutes % 60)
+    if (hours === 0) return Commons.I18n.t("power.durationMinutes").arg(remainder)
+    return Commons.I18n.t("power.durationHoursMinutes").arg(Commons.I18n.formatNumber(hours)).arg(remainder)
   }
 
   // The actual battery state stays visible; whimsical flow phrases cannot
@@ -485,7 +496,7 @@ Panel {
               spacing: Style.spacing.labelGap
               InfoPair {
                 label: root.chargeThresholdActive ? Commons.I18n.t("power.chargeLimit") : (root.discharging ? Commons.I18n.t("power.timeLeft") : root.charging ? Commons.I18n.t("power.timeToFull") : Commons.I18n.t("power.batteryState"))
-                value: root.chargeThresholdActive ? (root.reading(root.batteryInfo.threshold) || "—") : (root.batteryFlowIdle ? "—" : (root.batteryInfo.time || "—"))
+                value: root.chargeThresholdActive ? (root.reading(root.batteryInfo.threshold) || "—") : root.batteryTime()
               }
               InfoPair {
                 label: root.chargeThresholdActive ? Commons.I18n.t("power.batteryState") : (root.discharging ? Commons.I18n.t("power.discharging") : root.charging ? Commons.I18n.t("power.charging") : Commons.I18n.t("power.batteryState"))

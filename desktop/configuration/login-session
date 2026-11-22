@@ -118,6 +118,7 @@ OMARCHY_MIGRATE_LOCK_WAIT=0 timeout 120 omarchy-migrate 2>&1 | logger -t omarchy
 # Services such as PipeWire and WirePlumber use the same user manager/bus as
 # Quickshell. Do not spawn a separate dbus-run-session instance.
 systemctl --user import-environment DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE XDG_CURRENT_DESKTOP QT_QUICK_FRAME_SYNCHRONOUS_HOVER_INTERVAL
+if [[ -n ${LIBVA_DRIVER_NAME:-} ]]; then systemctl --user import-environment LIBVA_DRIVER_NAME; fi
 if [[ -n ${QT_QPA_PLATFORMTHEME:-} ]]; then systemctl --user import-environment QT_QPA_PLATFORMTHEME; fi
 /usr/libexec/arch-ipad-first-theme
 # Windows open maximized unless the person turned that off (Trigger > Toggle).

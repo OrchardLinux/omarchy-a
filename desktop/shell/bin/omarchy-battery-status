@@ -30,14 +30,14 @@ for candidate in "$base"/*; do
 done
 printf 'external_power\t%s\n' "$external"
 
-if [[ -r $battery/energy_full ]]; then
-  read -r full < "$battery/energy_full"
-  if [[ $full =~ ^[0-9]+$ && $full -gt 0 ]]; then
-    awk -v uwh="$full" 'BEGIN { printf "size\t%.1fWh\n", uwh / 1000000 }'
-  fi
+if [[ -r $battery/energy_full ]] && read -r full < "$battery/energy_full" &&
+    [[ $full =~ ^[0-9]+$ && $full -gt 0 ]]; then
+  awk -v uwh="$full" 'BEGIN { printf "size\t%.1fWh\n", uwh / 1000000 }'
+elif [[ -r $battery/charge_full ]] && read -r full < "$battery/charge_full" &&
+    [[ $full =~ ^[0-9]+$ && $full -gt 0 ]]; then
+  awk -v uah="$full" 'BEGIN { printf "size\t%.0f mAh\n", uah / 1000 }'
 fi
-if [[ -r $battery/cycle_count ]]; then
-  read -r cycles < "$battery/cycle_count"
+if [[ -r $battery/cycle_count ]] && read -r cycles < "$battery/cycle_count"; then
   [[ ! $cycles =~ ^[0-9]+$ ]] || printf 'cycles\t%s\n' "$cycles"
 fi
 if [[ -r $battery/power_now ]]; then
