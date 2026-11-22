@@ -18,6 +18,10 @@ is missing or empty.
 - On the GPU desktop, the shell and Qt apps draw without depth and stencil
   buffers, as iOS draws its interface. On the iPod touch 6 the shell uses
   about 50 MB less memory, and every Qt app about 18 MB less.
+- On the GPU desktop, the shell no longer stays invisible on a device whose
+  screen is driven by simpledrm. Labwc used to try to show it straight from
+  the GPU's buffer, which simpledrm cannot take, and now composites it there.
+  A display driver that takes the GPU's buffers keeps showing them directly.
 - Every iPad, iPhone and iPod touch screen now starts at the size it has
   under iOS. Before, only the iPad 6, iPad 7 and iPhone 7 did; on the others,
   such as the iPod touch 6, everything was drawn at half size.
