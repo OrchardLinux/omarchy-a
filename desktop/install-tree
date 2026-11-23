@@ -145,7 +145,8 @@ pin=$(sed -n 's/.*"omafox_xpi": *"\([0-9a-f]*\)".*/\1/p' "$here/arm64/inputs.jso
 put "$xpi" "$root/usr/lib/firefox/distribution/extensions/@omafox.xpi"
 
 # system/overlay: power, sleep, sudo, polkit, USB access and the package's own hook.
-(cd "$project/system/overlay" && find . -type f | LC_ALL=C sort) | while read -r file; do
+(cd "$project/system/overlay" &&
+  find . -name __pycache__ -prune -o -type f ! -name '*.pyc' -print | LC_ALL=C sort) | while read -r file; do
   name=${file#./}
   case $name in
     etc/os-release|etc/bluetooth/main.conf) put "$project/system/overlay/$name" "$overrides/$name" ;;
