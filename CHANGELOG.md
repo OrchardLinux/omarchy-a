@@ -11,6 +11,13 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
+## Unreleased
+
+### Desktop
+
+- At boot the splash stays on screen until the PIN screen is ready, then fades
+  into it, instead of going black for a few seconds first.
+
 ## [0.3.3] - 2026-11-24
 
 Built on orchard 0.3.3.
