@@ -11,6 +11,16 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
+## Unreleased
+
+### Desktop
+
+- iPad Pro 12.9-inch (2017) and 10.5-inch: plugged-in headphones become
+  the sound output, and the microphones no longer clip at full volume.
+- All iPads: a Smart Cover that closes or opens while the system is busy
+  is no longer missed, and a cover whose driver comes up late is followed
+  too.
+
 ## [0.3.3] - 2026-11-24
 
 Built on orchard 0.3.3.
