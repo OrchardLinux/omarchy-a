@@ -53,6 +53,12 @@ class MenuToggleTests(unittest.TestCase):
             kept = tree.findall("./windowRules/windowRule[@identifier='%s']/action[@name='UnMaximize']" % app)
             self.assertEqual(len(kept), 1, app)
 
+    def assert_no_maximize(self, rules):
+        # Only the title bar rule is left (title bars are off by default).
+        tree = ET.fromstring(rules.read_bytes())
+        self.assertEqual(tree.findall('./windowRules'), [])
+        self.assertEqual(len(tree.findall("./theme/maximizedDecoration")), 1)
+
     def test_maximize_windows_is_on_until_turned_off(self):
         off = self.home / '.local/state/omarchy/toggles/maximize-windows-off'
         rules = self.home / '.local/state/omarchy/xdg-config/labwc/rc.xml'
@@ -69,13 +75,14 @@ class MenuToggleTests(unittest.TestCase):
             self.assertEqual(labwc.wait(5), -1)  # SIGHUP
             self.assertEqual(off.exists(), not expect_on)
             self.assertEqual(self.toggle_enabled('maximize-windows-off'), 1 if expect_on else 0)
-            self.assertEqual(rules.exists(), expect_on)
             if expect_on:
                 self.assert_maximizes(rules)
+            else:
+                self.assert_no_maximize(rules)
         # Turned off, a login keeps it off.
         self.run_bin('omarchy-toggle-maximize-windows')
         self.run_bin('omarchy-toggle-maximize-windows', '--apply')
-        self.assertFalse(rules.exists())
+        self.assert_no_maximize(rules)
         self.assertFalse((self.home / '.config').exists())
 
     def test_on_a_phone_about_and_omacalc_fill_the_screen_too(self):
@@ -124,29 +131,30 @@ class MenuToggleTests(unittest.TestCase):
         code = [line for line in toggle.splitlines() if not line.lstrip().startswith('#')]
         self.assertFalse([line for line in code if '.config/labwc' in line])
 
-    def test_title_bars_are_on_until_turned_off(self):
+    def test_title_bars_are_off_until_turned_on(self):
         rules = self.home / '.local/state/omarchy/xdg-config/labwc/rc.xml'
         undecorated = "./theme/maximizedDecoration[.='none']"
+        # The old flag for "off" from when they were on by default goes.
+        old = self.home / '.local/state/omarchy/toggles/window-titlebars-off'
+        old.parent.mkdir(parents=True)
+        old.touch()
         self.run_bin('omarchy-toggle-maximize-windows', '--apply')
-        self.assertEqual(ET.fromstring(rules.read_bytes()).findall(undecorated), [])
-        labwc = subprocess.Popen(['sleep', '30'])
-        try:
-            result = self.run_bin('omarchy-toggle-window-titlebars', LABWC_PID=str(labwc.pid))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            tree = ET.fromstring(rules.read_bytes())
-            self.assertEqual(len(tree.findall(undecorated)), 1)
-            # Both toggles' rules live in the one file.
-            self.assertEqual(len(tree.findall("./windowRules/windowRule[@identifier='*']/action[@name='Maximize']")), 1)
-        finally:
-            labwc.kill()
-            labwc.wait()
-        labwc = subprocess.Popen(['sleep', '30'])
-        try:
-            self.run_bin('omarchy-toggle-window-titlebars', LABWC_PID=str(labwc.pid))
-        finally:
-            labwc.kill()
-            labwc.wait()
-        self.assertEqual(ET.fromstring(rules.read_bytes()).findall(undecorated), [])
+        self.assertFalse(old.exists())
+        tree = ET.fromstring(rules.read_bytes())
+        self.assertEqual(len(tree.findall(undecorated)), 1)
+        # Both toggles' rules live in the one file.
+        self.assertEqual(len(tree.findall("./windowRules/windowRule[@identifier='*']/action[@name='Maximize']")), 1)
+        for expect_bars in (True, False):
+            labwc = subprocess.Popen(['sleep', '30'])
+            try:
+                result = self.run_bin('omarchy-toggle-window-titlebars', LABWC_PID=str(labwc.pid))
+                self.assertEqual(result.returncode, 0, result.stderr)
+            finally:
+                labwc.kill()
+                labwc.wait()
+            found = ET.fromstring(rules.read_bytes()).findall(undecorated)
+            self.assertEqual(len(found), 0 if expect_bars else 1)
+            self.assertEqual(self.toggle_enabled('window-titlebars-on'), 0 if expect_bars else 1)
 
     def test_menu_toggles_use_shipped_commands(self):
         menu = (PROJECT / 'desktop/shell/default/omarchy/omarchy-menu.jsonc').read_text()

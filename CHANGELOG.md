@@ -78,8 +78,10 @@ is missing or empty.
   default apps, kernels, installing and removing software, security
   setup and more. Docker's entries show once Docker is installed.
 - Focus shows as a bell in the status bar and on the lock screen while on.
-- Title bars can be hidden on maximized windows (Settings > Behaviour);
-  floating windows keep theirs.
+- Maximized windows have no title bar, as on a tablet; Settings >
+  Behaviour brings them back. Floating windows keep theirs.
+- The control center's pages slide in smoothly: Wi-Fi no longer pauses
+  halfway while it looks for networks.
 - The notification center slides down from the top when the clock is
   clicked, as when it is pulled.
 - About shows an icon on its renderer line, as on every other.

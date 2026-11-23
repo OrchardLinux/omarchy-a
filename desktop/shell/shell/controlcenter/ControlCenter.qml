@@ -168,26 +168,50 @@ Item {
   property var page: null
   // 0 on the main view, 1 on the page; the push in between.
   property real pageShift: 0
+  // The push owes nothing to the page: the page is built and drawn once
+  // before it starts, and is told it is shown (Wi-Fi's scan, the status
+  // reads) only once it is in place, so neither building it nor what it
+  // refreshes can hold up a frame of the slide.
   NumberAnimation {
     id: pageSlide
     target: root
     property: "pageShift"
     duration: Style.duration(300)
     easing.type: Easing.OutCubic
-    onFinished: if (root.pageShift === 0) root.dropPage()
+    onFinished: {
+      if (root.pageShift === 0) root.dropPage()
+      else if (root.page) root.page.hostShown = true
+    }
+  }
+  // Waits two frames (the one that builds the page, the one that draws it)
+  // before the push.
+  FrameAnimation {
+    id: pageBuilt
+    running: false
+    onTriggered: {
+      if (currentFrame < 2) return
+      stop()
+      pageSlide.to = 1
+      pageSlide.restart()
+    }
   }
 
   function showPage(panelForPage) {
     if (!root.opened) root.open()
     if (root.page && root.page !== panelForPage) root.page.hostShown = false
+    var fresh = root.page !== panelForPage || root.pageShift === 0
     root.page = panelForPage
-    panelForPage.hostShown = true
-    pageSlide.to = 1
-    pageSlide.restart()
+    if (fresh && !pageSlide.running) {
+      pageBuilt.restart()
+    } else {
+      pageSlide.to = 1
+      pageSlide.restart()
+    }
     Qt.callLater(function() { if (pageLoader.item) pageLoader.item.forceActiveFocus() })
   }
   function leavePage(panelForPage) {
     if (root.page !== panelForPage) return
+    pageBuilt.stop()
     pageSlide.to = 0
     pageSlide.restart()
     keyCatcher.forceActiveFocus()

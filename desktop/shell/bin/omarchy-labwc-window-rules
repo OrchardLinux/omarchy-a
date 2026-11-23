@@ -9,8 +9,9 @@
 #     maximized; About (org.omarchy.about) and Omacalc keep their own size,
 #     which fits what they show, except on a phone, where every window fills
 #     the screen.
-#   Title bars when maximized (on unless window-titlebars-off): off, a
-#     maximized window has none; a floating one keeps its own, for a mouse.
+#   Title bars when maximized (off unless window-titlebars-on): off, a
+#     maximized window has none, as on a tablet; a floating one keeps its
+#     own, for a mouse.
 set -euo pipefail
 toggles=$HOME/.local/state/omarchy/toggles
 rules=$HOME/.local/state/omarchy/xdg-config/labwc/rc.xml
@@ -51,7 +52,9 @@ if [[ ! -e $toggles/maximize-windows-off ]]; then
   fi
 fi
 bare=
-[[ ! -e $toggles/window-titlebars-off ]] || bare=1
+# The flag for "off" from when title bars were on by default.
+rm -f "$toggles/window-titlebars-off"
+[[ -e $toggles/window-titlebars-on ]] || bare=1
 
 if ((${#rows[@]} == 0)) && [[ -z $bare ]]; then
   rm -f "$rules"
