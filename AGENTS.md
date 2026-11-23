@@ -3,6 +3,17 @@
 Building, running and device rules are orchard's; see orchard's
 [AGENTS.md](https://github.com/OrchardLinux/orchard/blob/main/AGENTS.md).
 
+## Everything benefits every device
+
+**Every change benefits every device it can.** A desktop, audio, power or
+input change applies to every board that has the hardware, not only the one
+you tested on. Key it on what the device has (a driver, a sensor, a property
+it reports), not on a board name.
+
+**Every opt-in or opt-out needs a very good reason, written next to it:** the
+hardware is absent, or there is evidence that it breaks that board.
+**"Untested" is never a reason.**
+
 ## Changelog
 
 - CHANGELOG.md is curated: one entry per meaningful unit of work that someone
