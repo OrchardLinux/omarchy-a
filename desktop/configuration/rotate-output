@@ -69,11 +69,35 @@ class Turning:
         self.samples = collections.deque()
         self.facing = None
         self.disagreed = 0
+        self.matrix = self.read_mount_matrix(directory)
+
+    @staticmethod
+    def read_mount_matrix(directory):
+        candidates = []
+        # Match iio-sensor-proxy's udev override before using kernel metadata.
         try:
-            text = Path(directory, 'in_accel_mount_matrix').read_text()
-            self.matrix = [[float(cell) for cell in row.split(',')] for row in text.split(';')][:2]
-        except (OSError, ValueError):
-            self.matrix = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+            result = subprocess.run(
+                ['udevadm', 'info', '--query=property', '--path', str(Path(directory).resolve())],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                timeout=1, check=True)
+            candidates.extend(line.split('=', 1)[1] for line in result.stdout.splitlines()
+                              if line.startswith('ACCEL_MOUNT_MATRIX='))
+        except (OSError, subprocess.SubprocessError):
+            pass
+        for name in ('mount_matrix', 'in_accel_mount_matrix', 'in_mount_matrix'):
+            try:
+                candidates.append(Path(directory, name).read_text())
+            except OSError:
+                pass
+        for text in candidates:
+            try:
+                rows = [[float(cell) for cell in row.split(',')] for row in text.split(';')]
+                if len(rows) == 3 and all(len(row) == 3 and any(row)
+                                          and all(map(math.isfinite, row)) for row in rows):
+                    return rows[:2]
+            except ValueError:
+                pass
+        return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
 
     def read(self):
         return [int(Path(self.directory, f'in_accel_{axis}_raw').read_text()) for axis in 'xyz']
