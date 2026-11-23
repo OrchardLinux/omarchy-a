@@ -1,18 +1,19 @@
 #!/bin/bash
 
 # omarchy:summary=Show title bars on maximized windows, or not
-# On by default: a window's title bar holds its name and its buttons, for a
-# mouse. Turned off, the window-titlebars-off flag says so and a maximized
-# window has none (omarchy-labwc-window-rules); it then closes from the
-# overview or with its app's own controls. A floating window keeps its own.
+# Off by default, as on a tablet: a maximized window has no title bar
+# (omarchy-labwc-window-rules) and closes from the overview or with its
+# app's own controls. Turned on, the window-titlebars-on flag says so and
+# maximized windows get their name and buttons back, for a mouse. A
+# floating window always keeps its own.
 set -euo pipefail
 # Beside this command, as installed and in the source tree alike.
 rules=${BASH_SOURCE[0]%/*}/omarchy-labwc-window-rules
 [[ $# == 0 ]] || { echo 'Usage: omarchy-toggle-window-titlebars' >&2; exit 2; }
 toggles=$HOME/.local/state/omarchy/toggles
-off=$toggles/window-titlebars-off
+on=$toggles/window-titlebars-on
 mkdir -p "$toggles"
-if [[ -e $off ]]; then rm -f "$off"; else : >"$off"; fi
+if [[ -e $on ]]; then rm -f "$on"; else : >"$on"; fi
 "$rules"
 labwc=${LABWC_PID:-$(pgrep -u "$(id -u)" -x labwc | head -1 || true)}
 [[ -z $labwc ]] || kill -HUP "$labwc"
