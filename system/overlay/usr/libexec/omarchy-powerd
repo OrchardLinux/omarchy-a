@@ -288,8 +288,11 @@ def streams_running(dump):
 
 EV_KEY, KEY_POWER, KEY_HOMEPAGE = 1, 116, 172
 EV_SW, SW_MACHINE_COVER = 5, 0x10
+EV_SYN, SYN_REPORT, SYN_DROPPED = 0, 0, 3
 INPUT_EVENT = struct.Struct('qqHHi')
 EVIOCSCLOCKID = 0x400445a0
+SWITCH_BITMAP = struct.Struct('@L')
+EVIOCGSW = 0x8000451b | (SWITCH_BITMAP.size << 16)
 SOCKET = '/run/omarchy-powerd.sock'
 # OMARCHY_PATH: the omarchy-a package's Omarchy tree.
 SHELL_ROOT = '/usr/share/omarchy'
@@ -352,6 +355,22 @@ def reports_keys(capabilities_key):
     for word in words:
         bits = bits << width | int(word, 16)
     return bool(bits >> KEY_POWER & 1 or bits >> KEY_HOMEPAGE & 1)
+
+
+def open_input(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        fcntl.ioctl(fd, EVIOCSCLOCKID, struct.pack('i', time.CLOCK_MONOTONIC))
+    except OSError:
+        os.close(fd)
+        raise
+    return fd
+
+
+def cover_is_closed(fd):
+    bits = bytearray(SWITCH_BITMAP.size)
+    fcntl.ioctl(fd, EVIOCGSW, bits)
+    return bool(SWITCH_BITMAP.unpack(bits)[0] & (1 << SW_MACHINE_COVER))
 
 
 class Cover:
@@ -494,6 +513,7 @@ class Daemon:
         self.machine = Machine()
         self.cover = Cover()
         self.covers = {}
+        self.cover_dropped = set()
         self.events = queue.Queue()
         self.wake_read, self.wake_write = os.pipe()
         os.set_blocking(self.wake_read, False)
@@ -566,34 +586,67 @@ class Daemon:
 
     def scan_keys(self):
         for device in Path('/sys/class/input').glob('event*'):
+            path = f'/dev/input/{device.name}'
+            if path in self.covers.values() or path in self.keys.values():
+                continue
             try:
                 sw = (device / 'device/capabilities/sw').read_text()
                 key = (device / 'device/capabilities/key').read_text()
             except OSError:
                 continue
-            path = f'/dev/input/{device.name}'
-            if reports_cover(sw) and path not in self.covers.values():
+            if reports_cover(sw):
+                fd = None
                 try:
-                    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-                    fcntl.ioctl(fd, EVIOCSCLOCKID, struct.pack('i', time.CLOCK_MONOTONIC))
+                    fd = open_input(path)
+                    closed = cover_is_closed(fd)
                 except OSError as error:
+                    if fd is not None:
+                        os.close(fd)
                     log(f'cannot read {path}: {error}')
                     continue
                 self.covers[fd] = path
-                log(f'cover: {path}')
+                log(f'cover: {path} ({"closed" if closed else "open"})')
+                # Only remember the state: a cover found closed is no reason to lock.
+                self.cover.closed[fd] = closed
                 continue
             # The iPad's buttons are gpio-keys; a keyboard's Power or Home key, or
             # the simulator's buttons on QEMU's virtual keyboard, count the same.
-            if not reports_keys(key) or path in self.keys.values():
+            if not reports_keys(key):
                 continue
             try:
-                fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-                fcntl.ioctl(fd, EVIOCSCLOCKID, struct.pack('i', time.CLOCK_MONOTONIC))
+                fd = open_input(path)
             except OSError as error:
                 log(f'cannot read {path}: {error}')
                 continue
             self.keys[fd] = path
             log(f'keys: {path}')
+
+    def read_cover(self, fd):
+        data = os.read(fd, INPUT_EVENT.size * 64)
+        if not data:
+            raise OSError('end of cover input')
+
+        # After an overrun, wait for the first complete packet. EVIOCGSW
+        # samples current state and flushes queued switch events. Discard
+        # this batch as well since the snapshot already accounts for it.
+        dropped = fd in self.cover_dropped
+        resync = dropped
+        for _, _, kind, code, _ in INPUT_EVENT.iter_unpack(data):
+            if kind == EV_SYN and code == SYN_DROPPED:
+                dropped = resync = True
+            elif kind == EV_SYN and code == SYN_REPORT:
+                dropped = False
+        if dropped:
+            self.cover_dropped.add(fd)
+            return
+        self.cover_dropped.discard(fd)
+        edges = ([(cover_is_closed(fd), time.monotonic())]
+                 if resync else cover_edges(data))
+        for closed, when in edges:
+            event = self.cover.change(fd, closed)
+            if event:
+                log(f't={when:.6f} cover {"closed" if closed else "opened"}')
+                self.feed(event, when)
 
     def logind_busy(self):
         """logind is still in its sleep: it refuses delay inhibitors ("already running")."""
@@ -1024,7 +1077,7 @@ class Daemon:
     # --- event loop ---------------------------------------------------------
     def timeout(self):
         now = time.monotonic()
-        if now >= self.next_scan and not self.keys:
+        if now >= self.next_scan:
             self.scan_keys()
             self.next_scan = now + 5
         delay = TICK_SECONDS if self.machine.inflight else 1.0
@@ -1117,7 +1170,6 @@ class Daemon:
             self.key_time = time.monotonic()
             self.do_light(ON)
         server = self.open_socket()
-        self.scan_keys()
         self.take_inhibitor()
         self.start_monitor()
         self.start_uevents()
@@ -1125,10 +1177,11 @@ class Daemon:
             threading.Thread(target=worker, daemon=True).start()
         log('ready: ON')
         while not self.stopping:
+            delay = self.timeout()
             watched = [*self.keys, *self.covers, server, self.wake_read, self.monitor.stdout]
             if self.uevents:
                 watched.append(self.uevents)
-            readable, _, _ = select.select(watched, [], [], self.timeout())
+            readable, _, _ = select.select(watched, [], [], delay)
             # Keys first: a press that woke the tablet decides before the sleep's end is seen.
             for fd in [fd for fd in readable if fd in self.keys]:
                 try:
@@ -1154,15 +1207,14 @@ class Daemon:
                     del self.keys[fd]
             for fd in [fd for fd in readable if fd in self.covers]:
                 try:
-                    for closed, when in cover_edges(os.read(fd, INPUT_EVENT.size * 64)):
-                        name = self.cover.change(fd, closed)
-                        if name:
-                            log(f't={when:.6f} cover {"closed" if closed else "opened"}')
-                            self.feed(name, when)
+                    self.read_cover(fd)
+                except BlockingIOError:
+                    continue
                 except OSError as error:
                     log(f'cover lost: {error}')
                     os.close(fd)
                     del self.covers[fd]
+                    self.cover_dropped.discard(fd)
                     self.cover.forget(fd)
             if self.wake_read in readable:
                 os.read(self.wake_read, 512)
