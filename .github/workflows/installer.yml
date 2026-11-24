@@ -1,0 +1,153 @@
+name: Installer
+
+# Publishes "Install Omarchy A" on the rolling pre-release `installer`: the
+# generic installer from the newest OrchardLinux/tools release, stamped with
+# Omarchy A's name and wordmark (tools' packaging/stamp.py). The installer
+# installs the newest Omarchy A from the latest release's index.toml, so the
+# `installer` release must never become "latest" itself.
+#
+# No pin on the tools version, on purpose: the installer is decoupled from
+# Omarchy A's releases, so an installer fix ships as soon as tools releases it,
+# without an Omarchy A release. A run only stamps when tools has a release the
+# `installer` release doesn't carry yet (its TOOLS_VERSION asset).
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-release
+  cancel-in-progress: false
+
+env:
+  TOOLS_REPO: OrchardLinux/tools
+  # Beta: tools pre-releases count too. 'false' stamps only stable releases.
+  TOOLS_INCLUDE_PRERELEASE: 'true'
+  RELEASE_TAG: installer
+
+jobs:
+  check:
+    name: Look for a new tools release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - name: Compare the newest tools release with the installer release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          newest=$(timeout 60 gh api "repos/$TOOLS_REPO/releases?per_page=30" \
+            | jq -r --arg pre "$TOOLS_INCLUDE_PRERELEASE" \
+                '[.[] | select(.draft | not) | select($pre == "true" or (.prerelease | not))][0].tag_name // empty')
+          if [[ -z "$newest" ]]; then
+            echo "::notice::$TOOLS_REPO has no published release yet; nothing to stamp."
+            exit 0
+          fi
+          current=$(timeout 60 gh release download "$RELEASE_TAG" --pattern TOOLS_VERSION --output - 2>/dev/null || true)
+          echo "newest tools release: $newest; installer release carries: ${current:-nothing}"
+          if [[ "$newest" == "$current" ]]; then
+            exit 0
+          fi
+          [[ "$newest" =~ ^v[0-9A-Za-z.+-]+$ ]]
+          echo "tag=$newest" >> "$GITHUB_OUTPUT"
+
+  stamp:
+    name: Stamp and publish Install Omarchy A
+    needs: check
+    if: needs.check.outputs.tag != ''
+    # stamp.py re-signs the macOS app ad hoc with codesign and zips it with
+    # ditto; a Mac runner has both.
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TOOLS_TAG: ${{ needs.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: release/installer
+          path: omarchy-a
+
+      # stamp.py from the same tag as the assets: it reads packaging/install.sh
+      # and the icons next to it.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          repository: ${{ env.TOOLS_REPO }}
+          ref: ${{ env.TOOLS_TAG }}
+          sparse-checkout: packaging
+          path: tools
+
+      - name: Download the tools release
+        timeout-minutes: 5
+        run: gh release download "$TOOLS_TAG" --repo "$TOOLS_REPO" --dir generic
+
+      - name: Verify the checksums and the build attestation
+        timeout-minutes: 5
+        working-directory: generic
+        run: |
+          assets=(Orchard-Installer-macOS.zip Orchard-macOS.zip
+                  orchard-installer-linux-{x86_64,aarch64} Orchard-linux-{x86_64,aarch64}.tar.gz VERSION)
+          for asset in "${assets[@]}"; do
+            grep -q "  $asset\$" SHA256SUMS || { echo "SHA256SUMS lacks $asset" >&2; exit 1; }
+          done
+          shasum -a 256 --check --strict SHA256SUMS
+          [[ "v$(cat VERSION)" == "$TOOLS_TAG" ]]
+          for asset in "${assets[@]}" SHA256SUMS; do
+            gh attestation verify "$asset" --repo "$TOOLS_REPO" \
+              --signer-workflow "$TOOLS_REPO/.github/workflows/release.yml" \
+              --source-ref "refs/tags/$TOOLS_TAG"
+          done
+
+      - name: Stamp
+        timeout-minutes: 5
+        run: |
+          mkdir out
+          # Before stamping, so SHA256SUMS covers it.
+          printf '%s\n' "$TOOLS_TAG" > out/TOOLS_VERSION
+          python3 -I tools/packaging/stamp.py --generic generic --out out \
+            --name "Omarchy A" --wordmark omarchy-a/release/installer/wordmark.svg \
+            --release "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG"
+
+      - name: Publish on the installer release
+        timeout-minutes: 10
+        working-directory: out
+        run: |
+          base="https://github.com/$GH_REPO/releases/download/$RELEASE_TAG"
+          {
+            printf 'Install Omarchy A, built from [Orchard tools %s](https://github.com/%s/releases/tag/%s). ' \
+              "$TOOLS_TAG" "$TOOLS_REPO" "$TOOLS_TAG"
+            printf '%s\n\n' 'It installs the newest Omarchy A release. Beta.'
+            printf '%s\n\n' 'macOS and Linux:'
+            printf '```sh\ncurl -fsSL %s/install.sh | sh\n```\n\n' "$base"
+            printf '%s\n' '| Asset | Bytes | SHA-256 |' '| --- | ---: | --- |'
+            while read -r hash asset; do
+              printf "| \`%s\` | %s | \`%s\` |\n" "$asset" "$(stat -f %z "$asset")" "$hash"
+            done < SHA256SUMS
+          } > ../notes.md
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" \
+              --prerelease --latest=false --title "Install Omarchy A" --notes-file ../notes.md
+          fi
+          gh release edit "$RELEASE_TAG" --prerelease --latest=false \
+            --title "Install Omarchy A" --notes-file ../notes.md
+          # TOOLS_VERSION last: an interrupted run is redone by the next one.
+          files=()
+          for f in *; do [[ "$f" == TOOLS_VERSION ]] || files+=("$f"); done
+          gh release upload "$RELEASE_TAG" --clobber "${files[@]}"
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | while read -r old; do
+            [[ -e "$old" ]] || gh release delete-asset "$RELEASE_TAG" "$old" --yes
+          done
+          gh release upload "$RELEASE_TAG" --clobber TOOLS_VERSION
+          tee -a "$GITHUB_STEP_SUMMARY" < ../notes.md
