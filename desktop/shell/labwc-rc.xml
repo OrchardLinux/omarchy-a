@@ -7,6 +7,9 @@
     <handoverDirectory>/run/omarchy-handover</handoverDirectory>
     <startupFade>yes</startupFade>
     <startupSignal>yes</startupSignal>
+    <!-- At boot (no picture to take over): the boot splash m1n1 painted,
+         held over the starting lock until the PIN screen has drawn (labwc/0012). -->
+    <startupPicture>/usr/share/orchard/splash</startupPicture>
   </core>
   <theme>
     <name>Omarchy-Current</name>

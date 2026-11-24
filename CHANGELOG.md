@@ -21,6 +21,15 @@ is missing or empty.
   is no longer missed, and a cover whose driver comes up late is followed
   too.
 
+## [0.3.4] - 2026-11-24
+
+Built on orchard 0.3.6.
+
+### Desktop
+
+- At boot the splash stays on screen until the PIN screen is ready, then fades
+  into it, instead of going black for a few seconds first.
+
 ## [0.3.3] - 2026-11-24
 
 Built on orchard 0.3.3.
