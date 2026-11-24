@@ -17,6 +17,8 @@ is missing or empty.
 
 - iPad Pro 12.9-inch (2017) and 10.5-inch: plugged-in headphones become
   the sound output, and the microphones no longer clip at full volume.
+- iPad Pro 12.9-inch (2017) and 10.5-inch: sound plays from all four
+  speakers, and left and right follow the screen as the tablet turns.
 - All iPads: a Smart Cover that closes or opens while the system is busy
   is no longer missed, and a cover whose driver comes up late is followed
   too.
