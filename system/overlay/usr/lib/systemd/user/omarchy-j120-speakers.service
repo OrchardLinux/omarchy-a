@@ -1,0 +1,12 @@
+[Unit]
+Description=J120 screen-relative speaker routing
+ConditionPathExists=/sys/firmware/devicetree/base/sound-speaker-transport
+Wants=omarchy-j120-speaker-map.path
+After=pipewire.service
+PartOf=pipewire.service wireplumber.service
+
+[Service]
+ExecStart=/usr/bin/pipewire -c /usr/share/omarchy/j120-speakers.conf
+ExecStartPost=/usr/libexec/omarchy-j120-speaker-map %t/omarchy-j120-speaker-transform --wait 45
+Restart=on-failure
+RestartSec=2

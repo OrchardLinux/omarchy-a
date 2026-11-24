@@ -1,0 +1,7 @@
+[Unit]
+Description=Watch for J120 display rotation changes
+ConditionPathExists=/sys/firmware/devicetree/base/sound-speaker-transport
+PartOf=omarchy-j120-speakers.service
+
+[Path]
+PathChanged=%t/omarchy-j120-speaker-transform

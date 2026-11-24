@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply the J120 display transform to the speaker mixer
+ConditionPathExists=/sys/firmware/devicetree/base/sound-speaker-transport
+Wants=omarchy-j120-speakers.service
+After=omarchy-j120-speakers.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+TimeoutStartSec=50s
+ExecStart=/usr/libexec/omarchy-j120-speaker-map %t/omarchy-j120-speaker-transform --wait 45

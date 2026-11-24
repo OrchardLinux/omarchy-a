@@ -11,6 +11,7 @@ sensor proxy reports the final orientation up to a second late).
 """
 import collections
 import glob
+import json
 import math
 import os
 from pathlib import Path
@@ -21,6 +22,7 @@ import subprocess
 import time
 
 TRANSFORMS = {'normal': 'normal', 'bottom-up': '180', 'left-up': '90', 'right-up': '270'}
+J120_SPEAKERS = Path('/sys/firmware/devicetree/base/sound-speaker-transport')
 
 
 class Orientation:
@@ -157,14 +159,40 @@ def trace(message):
         print(f'rotation trace t={time.monotonic():.3f} {message}', flush=True)
 
 
-def apply(value):
+def internal_output(outputs):
+    return next((name for name in outputs if name.startswith(('eDP-', 'DSI-', 'LVDS-'))),
+                outputs[0] if len(outputs) == 1 else None)
+
+
+def publish_speaker_transform(path, transform):
+    try:
+        staging = path.with_suffix('.new')
+        staging.write_text(transform + '\n')
+        staging.replace(path)
+    except OSError as error:
+        print(f'speaker transform update failed: {error}', flush=True)
+
+
+def seed_speaker_transform(path):
+    # A locked rotation may never make a new request during this session.
+    try:
+        result = subprocess.check_output(['wlr-randr', '--json'], text=True, timeout=3)
+        transforms = {output['name']: output['transform'] for output in json.loads(result)
+                      if output.get('enabled')}
+        transform = transforms.get(internal_output(list(transforms)))
+        if transform in TRANSFORMS.values():
+            publish_speaker_transform(path, transform)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f'speaker transform query failed: {error}', flush=True)
+
+
+def apply(value, speaker_transform=None):
     started = time.monotonic()
     trace(f'output query start orientation={value}')
     result = subprocess.run(['wlr-randr'], capture_output=True, text=True, timeout=3, check=True)
     # Prefer the internal panel, never arbitrarily rotate an external monitor.
     outputs = [line.split()[0] for line in result.stdout.splitlines() if line and not line[0].isspace()]
-    output = next((name for name in outputs if name.startswith(('eDP-', 'DSI-', 'LVDS-'))),
-                  outputs[0] if len(outputs) == 1 else None)
+    output = internal_output(outputs)
     if output is None:
         return False
     queried = time.monotonic()
@@ -172,6 +200,8 @@ def apply(value):
     subprocess.run(['wlr-randr', '--output', output, '--transform', TRANSFORMS[value]],
                    check=True, timeout=4)
     trace(f'output request done ms={(time.monotonic() - queried) * 1000:.0f}')
+    if speaker_transform is not None:
+        publish_speaker_transform(speaker_transform, TRANSFORMS[value])
     print(f'rotation applied: {output} {value} -> {TRANSFORMS[value]}', flush=True)
     return True
 
@@ -181,6 +211,11 @@ def main():
     state = Orientation(float(os.environ.get('ROTATE_SETTLE', '.4')),
                         float(os.environ.get('ROTATE_COOLDOWN', '.75')))
     parent = int(os.environ.get('LABWC_PID', '0'))
+    runtime = os.environ.get('XDG_RUNTIME_DIR')
+    speaker_transform = None
+    if runtime and J120_SPEAKERS.is_dir():
+        speaker_transform = Path(runtime) / 'omarchy-j120-speaker-transform'
+        seed_speaker_transform(speaker_transform)
     sensors = glob.glob(os.environ.get('ROTATE_ACCEL', '/sys/bus/iio/devices/iio:device*') + '/in_accel_x_raw')
     motion = Turning(os.path.dirname(sensors[0])) if sensors else None
     selector = selectors.DefaultSelector()
@@ -238,7 +273,7 @@ def main():
             if value is not None:
                 trace(f'stable orientation={value} waited_ms={(now - state.since) * 1000:.0f}')
                 try:
-                    if apply(value):
+                    if apply(value, speaker_transform):
                         state.committed(value, now)
                         if motion:
                             motion.judged(value)
