@@ -177,13 +177,63 @@ class Install(unittest.TestCase):
             (local / 'libexec/arch-ipad-scale-output').write_text('old')
             (root / 'arch-ipad-ui-manifest.json').write_text('{}')
             script = INSTALL.read_text().replace('/usr/local', str(local)).replace(
-                '/arch-ipad-ui-manifest.json', str(root / 'arch-ipad-ui-manifest.json'))
+                '/arch-ipad-ui-manifest.json', str(root / 'arch-ipad-ui-manifest.json')).replace(
+                '/run/systemd/system', str(root / 'no-systemd'))
             path = root / 'package-install'
             path.write_text(script)
             subprocess.run(['bash', str(path), 'post-install', '1-1'], check=True)
             self.assertEqual(sorted(p.name for p in (local / 'bin').iterdir()), ['mine'])
             self.assertFalse((local / 'libexec').exists())
             self.assertFalse((root / 'arch-ipad-ui-manifest.json').exists())
+
+    def run_hook(self, root, *argv, booted=True, chroot=False, systemctl_fails=False):
+        """The hook with systemctl and systemd-detect-virt replaced; what systemctl was asked."""
+        run = root / 'run-systemd'
+        run.mkdir(exist_ok=True) if booted else shutil.rmtree(run, ignore_errors=True)
+        bin_dir = root / 'bin'
+        bin_dir.mkdir(exist_ok=True)
+        calls = root / 'calls'
+        calls.write_text('')
+        (bin_dir / 'systemctl').write_text(
+            f'#!/bin/sh\necho "$*" >> "{calls}"\nexit {1 if systemctl_fails else 0}\n')
+        (bin_dir / 'systemd-detect-virt').write_text(f'#!/bin/sh\nexit {0 if chroot else 1}\n')
+        for tool in ('systemctl', 'systemd-detect-virt'):
+            (bin_dir / tool).chmod(0o755)
+        script = INSTALL.read_text().replace('/run/systemd/system', str(run)).replace(
+            '/var/lib/omarchy-greeter-theme', str(root / 'greeter-theme')).replace(
+            '/usr/local', str(root / 'local')).replace(
+            '/arch-ipad-ui-manifest.json', str(root / 'manifest.json'))
+        path = root / 'package-install'
+        path.write_text(script)
+        result = subprocess.run(['bash', str(path), *argv], capture_output=True, text=True, check=True,
+                                env={**os.environ, 'PATH': f'{bin_dir}:{os.environ["PATH"]}'})
+        return calls.read_text().splitlines(), result
+
+    def test_an_update_restarts_the_running_power_daemon_only_on_a_running_system(self):
+        # A logout restarts the session, not its system services: an old
+        # omarchy-powerd's lock requests fail against the new shell (#101).
+        restart = ['daemon-reload', '--no-block try-restart omarchy-powerd.service']
+        for argv in (('post-install', '1-1'), ('post-upgrade', '2-1', '1-1')):
+            with self.subTest(argv=argv), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / 'local/bin').mkdir(parents=True)
+                self.assertEqual(self.run_hook(root, *argv)[0], restart)
+                self.assertEqual(self.run_hook(root, *argv, booted=False)[0], [])
+                self.assertEqual(self.run_hook(root, *argv, chroot=True)[0], [])
+                # A failed restart never fails the package's install.
+                calls, result = self.run_hook(root, *argv, systemctl_fails=True)
+                self.assertEqual(calls, restart)
+                self.assertIn('omarchy-powerd.service', result.stderr)
+
+    def test_the_restarted_services_are_the_long_running_ones_the_package_ships(self):
+        units = PROJECT / 'system/overlay/usr/lib/systemd/system'
+        restarted = re.search(r'^SERVICES=\((.*)\)$', INSTALL.read_text(), re.M).group(1).split()
+        # Cutting the link an update may run over: never restarted.
+        kept = {'orchard-ssh.service', 'orchard-usb-network.service'}
+        for unit in sorted(units.glob('*.service')):
+            with self.subTest(unit=unit.name):
+                oneshot = 'Type=oneshot' in unit.read_text()
+                self.assertEqual(unit.name in restarted, not oneshot and unit.name not in kept)
 
 
 class Audit(unittest.TestCase):

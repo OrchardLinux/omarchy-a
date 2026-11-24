@@ -649,6 +649,33 @@ class Brightness(unittest.TestCase):
             self.daemon.stop_brightness()
         self.assertEqual(self.remembered.read_text(), '700\n')
 
+    def test_a_restart_while_dimmed_leaves_the_users_level_for_the_next_daemon(self):
+        # An update restarts the daemon; the next one knows nothing of the dim.
+        (self.panel / 'brightness').write_text('1600\n')
+        self.daemon.dim_saved, self.daemon.dim_level = 1600, 1000
+        (self.panel / 'brightness').write_text('1000\n')
+        with self.assertRaises(SystemExit):
+            self.daemon.stop_brightness()
+        self.assertEqual(self.level(), 1600)
+        self.assertEqual(self.remembered.read_text(), '1600\n')
+
+    def test_a_restart_in_the_dark_or_mid_fade_comes_back_lit_at_the_users_level(self):
+        socket_path = self.remembered.parent.parent / 'ctl'
+        socket_path.write_text('')  # the socket outlives a restart, not a boot
+        for fade in (0, .24):
+            with self.subTest(fade=fade):
+                (self.panel / 'brightness').write_text('1200\n')
+                daemon = powerd.Daemon()
+                with patch.object(powerd, 'FADE_SECONDS', fade):
+                    daemon.do_dark(None)
+                    daemon.tick_fade()
+                with self.assertRaises(SystemExit):
+                    daemon.stop_brightness()
+                self.assertEqual(self.level(), 0)
+                with patch.object(powerd, 'SOCKET', str(socket_path)):
+                    powerd.Daemon().start_lit()
+                self.assertEqual(self.level(), 1200)
+
 
 class SleepAccounting(unittest.TestCase):
     """How long a suspend in flight has been awake, and what that may conclude."""

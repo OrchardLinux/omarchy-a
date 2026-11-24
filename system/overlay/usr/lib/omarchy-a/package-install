@@ -8,6 +8,27 @@
 #   package-install post-upgrade NEW OLD
 set -euo pipefail
 
+# The system services whose code this package ships and that keep running
+# across an update. A logout restarts the session but not them, so the old
+# code would go on talking to the new session: omarchy-powerd's lock requests
+# fail against a newer shell and Power only dims the screen. orchard-ssh and
+# orchard-usb-network are not here: restarting them would cut the SSH or USB
+# link an update may be running over, and what keeps running in them is
+# dropbear and busybox, not code of this package. The others are oneshots.
+SERVICES=(omarchy-powerd.service)
+
+# Only on a running system: in a chroot or an image build there is no PID 1 of
+# its own to ask, and the services start fresh at the first boot anyway.
+restart_services() {
+  [[ -d /run/systemd/system && ! -L /run/systemd/system ]] || return 0
+  ! systemd-detect-virt --quiet --chroot 2>/dev/null || return 0
+  systemctl daemon-reload || echo "omarchy-a: systemd did not reload its units" >&2
+  # try-restart: a stopped or disabled service stays as it is. --no-block: the
+  # transaction never waits on it.
+  systemctl --no-block try-restart "${SERVICES[@]}" ||
+    echo "omarchy-a: restart ${SERVICES[*]} by hand, or restart the tablet" >&2
+}
+
 post_install() {
   # A tablet installed before this package had the desktop copied into the
   # tablet user's home, its commands linked from /usr/local/bin and its helpers
@@ -29,12 +50,15 @@ post_install() {
   # Only when nothing else is in them.
   rmdir /usr/local/libexec 2>/dev/null || true
   rmdir /usr/local/share/applications 2>/dev/null || true
+  # The image's copy of the services may be running.
+  restart_services
 }
 
 post_upgrade() {
   # The login screen is gone (the session starts locked): its copies of the
   # theme, which the tablet user published for it, have no reader any more.
   rm -rf -- /var/lib/omarchy-greeter-theme
+  restart_services
 }
 
 case "${1:-}" in

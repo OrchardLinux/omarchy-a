@@ -135,7 +135,8 @@ ships needs nothing more. Two kinds do:
 
 - Root's part of a change (a service to enable, a file an older version left
   behind): `system/overlay/usr/lib/omarchy-a/package-install`, which the
-  recipe's install script runs as root.
+  recipe's install script runs as root. A system service of the package that
+  keeps running (omarchy-powerd) is restarted there after every update.
 - The tablet user's own files (`~/.config`, copied from `/etc/skel` when the
   user was made, and the user's from then on): a migration, as upstream
   Omarchy does it. `desktop/shell/bin/omarchy-dev-add-migration` makes

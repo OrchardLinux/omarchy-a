@@ -86,6 +86,9 @@ measured as 3.36 s); the key timestamps can. It:
 
 No state is inferred from brightness or files. After a restart the state is
 `ON` and the panel is lit: it fails towards a visible, locked-or-not screen.
+An update of the package restarts the daemon (`package-install`); the old one
+leaves the panel at the user's level (not dimmed, not halfway through a fade),
+and a dark panel is lit to the level of the last dark.
 
 ## States and their invariants
 

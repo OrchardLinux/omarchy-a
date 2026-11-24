@@ -27,6 +27,13 @@ is missing or empty.
   Before, it toggled the mute on and off for several seconds, and again
   after every wake. A keyboard's Mute key still toggles the mute.
 
+### System
+
+- After an update, Power and idle turn the screen off again without a
+  restart of the tablet. Before, the power service kept running the old
+  version until the next restart, and Power only dimmed the screen for a
+  moment.
+
 ## [0.3.4] - 2026-11-24
 
 Built on orchard 0.3.6.

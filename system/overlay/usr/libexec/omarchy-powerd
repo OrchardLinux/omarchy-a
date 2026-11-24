@@ -801,23 +801,35 @@ class Daemon:
         except OSError as error:
             log(f'brightness not remembered: {error}')
 
-    def restore_brightness(self):
-        """First start of a boot: the remembered level, never too dim to see; full on the first boot."""
-        panel = self.backlight()
-        if not panel:
-            return
+    def remembered_level(self, panel):
+        """The remembered level, never too dim to see; full without one."""
         maximum = int((panel / 'max_brightness').read_text())
         try:
             level = max(int(BRIGHTNESS.read_text()), max(1, maximum // 20))
         except (OSError, ValueError):
             level = maximum
-        self.saved = min(level, maximum)
+        return min(level, maximum)
+
+    def restore_brightness(self):
+        """First start of a boot: the remembered level; full on the first boot."""
+        panel = self.backlight()
+        if not panel:
+            return
+        self.saved = self.remembered_level(panel)
         (panel / 'brightness').write_text(f'{self.saved}\n')
 
     def stop_brightness(self, *_):
-        """Shutdown: a level changed since the last dark, unless the panel is dark now."""
+        """Shutdown or restart: a level changed since the last dark, unless the panel is dark now.
+
+        A restart (an update of the package) starts the next daemon in ON with
+        the panel as it finds it, and it knows nothing of a dim or a fade: the
+        panel is left at the level the user set, or dark for it to light."""
         panel = self.backlight()
         if panel:
+            if self.dim_saved is not None and self.machine.state == ON and self.fade is None:
+                (panel / 'brightness').write_text(f'{self.dim_saved}\n')
+            elif self.fade is not None:
+                (panel / 'brightness').write_text(f'{self.fade[2]}\n')
             current = int((panel / 'brightness').read_text())
             if self.fade is not None and self.saved:
                 self.remember_brightness(self.saved)
@@ -1161,14 +1173,19 @@ class Daemon:
             log(f'no end of the sleep seen in {self.awake:.1f} s awake')
             self.sleep_finished('none')
 
-    def run(self):
+    def start_lit(self):
+        """State ON at the start, the panel lit: the level of the last dark."""
         if not os.path.exists(SOCKET):  # /run: gone only at boot, kept by a restart
             self.restore_brightness()
         panel = self.backlight()
         if panel and int((panel / 'brightness').read_text()) == 0:
-            # State ON after a restart: never dark without an owner.
+            # A restart (an update, a crash) found it dark: never dark without an owner.
+            self.saved = self.saved or self.remembered_level(panel)
             self.key_time = time.monotonic()
             self.do_light(ON)
+
+    def run(self):
+        self.start_lit()
         server = self.open_socket()
         self.take_inhibitor()
         self.start_monitor()
