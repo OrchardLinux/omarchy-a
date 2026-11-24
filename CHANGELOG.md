@@ -22,7 +22,7 @@ is missing or empty.
 - All iPads: a Smart Cover that closes or opens while the system is busy
   is no longer missed, and a cover whose driver comes up late is followed
   too.
-- iPhone and iPads with a ring/silent switch: the switch mutes the sound
+- iPhones and iPads with a ring/silent switch: the switch mutes the sound
   while it is on silent and unmutes it on ring, with the volume indicator.
   Before, it toggled the mute on and off for several seconds, and again
   after every wake. A keyboard's Mute key still toggles the mute.
