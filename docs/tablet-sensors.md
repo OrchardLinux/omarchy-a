@@ -22,3 +22,9 @@ Both fresh desktop staging and the public-root builder include the helper and it
 
 Host checks cover the retained light policy, switch state, missing power daemon, stale-value/dark-panel refusal, manual pause, actual socket writes, rotation debounce/lock/unlock and compositor exit, plus staging and public-root inclusion. Physical lux response, all four orientation directions, touch mapping and power-button/idle/sleep coexistence still need a device run.
 
+
+## Side mute switch
+
+The kernel reports the ring/silent switch (iPhone, older iPads) as `KEY_MUTE` of the `gpio-keys` input device, held down while the switch is on silent. `omarchy-mute-switch` (`/usr/libexec`, started by the session's autostart) mutes the default output while the switch is on silent and unmutes it on ring: quietly at login, with the volume OSD (`omarchy-volume mute-on|mute-off`) when the switch is moved. A suspend and resume, which the kernel reports as a release and a press, changes nothing. Without such a switch it exits at once; it ends with labwc. Logs are in `$XDG_RUNTIME_DIR/omarchy-mute-switch.log`.
+
+Labwc's Mute key runs `omarchy-volume mute-key`, which toggles the mute only while no switch is followed (`$XDG_RUNTIME_DIR/omarchy-mute-switch` names the helper's pid). Labwc cannot tell the switch from a keyboard's Mute key, so on a device with the switch the helper follows the Mute keys of the other input devices too (a Bluetooth or USB keyboard, also one that connects later; it looks for new ones every 2 s): each press toggles the mute with the OSD (`omarchy-volume mute-toggle`), repeats change nothing.

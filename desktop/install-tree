@@ -129,6 +129,7 @@ $config/first-theme usr/libexec/arch-ipad-first-theme 755
 $config/scale-output usr/libexec/arch-ipad-scale-output 755
 $config/auto-brightness usr/libexec/arch-ipad-auto-brightness 755
 $config/rotate-output usr/libexec/arch-ipad-rotate-output 755
+$config/mute-switch usr/libexec/omarchy-mute-switch 755
 $config/j120-speaker-map usr/libexec/omarchy-j120-speaker-map 755
 $config/j120-speakers.conf usr/share/omarchy/j120-speakers.conf 644
 $config/touch-output usr/libexec/arch-ipad-touch-output 755

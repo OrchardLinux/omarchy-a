@@ -4,6 +4,20 @@
 set -u
 # labwc runs key bindings without the session's OMARCHY_PATH (labwc-autostart's).
 export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+# labwc's XF86AudioMute. A hardware mute switch (the side switch: gpio-keys'
+# KEY_MUTE, held down while on silent) is omarchy-mute-switch's while that
+# follows it ($XDG_RUNTIME_DIR/omarchy-mute-switch holds its pid): the mute
+# follows the switch, and the key, which is the switch and repeats while held,
+# changes nothing here. labwc cannot tell it from a keyboard's Mute key, so
+# omarchy-mute-switch toggles for those itself (mute-toggle). Without a switch
+# this toggles.
+if [[ ${1:-} == mute-key ]]; then
+  if pid=$(cat "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-mute-switch" 2>/dev/null) &&
+      [[ $pid =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    exit 0
+  fi
+  set -- mute-toggle
+fi
 # The volume in whole percent, from "Volume: 0.45 [MUTED]".
 percent() { awk '{ printf "%d", $2 * 100 + 0.5 }' <<< "$1"; }
 state=$(wpctl get-volume @DEFAULT_AUDIO_SINK@) || exit 1
@@ -12,16 +26,18 @@ percent=$(percent "$state")
 case ${1:-} in
   raise) percent=$(( percent / 5 * 5 + 5 )) ;;
   lower) percent=$(( (percent + 4) / 5 * 5 - 5 )) ;;
-  mute-toggle) ;;
-  *) echo 'Usage: omarchy-volume raise|lower|mute-toggle' >&2; exit 2 ;;
+  # mute-on and mute-off: the side switch (omarchy-mute-switch).
+  mute-toggle|mute-on|mute-off) ;;
+  *) echo 'Usage: omarchy-volume raise|lower|mute-toggle|mute-on|mute-off|mute-key' >&2; exit 2 ;;
 esac
 (( percent > 100 )) && percent=100
 (( percent < 0 )) && percent=0
-if [[ $1 == mute-toggle ]]; then
-  wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
-else
-  wpctl set-volume @DEFAULT_AUDIO_SINK@ "$percent%"
-fi || exit 1
+case $1 in
+  mute-toggle) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+  mute-on) wpctl set-mute @DEFAULT_AUDIO_SINK@ 1 ;;
+  mute-off) wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 ;;
+  *) wpctl set-volume @DEFAULT_AUDIO_SINK@ "$percent%" ;;
+esac || exit 1
 state=$(wpctl get-volume @DEFAULT_AUDIO_SINK@) || exit 0
 percent=$(percent "$state")
 icon=volume-high

@@ -1,0 +1,331 @@
+#!/usr/bin/python3
+"""The side mute switch (ring/silent): the sound output's mute follows it.
+
+The kernel reports the switch (iPhone, older iPads; Apple's device trees in
+mainline) as KEY_MUTE of the gpio-keys input device, held down while the
+switch is on silent and released on ring. labwc would take it for a Mute key
+and toggle the mute on every repeat while it is held. Here the default output
+is muted while the switch is on silent and unmuted on ring: quietly at the
+start of the session, with the volume OSD (omarchy-volume mute-on|mute-off)
+when the switch is moved.
+
+While it follows a switch, $XDG_RUNTIME_DIR/omarchy-mute-switch holds its
+pid: omarchy-volume mute-key (labwc's XF86AudioMute) leaves the mute alone
+then, as labwc cannot tell the switch from a keyboard's Mute key. The Mute
+keys of the other input devices (a Bluetooth or USB keyboard, also one that
+connects later) are followed here instead: each press toggles the mute, with
+the OSD, and their repeats change nothing. Without a switch it exits at once,
+and labwc's binding toggles. A switch that goes away is looked for again
+every few seconds. It ends with the compositor (LABWC_PID).
+"""
+import fcntl
+import os
+from pathlib import Path
+import select
+import signal
+import struct
+import subprocess
+import sys
+import time
+
+INPUT = Path('/sys/class/input')
+# The input devices whose KEY_MUTE is a switch, not a key: mainline's Apple
+# device trees put the side switch in gpio-keys. The driver names its device
+# after the node's label, if it has one, and always sets this phys. A
+# keyboard's Mute key is in its own device, and stays labwc's.
+SWITCH_DEVICES = ('gpio-keys',)
+SWITCH_PHYS = 'gpio-keys/'
+EV_SYN, SYN_DROPPED, EV_KEY, KEY_MUTE = 0, 3, 1, 113
+# struct input_event: the time is two longs, of the kernel's width.
+EVENT = struct.Struct('llHHi')
+KEY_BYTES = 96  # KEY_CNT / 8
+EVIOCGKEY = 2 << 30 | KEY_BYTES << 16 | ord('E') << 8 | 0x18  # _IOC(_IOC_READ, 'E', 0x18, len)
+SETTLE = 0.3  # seconds after the last change before the switch is read back
+RETRY = 2.0
+
+
+def log(*args):
+    print('omarchy-mute-switch:', *args, file=sys.stderr, flush=True)
+
+
+def has_key(capabilities_key, code, width=None):
+    """Whether an input device's sysfs capabilities/key bitmap has key CODE."""
+    # Hex words of the kernel's long, most significant first.
+    width = width or struct.calcsize('L') * 8
+    bits = 0
+    for word in capabilities_key.split():
+        bits = bits << width | int(word, 16)
+    return bool(bits >> code & 1)
+
+
+def find_switches(root=INPUT, width=None):
+    """/dev/input/eventN of every input device that is a mute switch."""
+    return find_mute(root, width)[0]
+
+
+def find_keys(root=INPUT, width=None):
+    """/dev/input/eventN of every other input device with a Mute key: keyboards."""
+    return find_mute(root, width)[1]
+
+
+def find_mute(root=INPUT, width=None):
+    """The input devices with KEY_MUTE: (the switches, the keys)."""
+    found, keys_found = [], []
+    for device in sorted(root.glob('event*'), key=lambda path: (len(path.name), path.name)):
+        try:
+            name = (device / 'device/name').read_text().strip()
+            keys = (device / 'device/capabilities/key').read_text()
+        except OSError:
+            continue
+        try:
+            phys = (device / 'device/phys').read_text().strip()
+        except OSError:
+            phys = ''
+        switch = name in SWITCH_DEVICES or phys.startswith(SWITCH_PHYS)
+        try:
+            if has_key(keys, KEY_MUTE, width):
+                (found if switch else keys_found).append(f'/dev/input/{device.name}')
+        except ValueError:
+            continue
+    return found, keys_found
+
+
+def is_down(fd):
+    """Whether KEY_MUTE is down (the switch on silent), as the kernel has it now."""
+    bits = bytearray(KEY_BYTES)
+    fcntl.ioctl(fd, EVIOCGKEY, bits)
+    return bool(bits[KEY_MUTE // 8] >> KEY_MUTE % 8 & 1)
+
+
+class Follower:
+    """When to read the switch, and what to do with what it reads.
+
+    Every change of KEY_MUTE is read back from the switch (EVIOCGKEY) SETTLE
+    seconds after the last one, and the mute is set only when that position
+    differs from the one last set. When the machine suspends, the input core
+    releases every key held down, and gpio-keys reports the switch again when
+    it resumes: a switch on silent gives a release, then a press, both read
+    after the resume (processes are frozen before the devices suspend and
+    thawed after they resume, and the monotonic clock stands still in
+    between). Read back together, they are the position already set: no
+    unmute, no OSD. A bouncing contact settles the same way. Repeats (value 2)
+    are no change of position.
+    """
+
+    def __init__(self, settle=SETTLE, retry=RETRY):
+        self.settle, self.retry = settle, retry
+        self.applied = None  # the mute last set; None before the first
+        self.due = 0.0  # when to read the switch: at once at the start
+
+    def feed(self, data, now):
+        """The events in evdev bytes."""
+        whole = len(data) // EVENT.size * EVENT.size
+        for _, _, kind, code, value in EVENT.iter_unpack(data[:whole]):
+            if (kind == EV_KEY and code == KEY_MUTE and value in (0, 1)) or (kind == EV_SYN and code == SYN_DROPPED):
+                self.due = now + self.settle
+
+    def wait(self, now):
+        """Seconds until the switch is to be read, or None."""
+        return None if self.due is None else max(0.0, self.due - now)
+
+    def decide(self, muted):
+        """What to do with the position read when due: None, or (muted, quiet)."""
+        self.due = None
+        if muted == self.applied:
+            return None
+        return muted, self.applied is None  # the first is the session's start: no OSD
+
+    def done(self, muted):
+        self.applied = muted
+
+    def failed(self, now):
+        self.due = now + self.retry
+
+
+def presses(data):
+    """How many times a Mute key was pressed in these evdev bytes (not its repeats)."""
+    whole = len(data) // EVENT.size * EVENT.size
+    return sum(1 for _, _, kind, code, value in EVENT.iter_unpack(data[:whole])
+               if kind == EV_KEY and code == KEY_MUTE and value == 1)
+
+
+def toggle_mute():
+    """A keyboard's Mute key: toggle the default output's mute, with the OSD."""
+    for argv in (['omarchy-volume', 'mute-toggle'], ['wpctl', 'set-mute', '@DEFAULT_AUDIO_SINK@', 'toggle']):
+        try:
+            if subprocess.run(argv, stdin=subprocess.DEVNULL, timeout=10).returncode == 0:
+                return True
+        except (OSError, subprocess.SubprocessError) as error:
+            log(f'{argv[0]}: {error}')
+    return False
+
+
+def set_mute(muted, quiet):
+    """Mute or unmute the default output; with the OSD unless QUIET."""
+    plain = ['wpctl', 'set-mute', '@DEFAULT_AUDIO_SINK@', '1' if muted else '0']
+    tries = [plain] if quiet else [['omarchy-volume', 'mute-on' if muted else 'mute-off'], plain]
+    for argv in tries:
+        try:
+            if subprocess.run(argv, stdin=subprocess.DEVNULL, timeout=10).returncode == 0:
+                return True
+        except (OSError, subprocess.SubprocessError) as error:
+            log(f'{argv[0]}: {error}')
+    return False
+
+
+def flag_path():
+    runtime = os.environ.get('XDG_RUNTIME_DIR')
+    return Path(runtime) / 'omarchy-mute-switch' if runtime else None
+
+
+def raise_flag():
+    flag = flag_path()
+    if flag:
+        try:
+            flag.with_name(flag.name + '.new').write_text(f'{os.getpid()}\n')
+            os.replace(flag.with_name(flag.name + '.new'), flag)
+        except OSError as error:
+            log(f'{flag}: {error}')
+
+
+def lower_flag():
+    flag = flag_path()
+    try:
+        if flag and flag.read_text().strip() == str(os.getpid()):
+            flag.unlink()
+    except OSError:
+        pass
+
+
+def alive(pid):
+    if not pid:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        pass
+    return True
+
+
+def main():
+    compositor = int(os.environ.get('LABWC_PID') or 0)
+    running = True
+
+    def stop(*_):
+        nonlocal running
+        running = False
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+
+    devices = {}  # fd: path, the switches
+    keyboards = {}  # fd: path, the other devices with a Mute key
+    follower = Follower()
+    found_once, next_scan, next_keys = False, 0.0, 0.0
+
+    def close_all():
+        for fd in devices:
+            os.close(fd)
+        devices.clear()
+
+    def close_keyboards():
+        for fd in keyboards:
+            os.close(fd)
+        keyboards.clear()
+
+    def follow_keyboards():
+        # Keyboards come and go (Bluetooth): new ones are opened at every look.
+        known = set(keyboards.values())
+        for path in find_keys():
+            if path not in known:
+                try:
+                    keyboards[os.open(path, os.O_RDONLY | os.O_NONBLOCK)] = path
+                    log('Mute key of', path)
+                except OSError as error:
+                    log(f'{path}: {error}')
+
+    try:
+        while running and alive(compositor):
+            now = time.monotonic()
+            if not devices and now >= next_scan:
+                for path in find_switches():
+                    try:
+                        devices[os.open(path, os.O_RDONLY | os.O_NONBLOCK)] = path
+                    except OSError as error:
+                        log(f'{path}: {error}')
+                if devices:
+                    log('following', ', '.join(devices.values()))
+                    found_once = True
+                    raise_flag()
+                    follower.due = now  # read the switch as it is now
+                elif not found_once:
+                    log('no hardware mute switch')
+                    return 0
+                else:
+                    next_scan = now + RETRY
+            if devices and now >= next_keys:
+                follow_keyboards()
+                next_keys = now + RETRY
+            wait = follower.wait(now) if devices else None
+            timeout = 1.0 if wait is None else min(1.0, wait)
+            if not devices:
+                time.sleep(timeout)
+                continue
+            lost = False
+            for fd in select.select(list(devices) + list(keyboards), [], [], timeout)[0]:
+                if fd in keyboards:
+                    try:
+                        data = os.read(fd, EVENT.size * 64)
+                    except BlockingIOError:
+                        continue
+                    except OSError:
+                        data = b''
+                    if not data:  # gone (disconnected): found again when it comes back
+                        log('gone:', keyboards.pop(fd))
+                        os.close(fd)
+                        continue
+                    for _ in range(presses(data)):
+                        toggle_mute()
+                    continue
+                try:
+                    data = os.read(fd, EVENT.size * 64)
+                except BlockingIOError:
+                    continue
+                except OSError as error:
+                    log(f'{devices[fd]}: {error}')
+                    lost = True
+                    break
+                if not data:
+                    lost = True
+                    break
+                follower.feed(data, time.monotonic())
+            now = time.monotonic()
+            if not lost and follower.wait(now) == 0.0:
+                try:
+                    muted = any(is_down(fd) for fd in devices)
+                except OSError as error:
+                    log(f'reading the switch: {error}')
+                    lost = True
+                else:
+                    action = follower.decide(muted)
+                    if action:
+                        if set_mute(*action):
+                            follower.done(action[0])
+                            log('silent: muted' if action[0] else 'ring: unmuted')
+                        else:
+                            follower.failed(now)
+            if lost:
+                # Gone (unbound, reloaded): look for it again in a while.
+                close_all()
+                lower_flag()
+                next_scan = time.monotonic() + RETRY
+    finally:
+        close_all()
+        close_keyboards()
+        lower_flag()
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
