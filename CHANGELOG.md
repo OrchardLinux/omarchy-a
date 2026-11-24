@@ -11,7 +11,13 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
-## Unreleased
+## [0.3.5] - 2026-11-25
+
+Built on orchard 0.3.7.
+
+### Install
+
+- An installed system starts in the computer's time zone instead of UTC.
 
 ### Desktop
 
