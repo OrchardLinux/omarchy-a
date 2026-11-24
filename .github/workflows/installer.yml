@@ -116,9 +116,12 @@ jobs:
           mkdir out
           # Before stamping, so SHA256SUMS covers it.
           printf '%s\n' "$TOOLS_TAG" > out/TOOLS_VERSION
+          # --cli-script: until 0.4 renames it to install-cli.sh, the latest release
+          # serves the CLI installer as install.sh.
           python3 -I tools/packaging/stamp.py --generic generic --out out \
             --name "Omarchy A" --wordmark omarchy-a/release/installer/wordmark.svg \
-            --release "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG"
+            --release "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG" \
+            --cli-script "https://github.com/$GH_REPO/releases/latest/download/install.sh"
 
       - name: Publish on the installer release
         timeout-minutes: 10
