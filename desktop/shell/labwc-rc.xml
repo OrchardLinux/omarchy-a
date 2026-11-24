@@ -45,7 +45,9 @@
       <action name="HideCursor" />
     </keybind>
     <!-- Physical gpio-keys: volume, in 5% steps with the shell's OSD.
-         Brightness is in the Control Center. -->
+         Brightness is in the Control Center. The side mute switch is
+         omarchy-mute-switch's, and so are keyboards' Mute keys on such a
+         device: mute-key toggles only without one. -->
     <keybind key="XF86AudioRaiseVolume" allowWhenLocked="yes">
       <action name="Execute" command="omarchy-volume raise" />
     </keybind>
@@ -53,7 +55,7 @@
       <action name="Execute" command="omarchy-volume lower" />
     </keybind>
     <keybind key="XF86AudioMute" allowWhenLocked="yes">
-      <action name="Execute" command="omarchy-volume mute-toggle" />
+      <action name="Execute" command="omarchy-volume mute-key" />
     </keybind>
     <!-- Power is omarchy-powerd's: it reads the key itself (docs/power-and-lock.md). -->
     <!-- Modifier-only release bindings preserve ordinary Cmd/Super chords. -->

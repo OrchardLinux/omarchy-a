@@ -92,6 +92,7 @@ class PackageStagingTests(unittest.TestCase):
         self.assertFalse((skel / '.bash_profile').exists())
         self.assertTrue(mode(target / 'usr/libexec/arch-ipad-rotate-output') & 0o111)
         self.assertTrue(mode(target / 'usr/libexec/arch-ipad-touch-output') & 0o111)
+        self.assertEqual(mode(target / 'usr/libexec/omarchy-mute-switch'), 0o755)
         # The user's defaults, and the same files where omarchy-refresh-config takes them from.
         for name in ('labwc/rc.xml', 'labwc/autostart', 'foot/foot.ini', 'omarchy-ipad/shell.json'):
             self.assertEqual((skel / '.config' / name).read_bytes(), (omarchy / 'config' / name).read_bytes(), name)

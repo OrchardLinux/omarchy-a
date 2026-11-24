@@ -10,9 +10,16 @@ SCRIPT = PROJECT / 'desktop/shell/bin/omarchy-volume'
 
 
 class VolumeKeys(unittest.TestCase):
-    def run_keys(self, action, volume='0.45'):
-        """Run omarchy-volume ACTION at VOLUME; returns (exit code, the calls it made)."""
+    def run_keys(self, action, volume='0.45', switch=None):
+        """Run omarchy-volume ACTION at VOLUME; returns (exit code, the calls it made).
+
+        SWITCH: what $XDG_RUNTIME_DIR/omarchy-mute-switch holds (omarchy-mute-switch's pid), if anything.
+        """
         with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory) / 'runtime'
+            runtime.mkdir()
+            if switch is not None:
+                (runtime / 'omarchy-mute-switch').write_text(switch)
             bin_dir, log, level = Path(directory), Path(directory) / 'calls', Path(directory) / 'level'
             level.write_text(volume)
             (bin_dir / 'omarchy-shell').write_text(f'#!/bin/sh\necho "shell $*" >> {log}\n')
@@ -26,9 +33,10 @@ esac
 """)
             for name in ('omarchy-shell', 'wpctl'):
                 (bin_dir / name).chmod(0o755)
-            env = {**os.environ, 'PATH': f'{bin_dir}:/usr/bin:/bin'}
+            env = {**os.environ, 'PATH': f'{bin_dir}:/usr/bin:/bin', 'XDG_RUNTIME_DIR': str(runtime)}
             result = subprocess.run(['bash', str(SCRIPT), action], env=env, capture_output=True, text=True)
-            return result.returncode, [line for line in log.read_text().splitlines() if 'get-volume' not in line]
+            calls = log.read_text().splitlines() if log.exists() else []
+            return result.returncode, [line for line in calls if 'get-volume' not in line]
 
     def test_steps_land_on_multiples_of_5(self):
         for action, volume, expected in (('raise', '0.45', '50%'), ('raise', '0.12', '15%'),
@@ -45,9 +53,32 @@ esac
         code, calls = self.run_keys('mute-toggle')
         self.assertEqual(calls[0], 'wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle')
 
+    def test_the_mute_switch_sets_the_mute_with_the_osd(self):
+        for action, value in (('mute-on', '1'), ('mute-off', '0')):
+            with self.subTest(action=action):
+                code, calls = self.run_keys(action)
+                self.assertEqual(code, 0)
+                self.assertEqual(calls[0], f'wpctl set-mute @DEFAULT_AUDIO_SINK@ {value}')
+                self.assertTrue(calls[-1].startswith('shell -q shell summon omarchy.osd '))
+
+    def test_the_mute_key_toggles_only_without_a_followed_switch(self):
+        code, calls = self.run_keys('mute-key')
+        self.assertEqual(calls[0], 'wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle')
+        # omarchy-mute-switch follows the side switch: the key (the switch itself) changes nothing.
+        code, calls = self.run_keys('mute-key', switch=f'{os.getpid()}\n')
+        self.assertEqual((code, calls), (0, []))
+        # One that is gone, or a flag that names no process, is no switch followed.
+        dead = subprocess.Popen(['true'])
+        dead.wait()
+        for flag in (f'{dead.pid}\n', 'garbage\n', ''):
+            with self.subTest(flag=flag):
+                code, calls = self.run_keys('mute-key', switch=flag)
+                self.assertEqual(calls[0], 'wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle')
+
     def test_the_volume_keys_are_bound_to_volume(self):
         rc = (PROJECT / 'desktop/shell/labwc-rc.xml').read_text()
-        for key, action in (('XF86AudioRaiseVolume', 'raise'), ('XF86AudioLowerVolume', 'lower')):
+        for key, action in (('XF86AudioRaiseVolume', 'raise'), ('XF86AudioLowerVolume', 'lower'),
+                            ('XF86AudioMute', 'mute-key')):
             block = rc[rc.index(f'<keybind key="{key}" allowWhenLocked="yes">'):]
             self.assertIn(f'omarchy-volume {action}', block[:block.index('</keybind>')])
 
