@@ -30,9 +30,11 @@ import time
 
 INPUT = Path('/sys/class/input')
 # The input devices whose KEY_MUTE is a switch, not a key: mainline's Apple
-# device trees put the side switch in gpio-keys. A keyboard's Mute key is in
-# its own device, and stays labwc's.
+# device trees put the side switch in gpio-keys. The driver names its device
+# after the node's label, if it has one, and always sets this phys. A
+# keyboard's Mute key is in its own device, and stays labwc's.
 SWITCH_DEVICES = ('gpio-keys',)
+SWITCH_PHYS = 'gpio-keys/'
 EV_SYN, SYN_DROPPED, EV_KEY, KEY_MUTE = 0, 3, 1, 113
 # struct input_event: the time is two longs, of the kernel's width.
 EVENT = struct.Struct('llHHi')
@@ -76,8 +78,13 @@ def find_mute(root=INPUT, width=None):
         except OSError:
             continue
         try:
+            phys = (device / 'device/phys').read_text().strip()
+        except OSError:
+            phys = ''
+        switch = name in SWITCH_DEVICES or phys.startswith(SWITCH_PHYS)
+        try:
             if has_key(keys, KEY_MUTE, width):
-                (found if name in SWITCH_DEVICES else keys_found).append(f'/dev/input/{device.name}')
+                (found if switch else keys_found).append(f'/dev/input/{device.name}')
         except ValueError:
             continue
     return found, keys_found

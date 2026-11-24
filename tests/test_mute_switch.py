@@ -55,16 +55,21 @@ class Detection(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
 
-            def device(name, label, codes):
+            def device(name, label, codes, phys=None):
                 (root / name / 'device/capabilities').mkdir(parents=True)
                 (root / name / 'device/name').write_text(label + '\n')
                 (root / name / 'device/capabilities/key').write_text(capabilities(codes))
+                if phys is not None:
+                    (root / name / 'device/phys').write_text(phys + '\n')
             device('event0', 'gpio-keys', (m.KEY_MUTE, KEY_VOLUMEDOWN, KEY_VOLUMEUP, KEY_POWER))
             device('event1', 'Apple Inc. Magic Keyboard', (m.KEY_MUTE, KEY_VOLUMEUP))  # a key, not a switch
             device('event2', 'gpio-keys', (KEY_POWER, KEY_HOMEPAGE))  # an iPad without the switch
             device('event10', 'gpio-keys', (m.KEY_MUTE,))
+            # A gpio-keys node with a label: the driver names the device after it.
+            device('event11', 'Buttons', (m.KEY_MUTE, KEY_POWER), phys='gpio-keys/input0')
             (root / 'event3').mkdir()  # gone while scanned
-            self.assertEqual(m.find_switches(root, 64), ['/dev/input/event0', '/dev/input/event10'])
+            self.assertEqual(m.find_switches(root, 64),
+                             ['/dev/input/event0', '/dev/input/event10', '/dev/input/event11'])
             self.assertEqual(m.find_switches(root / 'none', 64), [])
             self.assertEqual(m.find_keys(root, 64), ['/dev/input/event1'])
 
