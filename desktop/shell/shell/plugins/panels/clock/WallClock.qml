@@ -13,10 +13,19 @@ Timer {
   // Milliseconds between ticks: 1000 to show seconds, 60000 for minutes.
   property int step: 60000
   property date date: new Date()
+  // Epoch milliseconds the armed tick is for.
+  property double dueMs: 0
 
   function arm() {
-    interval = Model.msUntilNextTick(Date.now(), step)
+    var now = Date.now()
+    interval = Model.msUntilNextTick(now, step)
+    dueMs = now + interval
     restart()
+  }
+
+  function tick() {
+    date = new Date()
+    arm()
   }
 
   onStepChanged: arm()
@@ -24,10 +33,18 @@ Timer {
   // A new time zone (Settings > Date & Time) shows at once, not at the
   // next tick.
   readonly property int zoneRevision: TimeZone.revision
-  onZoneRevisionChanged: { date = new Date(); arm() }
-  onTriggered: {
-    date = new Date()
-    arm()
-  }
+  onZoneRevisionChanged: tick()
+  onTriggered: tick()
   Component.onCompleted: arm()
+
+  // The tick timer runs on monotonic time, which stops while the tablet
+  // sleeps: after a wake, or when the system clock is set, the clock would
+  // show a stale time for up to a step. Reading the wall clock every two
+  // seconds catches both.
+  property Timer watch: Timer {
+    interval: 2000
+    repeat: true
+    running: true
+    onTriggered: if (Model.tickMissed(Date.now(), root.dueMs, root.step)) root.tick()
+  }
 }

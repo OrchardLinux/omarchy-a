@@ -287,6 +287,15 @@ function msUntilNextTick(nowMs, step) {
   return step - nowMs % step
 }
 
+// Whether a tick due at dueMs (epoch ms) has gone missing by nowMs. The tick
+// timer counts monotonic time, which stops while the tablet sleeps, so after a
+// wake it would fire up to a step late; a clock set back leaves it waiting
+// for a minute that has already passed. Both show here as a wall time outside
+// the step the tick was armed for.
+function tickMissed(nowMs, dueMs, step) {
+  return nowMs >= dueMs + 1000 || nowMs < dueMs - step - 1000
+}
+
 // UTC for the same reason as the grid: the month is read back off the date, so
 // a first of the month that has no local midnight would step into the wrong one.
 function stepMonth(year, month, delta) {
@@ -297,6 +306,7 @@ function stepMonth(year, month, delta) {
 if (typeof module !== "undefined") {
   module.exports = {
     msUntilNextTick: msUntilNextTick,
+    tickMissed: tickMissed,
     dateKey: dateKey,
     keyForDate: keyForDate,
     normalizedWeekStart: normalizedWeekStart,

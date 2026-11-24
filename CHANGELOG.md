@@ -21,6 +21,8 @@ Built on orchard 0.3.7.
 
 ### Desktop
 
+- The status bar clock is right as soon as the tablet wakes, instead of
+  showing the time it went to sleep for up to a minute or more.
 - iPad Pro 12.9-inch (2017) and 10.5-inch: plugged-in headphones become
   the sound output, and the microphones no longer clip at full volume.
 - iPad Pro 12.9-inch (2017) and 10.5-inch: sound plays from all four
