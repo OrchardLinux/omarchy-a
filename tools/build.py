@@ -62,11 +62,18 @@ def python(*argv):
 
 
 def orchard_command(module, *argv):
-    """orchard's producer MODULE as a command from the snapshot (PYTHONPATH=SNAPSHOT/src)."""
+    """orchard's producer MODULE as a command from the snapshot (PYTHONPATH=SNAPSHOT/src).
+
+    Under the orchard tool's build (ORCHARD_TOOL names it) the tool resolves the
+    inputs itself: the same arguments and the same document, with paths into its cache.
+    """
     root = Path(os.environ['ORCHARD_CHECKOUT'])
-    print('+', sys.executable, '-m', module, ' '.join(map(str, argv)), flush=True)
-    subprocess.run([sys.executable, '-m', module, *map(str, argv)], cwd=PROJECT, check=True,
-                   env={**os.environ, 'PYTHONPATH': str(root / 'src')})
+    if module == 'orchard.inputs' and os.environ.get('ORCHARD_TOOL'):
+        command = [os.environ['ORCHARD_TOOL'], 'inputs', *map(str, argv)]
+    else:
+        command = [sys.executable, '-m', module, *map(str, argv)]
+    print('+', ' '.join(command), flush=True)
+    subprocess.run(command, cwd=PROJECT, check=True, env={**os.environ, 'PYTHONPATH': str(root / 'src')})
 
 
 def targets(orchard, requested, architecture=None):
