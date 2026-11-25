@@ -11,6 +11,15 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
+## [0.3.6] - 2026-11-25
+
+Built on orchard 0.3.8.
+
+### Desktop
+
+- The status bar clock is right as soon as the tablet wakes, instead of
+  showing the time it went to sleep for up to a minute or more.
+
 ## [0.3.5] - 2026-11-25
 
 Built on orchard 0.3.7.
@@ -21,8 +30,6 @@ Built on orchard 0.3.7.
 
 ### Desktop
 
-- The status bar clock is right as soon as the tablet wakes, instead of
-  showing the time it went to sleep for up to a minute or more.
 - iPad Pro 12.9-inch (2017) and 10.5-inch: plugged-in headphones become
   the sound output, and the microphones no longer clip at full volume.
 - iPad Pro 12.9-inch (2017) and 10.5-inch: sound plays from all four
