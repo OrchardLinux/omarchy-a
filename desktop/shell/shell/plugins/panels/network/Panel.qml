@@ -404,6 +404,8 @@ Panel {
       passwordText = ""
       Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
     }
+    // What changed while the prompt held the list still.
+    if (passwordSsid === "") rebuildWifiRows()
   }
 
   // Keep selectedIndex valid as scans refresh the network list.
@@ -685,6 +687,11 @@ Panel {
     // A new model rebuilds every delegate, which takes focus from a passphrase
     // being typed, so identical rows are left in place.
     if (JSON.stringify(nets) === JSON.stringify(wifiNetworks)) return
+    // Any other new model does the same: a network appearing after a scan took
+    // the field, and the on-screen keyboard, away mid-password (#110). The list
+    // holds still while the passphrase prompt is open and catches up when it
+    // closes; the connect results above are still seen.
+    if (passwordSsid !== "") return
     var selected = wifiNetworks[selectedIndex]
     cursorSsid = selected ? selected.ssid : null
     wifiNetworks = nets

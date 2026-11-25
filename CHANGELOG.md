@@ -11,6 +11,14 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
+## [Unreleased]
+
+### Desktop
+
+- Typing a Wi-Fi password, the on-screen keyboard stays open: the network list
+  no longer refreshes under the password field while it is being typed, and
+  catches up when the prompt closes. Reported by perryraskin (thanks!).
+
 ## [0.3.6] - 2026-11-25
 
 Built on orchard 0.3.8.
