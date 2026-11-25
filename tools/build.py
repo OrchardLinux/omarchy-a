@@ -243,7 +243,8 @@ def main():
     # What orchard supplies finished: kernels, loaders, tools (the nightly's when they match).
     inputs = PROJECT / f'out/components/.inputs-{architecture}.json'
     orchard_command('orchard.inputs', '--output', inputs, *selected)
-    tools = json.loads(inputs.read_text())['shared']['tools']
+    shared = json.loads(inputs.read_text())['shared']
+    tools = shared['tools']
     python('-m', 'release.build', '--release', args.version, '--inputs', inputs,
            '--base', base / 'rootfs.tar.gz', '--base-receipt', base / 'rootfs.tar.gz.json',
            '--splash', artwork / 'splash', '--logo', artwork / 'logo.bin',
@@ -251,8 +252,11 @@ def main():
              for part in ('--' + name, tools[name])),
            *target_args, '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
-    # install.sh and orchard-install.pyz, with orchard's launch loaders.
-    orchard_command('orchard.installer', 'release', args.output)
+    # install.sh and orchard-install.pyz, with orchard's launch loaders: the resolved ones, where the
+    # document names them (an armv7 one from orchard's Python does not), so the installer builds none.
+    loaders = (['--pongo', shared['pongo'], '--m1n1', shared['m1n1']]
+               if {'pongo', 'm1n1'} <= shared.keys() else [])
+    orchard_command('orchard.installer', 'release', args.output, *loaders)
 
 
 if __name__ == '__main__':
