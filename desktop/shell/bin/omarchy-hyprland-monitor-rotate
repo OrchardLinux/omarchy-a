@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# omarchy:summary=Show or set a Hyprland monitor's rotation (the focused one by default)
+# omarchy:args=[--monitor NAME] [0|90|180|270]
+# omarchy:examples=omarchy hyprland monitor rotate | omarchy hyprland monitor rotate 90 | omarchy hyprland monitor rotate --monitor DP-2 270
+
+# Labwc port of upstream Omarchy's command (basecamp/omarchy e6aec97), under
+# upstream's name. The CLI, the quarter turns and the persisted transform
+# (Hyprland's 0-3, in omarchy-hyprland-monitor-persist's file) are upstream's.
+# What differs:
+# - The output comes from `wlr-randr --json`, as in
+#   omarchy-hyprland-monitor-scaling. Labwc has no focused output, so without
+#   --monitor it is the first enabled one (an iPad has a single panel).
+# - The turn is applied with `wlr-randr --output NAME --transform T`; labwc
+#   lays the outputs out itself, so there is no layout step and no Lua eval.
+#   Touch follows: each touchscreen is mapped to the panel
+#   (arch-ipad-touch-output), and wlroots turns a mapped device's touches
+#   with its output.
+# - arch-ipad-rotate-output puts the saved turn back at login when no
+#   accelerometer turns the panel, or while the rotation lock holds it.
+# - persist is called from beside this script, not through PATH, which a
+#   caller from outside the session (ssh) does not have set up.
+
+BIN_DIR=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)
+
+usage() {
+  echo "Usage: omarchy-hyprland-monitor-rotate [--monitor NAME] [0|90|180|270]"
+}
+
+if [[ ${1:-} == "--monitor" ]]; then
+  if [[ -z ${2:-} ]]; then
+    usage >&2
+    exit 1
+  fi
+  monitor_name="$2"
+  shift 2
+fi
+
+if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+# The named monitor, else the first enabled one, with its transform as
+# Hyprland numbers it (wlr-randr names the same wl_output transforms).
+monitor_info=$(wlr-randr --json 2>/dev/null | jq -e -c --arg name "${monitor_name:-}" '
+  def transform: {"normal":0,"90":1,"180":2,"270":3,"flipped":4,"flipped-90":5,"flipped-180":6,"flipped-270":7}[. // "normal"] // 0;
+  map(select(.enabled and ($name == "" or .name == $name))) | .[0] // empty
+  | { name, scale, transform: (.transform | transform) }')
+
+if [[ -z $monitor_info ]]; then
+  echo "No such monitor: ${monitor_name:-focused}" >&2
+  exit 1
+fi
+
+# Hyprland's transforms 0-3 are quarter turns; 4-7 mirror them, which this
+# leaves alone.
+old_transform=$(jq -r '.transform' <<<"$monitor_info")
+
+if [[ -z ${1:-} ]]; then
+  if (( old_transform < 4 )); then
+    echo $(( old_transform * 90 ))
+  else
+    echo "flipped"
+  fi
+  exit 0
+fi
+
+case "$1" in
+0) transform=0 randr=normal ;;
+90) transform=1 randr=90 ;;
+180) transform=2 randr=180 ;;
+270) transform=3 randr=270 ;;
+*)
+  usage >&2
+  exit 1
+  ;;
+esac
+
+active_monitor=$(jq -r '.name' <<<"$monitor_info")
+scale=$(jq -r '.scale' <<<"$monitor_info" | awk 'NR == 1 { printf "%g\n", $0 }')
+
+# persist refuses an unsafe name or scale; nothing is turned then.
+"$BIN_DIR/omarchy-hyprland-monitor-persist" "$active_monitor" "$scale" "" "" "$transform" || exit 1
+
+if (( old_transform != transform )); then
+  wlr-randr --output "$active_monitor" --transform "$randr"
+fi

@@ -52,7 +52,8 @@ class RotateOutput(unittest.TestCase):
                 (config / 'omarchy/rotation-lock').touch()
             log = root / 'randr.log'
             env = {**os.environ, 'PATH': f'{bin_dir}:{os.environ["PATH"]}',
-                   'XDG_CONFIG_HOME': str(config), 'RANDR_LOG': str(log), 'ROTATE_SETTLE': '0.1',
+                   'XDG_CONFIG_HOME': str(config), 'XDG_STATE_HOME': str(root / 'state'),
+                   'RANDR_LOG': str(log), 'ROTATE_SETTLE': '0.1',
                    'ROTATE_COOLDOWN': '0',
                    **(extra_env or {})}
             subprocess.run([sys.executable, str(SCRIPT)], env=env, check=True, timeout=timeout)
