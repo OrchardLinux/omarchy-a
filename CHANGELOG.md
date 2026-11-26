@@ -15,6 +15,8 @@ is missing or empty.
 
 ### Desktop
 
+- The brightness sliders in the control center and Settings change the
+  screen while you drag, not when you let go.
 - Typing a Wi-Fi password, the on-screen keyboard stays open: the network list
   no longer refreshes under the password field while it is being typed, and
   catches up when the prompt closes. Reported by perryraskin (thanks!).

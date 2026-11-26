@@ -234,15 +234,20 @@ Item {
   function setVolume(value) {
     if (sink && sink.audio) sink.audio.volume = Math.max(0, Math.min(1, value))
   }
+  // The screen follows the finger while it drags: one write at a time, and
+  // a level moved to during a write is written as soon as that one ends.
+  property bool brightnessQueued: false
   function setBrightness(percent) {
     root.brightness = Math.max(1, Math.min(100, Math.round(percent)))
-    brightnessSet.restart()
+    if (brightnessSet.running) { root.brightnessQueued = true; return }
+    root.brightnessQueued = false
+    brightnessSet.command = ["omarchy-brightness-display", "--no-osd", root.brightness + "%"]
+    brightnessSet.running = true
   }
 
-  Timer {
+  Process {
     id: brightnessSet
-    interval: 60
-    onTriggered: root.run(["omarchy-brightness-display", "--no-osd", root.brightness + "%"])
+    onRunningChanged: if (!running && root.brightnessQueued) root.setBrightness(root.brightness)
   }
   Process {
     id: brightnessRead
