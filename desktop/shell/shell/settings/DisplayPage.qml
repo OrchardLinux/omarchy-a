@@ -52,14 +52,22 @@ Item {
   }
 
   // As the control center sets it: no OSD, and one command for a burst of moves.
+  // The screen follows the finger while it drags: one write at a time, and
+  // a level moved to during a write is written as soon as that one ends.
+  property bool brightnessQueued: false
   function setBrightness(value) {
     page.brightness = Math.max(1, Math.min(100, Math.round(value * 100)))
-    brightnessSet.restart()
+    writeBrightness()
   }
-  Timer {
+  function writeBrightness() {
+    if (brightnessSet.running) { page.brightnessQueued = true; return }
+    page.brightnessQueued = false
+    brightnessSet.command = ["omarchy-brightness-display", "--no-osd", page.brightness + "%"]
+    brightnessSet.running = true
+  }
+  Process {
     id: brightnessSet
-    interval: 60
-    onTriggered: Quickshell.execDetached(["omarchy-brightness-display", "--no-osd", page.brightness + "%"])
+    onRunningChanged: if (!running && page.brightnessQueued) page.writeBrightness()
   }
 
   Column {
