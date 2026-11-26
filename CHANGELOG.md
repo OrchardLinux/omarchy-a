@@ -11,10 +11,14 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
-## [Unreleased]
+## [0.3.7] - 2026-11-27
+
+Built on orchard 0.3.9.
 
 ### Desktop
 
+- After a slow start, the boot picture stays up to 60 seconds until the PIN
+  screen appears, instead of going black after 20 seconds.
 - The brightness sliders in the control center and Settings change the
   screen while you drag, not when you let go.
 - Typing a Wi-Fi password, the on-screen keyboard stays open: the network list
