@@ -5,6 +5,7 @@ import Quickshell.Networking
 import qs.Commons
 import qs.Commons as Commons
 import "../plugins/panels/network" as Network
+import "../plugins/panels/network/Model.js" as NetModel
 
 // One network's page (Wi-Fi > a known network's info button, or the network
 // in use): join or disconnect, forget, auto-join, and while connected its
@@ -29,6 +30,7 @@ Item {
   readonly property bool connected: !!network && network.connected
   readonly property bool known: !!network && network.known
   readonly property bool changing: !!network && network.stateChanging
+  Process { id: cancelProc }
   readonly property string device: status.wifiDevice ? String(status.wifiDevice.name || "") : ""
 
   // What NetworkManager has on it: its saved profile (auto-join, security)
@@ -122,7 +124,13 @@ Item {
         label: page.connected ? Commons.I18n.t("settings.wifiDisconnect") : Commons.I18n.t("settings.wifiJoin")
         value: page.changing ? (page.connected ? Commons.I18n.t("network.disconnecting") : Commons.I18n.t("network.connecting")) : ""
         usable: !!page.network && !page.changing
-        onActivated: if (page.network) { if (page.connected) page.network.disconnect(); else page.network.connect() }
+        onActivated: {
+          if (!page.network) return
+          if (page.connected) page.network.disconnect()
+          // A tap while it connects stops it (NetModel.cancelConnectScript).
+          else if (page.changing) { cancelProc.command = ["bash", "-c", NetModel.cancelConnectScript, "nmcli-cancel", page.device]; cancelProc.running = true }
+          else page.network.connect()
+        }
       }
       SettingsItem {
         visible: page.known

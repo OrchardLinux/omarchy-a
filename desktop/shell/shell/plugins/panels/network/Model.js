@@ -425,6 +425,17 @@ function canForgetNetwork(network) {
 // `connection edit` editor -- argv is world-readable in /proc, so the secret
 // must never be an argument (printf is a bash builtin, so no process spawns
 // with it either).
+// Stops a connect still under way on the Wi-Fi device $1. The network's own
+// disconnect() refuses one that is not connected yet, so this takes the
+// device's activating connection down in NetworkManager. That keeps the one
+// profile from joining on its own again until it is chosen, and leaves every
+// other known network free to; a connect that has just finished is left up.
+var cancelConnectScript =
+  "[ -n \"$1\" ] || exit 0;" +
+  " case $(nmcli -g GENERAL.STATE device show \"$1\" 2>/dev/null) in 100*) exit 0;; esac;" +
+  " u=$(nmcli -g GENERAL.CON-UUID device show \"$1\" 2>/dev/null);" +
+  " [ -n \"$u\" ] && exec nmcli connection down uuid \"$u\""
+
 var enterpriseConnectScript =
   "u=$(uuidgen); IFS= read -r pw;" +
   " nmcli connection add type wifi con-name \"$1\" ssid \"$1\" connection.uuid \"$u\"" +
@@ -490,6 +501,7 @@ if (typeof module !== "undefined") {
     requiresCredentials: requiresCredentials,
     canForgetNetwork: canForgetNetwork,
     enterpriseConnectScript: enterpriseConnectScript,
+    cancelConnectScript: cancelConnectScript,
     networkFailureReason: networkFailureReason,
     shouldRepromptPassphrase: shouldRepromptPassphrase
   }
