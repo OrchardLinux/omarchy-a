@@ -26,8 +26,9 @@ cd omarchy-a
 orchard --version
 ```
 
-Put orchard's launcher on your PATH first (see its README). `orchard` runs orchard's
-newest nightly here; your own orchard checkout runs with its `bin/orchard`, and
+Install the `orchard` command first (the install line is in the README). `orchard`
+builds from orchard's newest nightly here; your own orchard checkout runs with its
+`bin/orchard`, and
 `orchard.local.toml` (never committed) can name your board. See [BUILD.md](BUILD.md) for compiler and container
 dependencies.
 
@@ -51,8 +52,11 @@ you don't, we add it when the PR lands.
 ## Test
 
 ```sh
-orchard python -m unittest discover -s tests
+../orchard/bin/orchard python -m unittest discover -s tests
 ```
+
+The tests run in an orchard checkout's Python environment, here one beside this
+repository.
 
 Report physical boot and desktop results separately from compilation and test
 results. Keep firmware bytes, calibration, raw ADT captures, ECIDs and credentials

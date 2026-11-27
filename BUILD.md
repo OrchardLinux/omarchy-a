@@ -57,9 +57,10 @@ environment for image/component builds.
 orchard --version
 ```
 
-`orchard` comes from orchard's launcher on your PATH and runs orchard's newest
-nightly (`ORCHARD_VERSION` pins one); an orchard checkout's own `bin/orchard` runs
-that checkout. This build imports none of orchard's Python: it runs orchard's
+`orchard` is the command line of
+[OrchardLinux/tools](https://github.com/OrchardLinux/tools) (its README has the
+install line) and builds from orchard's newest nightly; an orchard checkout's own
+`bin/orchard` is the same command on that checkout. This build imports none of orchard's Python: it runs orchard's
 producers as commands from an orchard snapshot (orchard
 [docs/distribution-contract.md](https://github.com/OrchardLinux/orchard/blob/main/docs/distribution-contract.md)),
 which `orchard build` names in `ORCHARD_CHECKOUT`. Without orchard, set
