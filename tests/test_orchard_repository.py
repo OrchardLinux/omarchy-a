@@ -27,8 +27,8 @@ Include = /etc/pacman.d/mirrorlist
 [alarm]
 Include = /etc/pacman.d/mirrorlist
 '''
-ORCHARD = {'aarch64': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'folio-touch', 'qt6-base', 'mesa', 'libva-v4l2-request'],
-           'armv7h': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'folio-touch', 'qt6-base', 'omacalc']}
+ORCHARD = {'aarch64': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'folio-touch', 'mesa', 'libva-v4l2-request'],
+           'armv7h': ['wlroots0.20', 'labwc', 'omafox', 'omactivity', 'folio-touch', 'omacalc']}
 
 
 def section(start, end):
@@ -113,7 +113,7 @@ class Installation(unittest.TestCase):
         code, calls, error = self.install('aarch64')
         self.assertEqual(code, 0, error)
         # labwc is asked for once.
-        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch qt6-base mesa libva-v4l2-request omarchy-a'
+        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch mesa libva-v4l2-request omarchy-a'
         self.assertEqual(calls[:3], [f'download -Sy --noconfirm {wanted}',
                                      f'-S --print --print-format %r/%n {wanted}', f'-S --noconfirm {wanted}'])
         self.assertEqual(calls[3], 'repositories')
@@ -127,7 +127,7 @@ class Installation(unittest.TestCase):
     def test_armv7_takes_files_and_omacalc_from_ours_and_keeps_archs_mesa(self):
         code, calls, error = self.install('armv7h')
         self.assertEqual(code, 0, error)
-        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch qt6-base omacalc omarchy-a'
+        wanted = 'base labwc wlroots0.20 omafox omactivity folio-touch omacalc omarchy-a'
         self.assertEqual(calls, [f'download -Sy --noconfirm {wanted}', f'-S --print --print-format %r/%n {wanted}',
                                  f'-S --noconfirm {wanted}', 'repositories', '-Dk'])
 

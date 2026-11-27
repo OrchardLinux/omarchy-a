@@ -17,6 +17,10 @@ Built on orchard 0.3.9.
 
 ### Desktop
 
+- Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
+  carried. On an installed tablet, `omarchy-update` no longer leaves a black
+  screen; one that already has it gets the desktop back with the next
+  `omarchy-update`. Reported by ricktav (thanks!).
 - After a slow start, the boot picture stays up to 60 seconds until the PIN
   screen appears, instead of going black after 20 seconds.
 - The brightness sliders in the control center and Settings change the
