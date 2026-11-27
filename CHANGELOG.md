@@ -67,6 +67,8 @@ Built on orchard 0.3.9.
   closes so the pairing dialog shows, instead of opening behind it.
 - Launcher search: an app named exactly what you typed stays the marked
   match, and Up and Down go on from the marked match.
+- Firefox fits a phone's screen: its window no longer opens wider than
+  the screen with the right side out of reach.
 - Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
   carried. On an installed tablet, `omarchy-update` no longer leaves a black
   screen; one that already has it gets the desktop back with the next
