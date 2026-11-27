@@ -1132,7 +1132,9 @@ Item {
     MouseArea {
       id: drag
       anchors.fill: parent
-      enabled: slider.available
+      // One that can't be used still opens its page, as a cell does: the
+      // page says why (no backlight driver, no sound device).
+      enabled: slider.available || slider.page !== ""
       preventStealing: true
       // The level goes where the finger is: on a tap when it lifts, on a
       // drag as soon as it moves and from then on. Held still (0.4 s), the
@@ -1174,13 +1176,13 @@ Item {
           sliderHoldOpen.stop()
         } else if (!moving && along + across <= Style.space(10)) return
         moving = true
-        slider.moved(valueAt(mouse))
+        if (slider.available) slider.moved(valueAt(mouse))
       }
       onReleased: function(mouse) {
         sliderHoldOpen.stop()
         if (used) { used = false; return }
         if (held) { if (containsMouse) slider.longPressed() }
-        else if (!moving) slider.moved(valueAt(mouse))
+        else if (!moving && slider.available) slider.moved(valueAt(mouse))
         held = false
       }
       onCanceled: { held = false; used = false; sliderHoldOpen.stop() }
