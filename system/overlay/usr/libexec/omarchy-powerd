@@ -1078,12 +1078,16 @@ class Daemon:
                 log(f'control: {error}')
 
     def open_socket(self):
-        Path(SOCKET).unlink(missing_ok=True)
+        # Bound and listening under a temporary name, then renamed: a client
+        # that sees SOCKET can connect, never a socket that is not listening.
+        staging = f'{SOCKET}.new'
+        Path(staging).unlink(missing_ok=True)
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        server.bind(SOCKET)
-        os.chown(SOCKET, 0, grp.getgrnam('video').gr_gid)  # the tablet user's session
-        os.chmod(SOCKET, 0o660)
+        server.bind(staging)
+        os.chown(staging, 0, grp.getgrnam('video').gr_gid)  # the tablet user's session
+        os.chmod(staging, 0o660)
         server.listen(8)
+        os.replace(staging, SOCKET)
         return server
 
     # --- event loop ---------------------------------------------------------
