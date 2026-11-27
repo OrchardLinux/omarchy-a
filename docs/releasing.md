@@ -41,7 +41,7 @@ https://github.com/OrchardLinux/omarchy-a/releases/latest/download/index.toml
 
 Only that entry point follows latest. Its manifest and image references point to specific release tags, preventing cross-release mixing.
 
-Every public release carries its installer: `install.sh` and `orchard-install.pyz` (orchard's core with this release's index, device data and launch loaders), made by `orchard.installer` from the orchard release CI pins and rewritten by `release.publish` for the release's URLs. The README's command runs the latest release's `install.sh`; the repository's `install.sh` only forwards to it, for older instructions. Publish the pinned [orchard release](https://github.com/OrchardLinux/orchard/blob/main/docs/releases.md) first: its tag provides the components and the loaders. Change the README's install command only once a release with `install.sh` is published.
+Every public release carries its `install.sh` (`release/install.sh`, written for the release's URLs by `release.install_script`): it installs the `orchard` command of [OrchardLinux/tools](https://github.com/OrchardLinux/tools), or brings it up to date, and runs `orchard install` for that release's index. The README's command runs the latest release's `install.sh`; the repository's `install.sh` only forwards to it, for older instructions. Publish the pinned [orchard release](https://github.com/OrchardLinux/orchard/blob/main/docs/releases.md) first: its tag provides the components and the loaders. Change the README's install command only once a release with `install.sh` is published.
 
 Before announcing a release:
 
@@ -52,6 +52,6 @@ Before announcing a release:
 
 ## Updates
 
-The installer leaves the user's `orchard` (`install`, `launch`, `devices`, `update`); a later installer replaces it only with a newer core, and `orchard update` installs the latest orchard release's core.
+`install.sh` leaves the `orchard` command on the user's computer (`install`, `launch`, `devices`, `update`, and the rest); `orchard update` replaces it with its newest build, and running an `install.sh` again does the same.
 
 Running the README command again installs the latest release. Cached images are verified and reused by hash. This updates available installation data; upgrading an existing desktop installation is a separate, currently unimplemented workflow.
