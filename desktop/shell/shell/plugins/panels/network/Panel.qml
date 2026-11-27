@@ -1683,7 +1683,12 @@ Panel {
         id: networkList
         visible: root.wifiStationAvailable
         width: parent.width
-        height: Math.min(contentHeight, Style.space(240))
+        // The bar's popup caps the list so a busy neighbourhood doesn't
+        // push it off the screen; a control center page fills the screen,
+        // so there the list takes all the room below it.
+        readonly property real room: root.hosted && root.host.pageRoom > 0
+          ? root.host.pageRoom - y : 0
+        height: Math.min(contentHeight, Math.max(Style.space(240), room))
         spacing: Style.space(4)
         clip: true
         boundsBehavior: Flickable.StopAtBounds

@@ -149,6 +149,8 @@ Item {
     function switchPanelFrom(panel, direction) { return false }
     function showPage(panel) { root.showPage(panel) }
     function leavePage(panel) { root.leavePage(panel) }
+    // How tall a page can be (pageLoader's cap), for content that fills it.
+    readonly property real pageRoom: pageLoader.maxHeight
   }
 
   Item {
@@ -612,13 +614,13 @@ Item {
       width: parent.width
       height: parent.height - y
       color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
-      // Software rendering dims in one step rather than blending the whole
-      // screen again on every frame of a pull.
+      // It fades with the pull, also without a GPU: a dim that came on in
+      // one step was jarring, and the pull redraws most of the screen anyway.
       // A phone's sheet comes in quickly at first, easing out, and is opaque
-      // only as the pull arrives; it goes with its content.
+      // only as the pull arrives; with a GPU it goes with its content.
       opacity: root.popupStyle ? 0 : root.phone
-        ? (!root.gpu || root.leaving ? card.opacity : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal)), 2.5))
-        : (root.gpu ? Math.max(0, Math.min(1, root.reveal)) : (root.reveal > 0 ? 1 : 0))
+        ? (root.gpu && root.leaving ? card.opacity : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal)), 2.5))
+        : Math.max(0, Math.min(1, root.reveal))
       MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -880,7 +882,8 @@ Item {
           // beyond that.
           readonly property real header: 0
           readonly property real room: root.screenHeight - card.y - root.pad * 2 - header - Style.gapsOut
-          height: item ? Math.min(item.implicitHeight, root.phone ? card.height - root.pad * 2 - header - Style.space(12) : room) : 0
+          readonly property real maxHeight: root.phone ? card.height - root.pad * 2 - header - Style.space(12) : room
+          height: item ? Math.min(item.implicitHeight, maxHeight) : 0
         }
       }
     }
