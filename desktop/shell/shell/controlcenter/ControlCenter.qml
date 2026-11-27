@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Networking
 import Quickshell.Wayland
 import Quickshell.Services.Pipewire
+import Quickshell.Services.UPower
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -14,6 +15,8 @@ import "../plugins/status" as StatusParts
 import "../plugins/panels/monitor" as Monitor
 import "../plugins/panels/network" as NetworkPanel
 import "../plugins/panels/audio" as AudioPanel
+import "../plugins/panels/power" as PowerPanel
+import "../plugins/panels/power/Model.js" as PowerModel
 
 // The control center (SHELL-SPEC, step 2): the main view. States you flip
 // and the two sliders, over the same status objects the bar and the lock
@@ -149,6 +152,8 @@ Item {
     function switchPanelFrom(panel, direction) { return false }
     function showPage(panel) { root.showPage(panel) }
     function leavePage(panel) { root.leavePage(panel) }
+    // How tall a page can be (pageLoader's cap), for content that fills it.
+    readonly property real pageRoom: pageLoader.maxHeight
   }
 
   Item {
@@ -157,13 +162,30 @@ Item {
     NetworkPanel.Panel { id: networkModule; host: pageHost; bar: pageHost; moduleName: "omarchy.network" }
     AudioPanel.Panel { id: audioModule; host: pageHost; bar: pageHost; moduleName: "omarchy.audio" }
     BluetoothStatus.Panel { id: bluetoothModule; host: pageHost; bar: pageHost; moduleName: "omarchy.bluetooth" }
+    PowerPanel.Panel { id: powerModule; host: pageHost; bar: pageHost; moduleName: "omarchy.power" }
   }
   readonly property var modules: ({
     "omarchy.monitor": displayModule,
     "omarchy.network": networkModule,
     "omarchy.audio": audioModule,
-    "omarchy.bluetooth": bluetoothModule
+    "omarchy.bluetooth": bluetoothModule,
+    "omarchy.power": powerModule
   })
+
+  // The battery: how full, whether it charges, and at how many watts. Its
+  // page (the battery panel) has the rest; with no battery found the row
+  // is dimmed and the page says so.
+  PowerPanel.Status { id: battery }
+  readonly property string batteryNote: {
+    if (!battery.batteryPresent) return Commons.I18n.t("controlCenter.noBattery", "No battery")
+    var parts = []
+    if (battery.displayedPercentage !== null) parts.push(Commons.I18n.formatNumber(battery.displayedPercentage) + "%")
+    var mode = PowerModel.modeLabel(battery.batteryDevice, battery.discharging, battery.upowerStates(), Commons.I18n.t)
+    if (mode) parts.push(mode)
+    var rate = PowerModel.localizeReading(battery.batteryInfo.rate || "", Commons.I18n.formatNumber)
+    if (rate && (battery.batteryDevice && battery.batteryDevice.state !== UPowerDeviceState.FullyCharged)) parts.push(rate)
+    return parts.join(" · ")
+  }
 
   property var page: null
   // 0 on the main view, 1 on the page; the push in between.
@@ -612,13 +634,13 @@ Item {
       width: parent.width
       height: parent.height - y
       color: root.phone ? Commons.Color.menu.background : Commons.Color.menu.scrim
-      // Software rendering dims in one step rather than blending the whole
-      // screen again on every frame of a pull.
+      // It fades with the pull, also without a GPU: a dim that came on in
+      // one step was jarring, and the pull redraws most of the screen anyway.
       // A phone's sheet comes in quickly at first, easing out, and is opaque
-      // only as the pull arrives; it goes with its content.
+      // only as the pull arrives; with a GPU it goes with its content.
       opacity: root.popupStyle ? 0 : root.phone
-        ? (!root.gpu || root.leaving ? card.opacity : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal)), 2.5))
-        : (root.gpu ? Math.max(0, Math.min(1, root.reveal)) : (root.reveal > 0 ? 1 : 0))
+        ? (root.gpu && root.leaving ? card.opacity : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal)), 2.5))
+        : Math.max(0, Math.min(1, root.reveal))
       MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -823,6 +845,22 @@ Item {
             onMoved: function(v) { root.setVolume(v) }
             onLongPressed: root.openPage("omarchy.audio")
           }
+          Slider {
+            width: content.width
+            height: Style.space(root.phone ? 48 : 44)
+            vertical: false
+            // An outline battery when none is found.
+            glyph: battery.icon || "󰂑"
+            value: battery.displayedPercentage === null ? 0 : battery.displayedPercentage / 100
+            available: battery.batteryPresent
+            note: root.batteryNote
+            pageArrow: true
+            focusKey: "battery"
+            page: "omarchy.power"
+            // A level to read, not to set: a touch on it changes nothing.
+            onMoved: function(v) {}
+            onLongPressed: root.openPage("omarchy.power")
+          }
         }
 
         // The toggles, then the ones still to come.
@@ -880,7 +918,8 @@ Item {
           // beyond that.
           readonly property real header: 0
           readonly property real room: root.screenHeight - card.y - root.pad * 2 - header - Style.gapsOut
-          height: item ? Math.min(item.implicitHeight, root.phone ? card.height - root.pad * 2 - header - Style.space(12) : room) : 0
+          readonly property real maxHeight: root.phone ? card.height - root.pad * 2 - header - Style.space(12) : room
+          height: item ? Math.min(item.implicitHeight, maxHeight) : 0
         }
       }
     }
@@ -1132,7 +1171,9 @@ Item {
     MouseArea {
       id: drag
       anchors.fill: parent
-      enabled: slider.available
+      // One that can't be used still opens its page, as a cell does: the
+      // page says why (no backlight driver, no sound device).
+      enabled: slider.available || slider.page !== ""
       preventStealing: true
       // The level goes where the finger is: on a tap when it lifts, on a
       // drag as soon as it moves and from then on. Held still (0.4 s), the
@@ -1174,13 +1215,13 @@ Item {
           sliderHoldOpen.stop()
         } else if (!moving && along + across <= Style.space(10)) return
         moving = true
-        slider.moved(valueAt(mouse))
+        if (slider.available) slider.moved(valueAt(mouse))
       }
       onReleased: function(mouse) {
         sliderHoldOpen.stop()
         if (used) { used = false; return }
         if (held) { if (containsMouse) slider.longPressed() }
-        else if (!moving) slider.moved(valueAt(mouse))
+        else if (!moving && slider.available) slider.moved(valueAt(mouse))
         held = false
       }
       onCanceled: { held = false; used = false; sliderHoldOpen.stop() }

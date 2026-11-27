@@ -42,6 +42,33 @@ Built on orchard 0.3.9.
 
 ### Desktop
 
+- Wi-Fi: tap a network while it says "Connecting…" to stop, in the
+  control center and in Settings; turning Wi-Fi off stops it too.
+  Settings now says "Wrong password" and asks again.
+- Phones: the control center's Wi-Fi page lists networks down the whole
+  screen instead of in a small box at the top.
+- Without the GPU desktop, the control center and the notification center
+  fade the screen behind them as they are pulled in, instead of darkening
+  it all at once.
+- Settings > Theme shows each theme on its default wallpaper.
+- A swipe up from the bottom edge opens the overview of open windows,
+  following the finger; swiped on past half the screen the launcher fades
+  in with the finger instead. It works over the on-screen keyboard too.
+  Phones without a Home button can reach both now. The keyboard still
+  opens on its own for a text field.
+- The control center shows the battery: how full, whether it is charging
+  and at how many watts. Holding it opens the battery's page, which also
+  opens (and says so) on a device whose battery is not found yet.
+- Control center: holding the brightness or sound slider opens its page
+  even when the device has no backlight driver or sound device yet.
+- The brightness slider on the display page changes the screen while you
+  drag, as the control center's does.
+- Pairing a Bluetooth device from the control center: the control center
+  closes so the pairing dialog shows, instead of opening behind it.
+- Launcher search: an app named exactly what you typed stays the marked
+  match, and Up and Down go on from the marked match.
+- Firefox fits a phone's screen: its window no longer opens wider than
+  the screen with the right side out of reach.
 - Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
   carried. On an installed tablet, `omarchy-update` no longer leaves a black
   screen; one that already has it gets the desktop back with the next

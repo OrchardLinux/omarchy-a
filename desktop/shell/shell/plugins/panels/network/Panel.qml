@@ -473,6 +473,8 @@ Panel {
   // connected → disconnect, credentials-required/unknown → prompt,
   // passwordless/known → connect.
   function activateSelected() {
+    if (actionKind === "connect" && selectedIndex >= 0 && selectedIndex < wifiNetworks.length
+        && wifiNetworks[selectedIndex] && wifiNetworks[selectedIndex].ssid === actionSsid) { cancelConnect(); return }
     if (busy || selectedIndex < 0 || selectedIndex >= wifiNetworks.length) return
     var net = wifiNetworks[selectedIndex]
     if (!net) return
@@ -865,6 +867,30 @@ Panel {
     if (actionKind === "connect" && network.connected) clearNetworkAction()
     else if (actionKind === "disconnect" && !network.connected && !network.stateChanging) clearNetworkAction()
     else if (actionKind === "forget" && !network.known && !network.stateChanging) clearNetworkAction()
+  }
+
+  // A tap on the network that is connecting, or Wi-Fi turned off, stops
+  // the attempt: the row lets go at once and NetworkManager stops trying.
+  function cancelConnect() {
+    if (actionKind !== "connect") return
+    var ssid = actionSsid
+    actionTimeout.stop()
+    enterpriseConnect.running = false
+    if (passwordSsid === ssid) passwordSsid = ""
+    failureSsid = ""
+    failureReason = ""
+    actionSsid = ""
+    actionKind = ""
+    if (wifiDevice && Networking.wifiEnabled) {
+      cancelProc.command = ["bash", "-c", Model.cancelConnectScript, "nmcli-cancel", String(wifiDevice.name || "")]
+      cancelProc.running = true
+    }
+    refresh()
+  }
+  Process { id: cancelProc }
+  Connections {
+    target: Networking
+    function onWifiEnabledChanged() { if (!Networking.wifiEnabled) root.cancelConnect() }
   }
 
   function connectDirectly(ssid) {
@@ -1657,7 +1683,12 @@ Panel {
         id: networkList
         visible: root.wifiStationAvailable
         width: parent.width
-        height: Math.min(contentHeight, Style.space(240))
+        // The bar's popup caps the list so a busy neighbourhood doesn't
+        // push it off the screen; a control center page fills the screen,
+        // so there the list takes all the room below it.
+        readonly property real room: root.hosted && root.host.pageRoom > 0
+          ? root.host.pageRoom - y : 0
+        height: Math.min(contentHeight, Math.max(Style.space(240), room))
         spacing: Style.space(4)
         clip: true
         boundsBehavior: Flickable.StopAtBounds
@@ -1871,7 +1902,9 @@ Panel {
       hoverEnabled: true
       acceptedButtons: Qt.LeftButton | Qt.RightButton
       cursorShape: Qt.PointingHandCursor
-      enabled: !root.busy
+      // While a network connects the other rows wait; its own row stays
+      // live, since a tap on it stops the attempt.
+      enabled: !root.busy || (row.isBusy && root.actionKind === "connect")
       pressAndHoldInterval: 550
 
       // Move the cursor here when the mouse enters; mouse leaving doesn't
@@ -1891,6 +1924,7 @@ Panel {
       onClicked: function(mouse) {
         if (!row.net) return
         if (row.longPressed) { row.longPressed = false; return }
+        if (row.isBusy) { root.cancelConnect(); return }
         // With the options open, a tap on the row only closes them.
         if (row.isOptionsOpen) { root.optionsSsid = ""; return }
         if (mouse.button === Qt.RightButton) { row.openOptions(); return }
@@ -2181,6 +2215,12 @@ Panel {
           color: row.isFailed ? root.bar.urgent : root.bar.foreground
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.bodySmall
+        }
+        // Like the row above it, a tap stops the connect.
+        MouseArea {
+          anchors.fill: parent
+          enabled: row.isBusy
+          onClicked: root.cancelConnect()
         }
       }
 
