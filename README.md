@@ -35,13 +35,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for bring-up guidance and [BUILD.md](BUIL
 ## Development
 
 This repository is the distribution: desktop, root filesystem and release. The
-hardware support and the `orchard` tool live in
-[orchard](https://github.com/OrchardLinux/orchard); put its launcher on your PATH
-once (see its [README](https://github.com/OrchardLinux/orchard#develop)). Here,
-`orchard` runs orchard's newest nightly, whose kernels, m1n1, Pongo and tools this
-build then takes as they are. To work against your own orchard checkout, e.g. a
-branch with a driver you need, run that checkout's launcher instead
-(`../orchard-installer/bin/orchard build`). To test package changes (Labwc,
+hardware support lives in [orchard](https://github.com/OrchardLinux/orchard) and
+the `orchard` command in [tools](https://github.com/OrchardLinux/tools); install
+the command once:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/OrchardLinux/tools/main/install.sh | sh
+```
+
+Here, `orchard` builds from orchard's newest nightly, whose kernels, m1n1, Pongo
+and tools this build then takes as they are. To work against your own orchard
+checkout, e.g. a branch with a driver you need, run that checkout's launcher
+instead (`../orchard-installer/bin/orchard build`): it is the same command on
+that checkout. To test package changes (Labwc,
 wlroots, Mesa, …) before they are published, keep a checkout of
 [OrchardLinux/packages](https://github.com/OrchardLinux/packages) beside this one
 (`../packages`): `orchard build` then builds every package of the image whose
@@ -61,7 +67,7 @@ device = "j71b"
 orchard build        # every component that changed, then a release in out/releases/dev-DATE-TIME
 orchard run          # build, then start that release's recovery on the attached iPad, from RAM
 orchard install      # install the last build
-orchard python -m unittest discover -s tests
+../orchard/bin/orchard python -m unittest discover -s tests   # in an orchard checkout's Python environment
 ```
 
 `orchard build` runs `tools/build.py`, which keeps each component (desktop,
