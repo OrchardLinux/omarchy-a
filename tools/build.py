@@ -253,8 +253,8 @@ def main():
            *target_args, '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
     # install.sh: installs the orchard command and runs `orchard install` for the index beside it.
-    from release import install_script
-    install_script.write(Path(args.output) / 'install.sh', 'index.toml', 'install.sh')
+    python(orchard / 'producers/install_script.py', '--name', 'Omarchy A', '--index', 'index.toml',
+           '--url', 'install.sh', '--output', Path(args.output) / 'install.sh')
 
 
 if __name__ == '__main__':
