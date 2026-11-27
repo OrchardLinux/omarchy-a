@@ -26,7 +26,8 @@
     <font place="OnScreenDisplay" name="monospace" size="11" />
   </theme>
   <!-- The overview (labwc/0004): every window side by side, to pick one.
-       Four fingers up, Home pressed twice (omarchy-home-button) or Super+Tab.
+       A swipe up from the bottom edge, four fingers up, Home pressed twice
+       (omarchy-home-button) or Super+Tab.
        Opening it puts the app drawer and the keyboard away. It opens with no
        window as well: the dimmed desktop, which a tap or Home closes.
        Home closes it: omarchy-home-button (run by omarchy-powerd) knows
@@ -189,10 +190,15 @@
   </keyboard>
   <!-- The bottom-edge swipe: over the on-screen keyboard it is typing, over
        the notification center or the control center their own drag, which
-       follows the finger (labwc/0009 takes a list); elsewhere
-       omarchy-bottom-swipe opens the keyboard. -->
+       follows the finger (labwc/0009 takes a list); elsewhere it opens the
+       overview with the finger (labwc/0013), and swiped on past half the
+       screen the launcher instead. A device without a Home button has no
+       other way to either. omarchy-bottom-swipe is for when the overview
+       cannot open. The keyboard opens on its own for a text field. -->
   <touch mouseEmulation="no"
     bottomSwipeCommand="omarchy-bottom-swipe"
+    bottomSwipeOverview="yes"
+    bottomSwipeFarCommand="omarchy-shell omarchy.dock openApps"
     bottomSwipeIgnoreNamespace="wvkbd,omarchy-notification-center,omarchy-control-center" />
   <snapping>
     <!-- Keep titlebar double-click maximize; top-edge dragging tiles upward. -->

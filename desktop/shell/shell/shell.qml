@@ -50,6 +50,9 @@ ShellRoot {
     // For callers that must not toggle: the overview puts the drawer away
     // when it opens.
     function closeApps(): void { if (appGrid.opened) appGrid.close() }
+    // The long bottom swipe (labwc's bottomSwipeFarCommand) opens it, and
+    // never closes it.
+    function openApps(): void { if (!appGrid.opened) appGrid.open() }
   }
 
   property bool keyboardVisible: false
