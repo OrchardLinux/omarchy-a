@@ -362,6 +362,7 @@ Item {
     function refresh(): void { root.refresh() }
     function apps(): void { appGrid.toggle() }
     function closeApps(): void { if (appGrid.opened) appGrid.close() }
+    function openApps(): void { if (!appGrid.opened) appGrid.open() }
   }
 
   // An app dragged out of the app grid: the grid holds the pointer and

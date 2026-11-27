@@ -50,6 +50,26 @@ ShellRoot {
     // For callers that must not toggle: the overview puts the drawer away
     // when it opens.
     function closeApps(): void { if (appGrid.opened) appGrid.close() }
+    // The long bottom swipe (labwc's bottomSwipeFarCommand) opens it, and
+    // never closes it.
+    function openApps(): void { if (!appGrid.opened) appGrid.open() }
+  }
+
+  // labwc's long bottom swipe (bottomSwipeFarSocket): lines "p 0.42" while
+  // the finger moves past where the overview turns back, then "end 1" (let
+  // go far enough: the launcher stays) or "end 0".
+  SocketServer {
+    active: true
+    path: (Quickshell.env("XDG_RUNTIME_DIR") || "/run/user/1000") + "/omarchy-launcher-follow.sock"
+    handler: Socket {
+      parser: SplitParser {
+        onRead: function(line) {
+          var parts = String(line).trim().split(" ")
+          if (parts[0] === "p") appGrid.follow(Number(parts[1]) || 0)
+          else if (parts[0] === "end") appGrid.followEnd(parts[1] === "1")
+        }
+      }
+    }
   }
 
   property bool keyboardVisible: false
