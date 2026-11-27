@@ -188,7 +188,12 @@ Item {
     out.apps = appRows.map(function(row) { return { kind: "app", app: row.entry } })
     if (appRows.length > 0) {
       var top = appRows[0].score
-      out.appBest = (top >= 9500 ? 5 : (top >= 7600 ? 25 : 45)) * 1000
+      // An app named exactly what was typed ("foot") is the best match there
+      // is, ahead of a menu entry with that exact label (Default Terminal >
+      // Foot), as the menu's own search ranks an app on an equal match.
+      var name = root.appLibrary.entryName(appRows[0].entry)
+      if (String(name || "").toLowerCase() === q.toLowerCase()) out.appBest = -5000
+      else out.appBest = (top >= 9500 ? 5 : (top >= 7600 ? 25 : 45)) * 1000
     }
     if (m && m.items) {
       var guards = m.whenResults
@@ -413,6 +418,23 @@ Item {
     }
     root.cursorShown = true
     if (root.zone === "search") {
+      // Typing, the marked best match is where the keyboard is: Up and Down
+      // go on from it, to the result above or below, as from a focused one.
+      if (dy !== 0 && root.searching && root.query.trim() && root.bodyCount > 0) {
+        var mark = root.topIndex
+        var markRow = -1
+        for (var mr = 0; mr < bodyRows.length; mr++) if (bodyRows[mr].indexOf(mark) >= 0) { markRow = mr; break }
+        var beyond = dy < 0 ? markRow <= 0 : markRow === bodyRows.length - 1
+        if (markRow >= 0 && beyond) {
+          // Nothing above it (the field is) or below it: Down takes the
+          // mark itself, Up stays in the field.
+          if (dy > 0) root.focusStop({ zone: "body", index: mark })
+          return
+        }
+        root.focusStop({ zone: "body", index: mark })
+        root.moveCursor(0, dy)
+        return
+      }
       if (dy > 0) {
         if (root.searching && root.bodyCount > 0) root.focusStop(root.firstBodyStop())
         else if (!root.searching) root.focusStop({ zone: "tabs", index: root.tabs.indexOf(root.tab) })

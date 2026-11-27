@@ -65,6 +65,8 @@ Built on orchard 0.3.9.
   drag, as the control center's does.
 - Pairing a Bluetooth device from the control center: the control center
   closes so the pairing dialog shows, instead of opening behind it.
+- Launcher search: an app named exactly what you typed stays the marked
+  match, and Up and Down go on from the marked match.
 - Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
   carried. On an installed tablet, `omarchy-update` no longer leaves a black
   screen; one that already has it gets the desktop back with the next
