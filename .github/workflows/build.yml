@@ -364,7 +364,8 @@ jobs:
           python -m release.publish --tag "$TAG" --release-dir out/release --output out/publication
           # install.sh: installs the orchard command and runs `orchard install` for this release.
           base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
-          python -m release.install_script --index "$base/index.toml" --url "$base/install.sh" \
+          python "$ORCHARD_CHECKOUT/producers/install_script.py" --name 'Omarchy A' \
+            --index "$base/index.toml" --url "$base/install.sh" \
             --output out/publication/install.sh
           cp out/release/rootfs.json out/release/build-receipt.json out/publication/
           git archive --format=tar.gz -o out/publication/omarchy-linux-source.tar.gz HEAD

@@ -41,7 +41,7 @@ https://github.com/OrchardLinux/omarchy-a/releases/latest/download/index.toml
 
 Only that entry point follows latest. Its manifest and image references point to specific release tags, preventing cross-release mixing.
 
-Every public release carries its `install.sh` (`release/install.sh`, written for the release's URLs by `release.install_script`): it installs the `orchard` command of [OrchardLinux/tools](https://github.com/OrchardLinux/tools), or brings it up to date, and runs `orchard install` for that release's index. The README's command runs the latest release's `install.sh`; the repository's `install.sh` only forwards to it, for older instructions. Publish the pinned [orchard release](https://github.com/OrchardLinux/orchard/blob/main/docs/releases.md) first: its tag provides the components and the loaders. Change the README's install command only once a release with `install.sh` is published.
+Every public release carries its `install.sh` (written for the release's URLs by orchard's `producers/install_script.py`): it installs the `orchard` command of [OrchardLinux/tools](https://github.com/OrchardLinux/tools), or brings it up to date, and runs `orchard install` for that release's index. The README's command runs the latest release's `install.sh`; the repository's `install.sh` only forwards to it, for older instructions. Publish the pinned [orchard release](https://github.com/OrchardLinux/orchard/blob/main/docs/releases.md) first: its tag provides the components and the loaders. Change the README's install command only once a release with `install.sh` is published.
 
 Before announcing a release:
 
