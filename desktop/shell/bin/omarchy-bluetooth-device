@@ -59,6 +59,9 @@ case "$action" in
     trap 'exit 2' HUP INT TERM
     export OMARCHY_PAIR_RESULT="$result" OMARCHY_PAIR_ADDRESS="$address"
     root=${OMARCHY_PATH:-/usr/share/omarchy}
+    # The control center lies above the dialog (it is on the overlay layer;
+    # the dialog stays below the on-screen keyboard), so it goes first.
+    omarchy-shell -q omarchy.controlcenter close >/dev/null 2>&1 || true
     qs -p "$root/shell/bluetooth-pairing/shell.qml" &
     pair_ui=$!
     wait "$pair_ui" || true
