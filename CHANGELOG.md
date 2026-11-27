@@ -43,9 +43,10 @@ Built on orchard 0.3.9.
 ### Desktop
 
 - A swipe up from the bottom edge opens the overview of open windows,
-  following the finger; swiped on past half the screen it opens the
-  launcher instead. Phones without a Home button can reach both now. The
-  keyboard still opens on its own for a text field.
+  following the finger; swiped on past half the screen the launcher fades
+  in with the finger instead. It works over the on-screen keyboard too.
+  Phones without a Home button can reach both now. The keyboard still
+  opens on its own for a text field.
 - Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
   carried. On an installed tablet, `omarchy-update` no longer leaves a black
   screen; one that already has it gets the desktop back with the next

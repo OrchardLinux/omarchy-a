@@ -684,9 +684,31 @@ Item {
     if (root.appGridView) root.appGridView.positionViewAtBeginning()
     revealOut.stop()
     root.opened = true
-    if (root.mapped && panel.contentRevealed) revealIn.restart()
+    if (root.mapped && panel.contentRevealed && !root.following) revealIn.restart()
     root.mapped = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  // The long bottom swipe: past where the overview turns back, the launcher
+  // fades in with the finger (labwc sends how far, 0 to 1, see shell.qml's
+  // launcher follow socket). Let go, it settles open, or goes again.
+  property bool following: false
+  function follow(progress) {
+    var p = Math.max(0, Math.min(1, progress))
+    if (!root.following) {
+      if (p <= 0) return
+      root.following = true
+      revealIn.stop()
+      if (!root.opened) root.open()
+    }
+    revealOut.stop()
+    if (panel.contentRevealed) root.reveal = p
+  }
+  function followEnd(keep) {
+    if (!root.following) return
+    root.following = false
+    if (keep) { revealOut.stop(); revealIn.restart() }
+    else root.close()
   }
 
   function close() {
@@ -983,7 +1005,8 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
     // The entrance starts once the surface shows at its real size.
     onContentRevealedChanged: if (contentRevealed && root.opened) {
       root.reveal = 0
-      revealIn.restart()
+      // Under a finger the reveal is the finger's (follow()).
+      if (!root.following) revealIn.restart()
       // The surface now has the keyboard: typing goes to search, arrows move.
       if (!searchField.activeFocus) keyCatcher.forceActiveFocus()
     }
