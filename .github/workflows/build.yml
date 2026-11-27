@@ -242,7 +242,10 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             OMARCHY_A_VERSION=${GITHUB_REF_NAME#v}
           else
-            OMARCHY_A_VERSION=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+            # No gh in this container.
+            OMARCHY_A_VERSION=$(curl -fsSL --retry 3 -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest" |
+              python -c 'import json, sys; print(json.load(sys.stdin)["tag_name"])')
             OMARCHY_A_VERSION=${OMARCHY_A_VERSION#v}
           fi
           export OMARCHY_A_VERSION
