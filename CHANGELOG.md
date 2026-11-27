@@ -11,7 +11,15 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
-## [Unreleased]
+## [0.3.8] - 2026-11-28
+
+Built on orchard 0.3.11.
+
+### Devices
+
+- From orchard 0.3.11: the screen turns with the iPad on the A7 iPads (iPad
+  Air, iPad mini 2 and 3) through their motion coprocessor, Bluetooth audio
+  on the iPad Air, and touch, charging and the desktop on the iPad mini 4.
 
 ### Install
 
@@ -20,6 +28,13 @@ is missing or empty.
   it downloaded a Python and an installer written in it. `orchard launch`
   starts the system afterwards, and `orchard update` keeps the command
   current. Options go through: `… | sh -s -- --ibss`.
+- The install line is the one orchard writes for every distribution.
+
+### System
+
+- The power button and brightness service accepts connections as soon as
+  its socket appears; before, a request right at its start (the shell's at
+  login) could be refused.
 
 ## [0.3.7] - 2026-11-27
 
