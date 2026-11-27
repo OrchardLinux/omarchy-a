@@ -42,6 +42,11 @@ Built on orchard 0.3.9.
 
 ### Desktop
 
+- Phones: the control center's Wi-Fi page lists networks down the whole
+  screen instead of in a small box at the top.
+- Without the GPU desktop, the control center and the notification center
+  fade the screen behind them as they are pulled in, instead of darkening
+  it all at once.
 - Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
   carried. On an installed tablet, `omarchy-update` no longer leaves a black
   screen; one that already has it gets the desktop back with the next

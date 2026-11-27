@@ -499,8 +499,9 @@ Item {
       readonly property color lockScrim: Commons.Color.lock.scrim
       readonly property bool darkTheme: (0.2126 * lockScrim.r + 0.7152 * lockScrim.g + 0.0722 * lockScrim.b) < 0.5
       color: darkTheme ? Qt.rgba(lockScrim.r * 0.42, lockScrim.g * 0.42, lockScrim.b * 0.42, lockScrim.a) : lockScrim
-      opacity: !root.gpu ? (root.reveal > 0 ? 1 : 0)
-        : root.leaving ? sheet.opacity
+      // It fades with the pull on every desktop; without a GPU the sheet
+      // itself only moves, so going away it fades with the way up.
+      opacity: root.gpu && root.leaving ? sheet.opacity
         : 1 - Math.pow(1 - Math.max(0, Math.min(1, root.reveal)), 2.5)
       MouseArea {
         anchors.fill: parent
