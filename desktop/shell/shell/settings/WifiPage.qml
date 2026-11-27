@@ -71,10 +71,44 @@ Item {
   property string askingSsid: ""
   property string failedSsid: ""
 
+  // The network this page started joining, to hear whether it failed.
+  property string joiningSsid: ""
+  readonly property var failReasons: ({
+    NoSecrets: ConnectionFailReason.NoSecrets,
+    WifiAuthTimeout: ConnectionFailReason.WifiAuthTimeout,
+    WifiNetworkLost: ConnectionFailReason.WifiNetworkLost,
+    WifiClientDisconnected: ConnectionFailReason.WifiClientDisconnected,
+    WifiClientFailed: ConnectionFailReason.WifiClientFailed
+  })
+  Connections {
+    target: page.joiningSsid !== "" ? page.networkFor(page.joiningSsid) : null
+    function onConnectionFailed(reason) {
+      var ssid = page.joiningSsid
+      var network = page.networkFor(ssid)
+      page.joiningSsid = ""
+      if (!network || !NetModel.shouldRepromptPassphrase(reason, page.needsPassword({ security: network.security }), page.failReasons)) return
+      page.failedSsid = ssid
+      page.askingSsid = ssid
+    }
+    function onConnectedChanged() { if (page.networkFor(page.joiningSsid) && page.networkFor(page.joiningSsid).connected) page.joiningSsid = "" }
+  }
+
+  // A tap on the network that is connecting stops it (the control center's
+  // Model.cancelConnectScript says how).
+  function cancel(row) {
+    page.joiningSsid = ""
+    page.askingSsid = ""
+    cancelProc.command = ["bash", "-c", NetModel.cancelConnectScript, "nmcli-cancel", status.wifiDevice ? String(status.wifiDevice.name || "") : ""]
+    cancelProc.running = true
+  }
+  Process { id: cancelProc }
+
   function join(row) {
     var network = page.networkFor(row.ssid)
     if (!network || row.connected) return
+    if (row.changing) { page.cancel(row); return }
     page.failedSsid = ""
+    page.joiningSsid = row.ssid
     if (row.known || !page.needsPassword(row)) {
       network.connect()
       return
@@ -88,6 +122,8 @@ Item {
     var network = page.networkFor(ssid)
     if (!network || secret === "") return
     page.askingSsid = ""
+    page.failedSsid = ""
+    page.joiningSsid = ssid
     if (page.enterprise({ security: network.security })) {
       enterpriseConnect.secret = secret
       enterpriseConnect.command = ["bash", "-c", NetModel.enterpriseConnectScript, "nmcli-eap", ssid, identity]
@@ -108,6 +144,7 @@ Item {
   function stateOf(row) {
     if (row.changing) return row.connected ? Commons.I18n.t("network.disconnecting") : Commons.I18n.t("network.connecting")
     if (row.connected) return Commons.I18n.t("network.connected")
+    if (row.ssid === page.failedSsid) return Commons.I18n.t("network.wrongPassword")
     return ""
   }
 

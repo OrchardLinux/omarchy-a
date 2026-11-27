@@ -42,6 +42,9 @@ Built on orchard 0.3.9.
 
 ### Desktop
 
+- Wi-Fi: tap a network while it says "Connecting…" to stop, in the
+  control center and in Settings; turning Wi-Fi off stops it too.
+  Settings now says "Wrong password" and asks again.
 - Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
   carried. On an installed tablet, `omarchy-update` no longer leaves a black
   screen; one that already has it gets the desktop back with the next
