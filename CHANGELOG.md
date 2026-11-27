@@ -61,6 +61,8 @@ Built on orchard 0.3.9.
   opens (and says so) on a device whose battery is not found yet.
 - Control center: holding the brightness or sound slider opens its page
   even when the device has no backlight driver or sound device yet.
+- The brightness slider on the display page changes the screen while you
+  drag, as the control center's does.
 - Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
   carried. On an installed tablet, `omarchy-update` no longer leaves a black
   screen; one that already has it gets the desktop back with the next

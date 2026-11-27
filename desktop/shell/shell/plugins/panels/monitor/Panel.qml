@@ -433,12 +433,10 @@ Panel {
     setBrightnessProc.running = true
   }
 
+  // While the slider drags the screen follows it: setDisplayBrightness
+  // writes one level at a time and the latest as soon as a write ends.
   function previewBrightness(name, value) {
-    var percent = Model.clampBrightness(value)
-    showBrightness(name, percent)
-    root.pendingBrightnessMonitor = name
-    root.pendingBrightnessPercent = percent
-    brightnessDebounce.restart()
+    setDisplayBrightness(name, value)
   }
 
   function adjustBrightness(name, delta) {
@@ -746,13 +744,6 @@ Panel {
         root.mirrorManaged = String(lines[8] || "").trim() === "on"
       }
     }
-  }
-
-  Timer {
-    id: brightnessDebounce
-    interval: 180
-    repeat: false
-    onTriggered: root.setDisplayBrightness(root.pendingBrightnessMonitor, root.pendingBrightnessPercent)
   }
 
   Process {
@@ -1104,10 +1095,7 @@ Panel {
                 value: Math.max(1, root.currentBrightness)
                 integer: true
                 onMoved: function(v) { if (root.current) root.previewBrightness(root.current.name, v) }
-                onReleased: function(v) {
-                  brightnessDebounce.stop()
-                  if (root.current) root.setDisplayBrightness(root.current.name, v)
-                }
+                onReleased: function(v) { if (root.current) root.setDisplayBrightness(root.current.name, v) }
               }
 
               HoverHandler {
