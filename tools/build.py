@@ -252,11 +252,10 @@ def main():
              for part in ('--' + name, tools[name])),
            *target_args, '--output', args.output)
     python('-m', 'release.audit', args.output / 'release.toml')
-    # install.sh and orchard-install.pyz, with orchard's launch loaders: the resolved ones, where the
-    # document names them (an armv7 one from orchard's Python does not), so the installer builds none.
-    loaders = (['--pongo', shared['pongo'], '--m1n1', shared['m1n1']]
-               if {'pongo', 'm1n1'} <= shared.keys() else [])
-    orchard_command('orchard.installer', 'release', args.output, *loaders)
+    # install.sh: installs the orchard command and runs `orchard install` for the index beside it.
+    from release import install_script
+    install_script.write(Path(args.output) / 'install.sh', str(Path(args.output).resolve() / 'index.toml'),
+                         'install.sh')
 
 
 if __name__ == '__main__':

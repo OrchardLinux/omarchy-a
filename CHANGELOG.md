@@ -11,6 +11,16 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
+## [Unreleased]
+
+### Install
+
+- The install line now installs the `orchard` command (one program, from
+  OrchardLinux/tools) and runs `orchard install` for the release. Until now
+  it downloaded a Python and an installer written in it. `orchard launch`
+  starts the system afterwards, and `orchard update` keeps the command
+  current. Options go through: `… | sh -s -- --ibss`.
+
 ## [0.3.7] - 2026-11-27
 
 Built on orchard 0.3.9.
