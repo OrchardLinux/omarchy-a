@@ -17,6 +17,7 @@ def write(output, index, url):
             raise ValueError(f'Not a plain URL or path: {value}')
     text = TEMPLATE.read_text().replace('@INDEX@', "'" + index + "'").replace('@URL@', url)
     output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(text)
     output.chmod(0o755)
     return output
