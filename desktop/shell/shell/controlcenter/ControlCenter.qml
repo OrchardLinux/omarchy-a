@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Networking
 import Quickshell.Wayland
 import Quickshell.Services.Pipewire
+import Quickshell.Services.UPower
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -14,6 +15,8 @@ import "../plugins/status" as StatusParts
 import "../plugins/panels/monitor" as Monitor
 import "../plugins/panels/network" as NetworkPanel
 import "../plugins/panels/audio" as AudioPanel
+import "../plugins/panels/power" as PowerPanel
+import "../plugins/panels/power/Model.js" as PowerModel
 
 // The control center (SHELL-SPEC, step 2): the main view. States you flip
 // and the two sliders, over the same status objects the bar and the lock
@@ -157,13 +160,30 @@ Item {
     NetworkPanel.Panel { id: networkModule; host: pageHost; bar: pageHost; moduleName: "omarchy.network" }
     AudioPanel.Panel { id: audioModule; host: pageHost; bar: pageHost; moduleName: "omarchy.audio" }
     BluetoothStatus.Panel { id: bluetoothModule; host: pageHost; bar: pageHost; moduleName: "omarchy.bluetooth" }
+    PowerPanel.Panel { id: powerModule; host: pageHost; bar: pageHost; moduleName: "omarchy.power" }
   }
   readonly property var modules: ({
     "omarchy.monitor": displayModule,
     "omarchy.network": networkModule,
     "omarchy.audio": audioModule,
-    "omarchy.bluetooth": bluetoothModule
+    "omarchy.bluetooth": bluetoothModule,
+    "omarchy.power": powerModule
   })
+
+  // The battery: how full, whether it charges, and at how many watts. Its
+  // page (the battery panel) has the rest; with no battery found the row
+  // is dimmed and the page says so.
+  PowerPanel.Status { id: battery }
+  readonly property string batteryNote: {
+    if (!battery.batteryPresent) return Commons.I18n.t("controlCenter.noBattery", "No battery")
+    var parts = []
+    if (battery.displayedPercentage !== null) parts.push(Commons.I18n.formatNumber(battery.displayedPercentage) + "%")
+    var mode = PowerModel.modeLabel(battery.batteryDevice, battery.discharging, battery.upowerStates(), Commons.I18n.t)
+    if (mode) parts.push(mode)
+    var rate = PowerModel.localizeReading(battery.batteryInfo.rate || "", Commons.I18n.formatNumber)
+    if (rate && (battery.batteryDevice && battery.batteryDevice.state !== UPowerDeviceState.FullyCharged)) parts.push(rate)
+    return parts.join(" · ")
+  }
 
   property var page: null
   // 0 on the main view, 1 on the page; the push in between.
@@ -822,6 +842,22 @@ Item {
             page: "omarchy.audio"
             onMoved: function(v) { root.setVolume(v) }
             onLongPressed: root.openPage("omarchy.audio")
+          }
+          Slider {
+            width: content.width
+            height: Style.space(root.phone ? 48 : 44)
+            vertical: false
+            // An outline battery when none is found.
+            glyph: battery.icon || "󰂑"
+            value: battery.displayedPercentage === null ? 0 : battery.displayedPercentage / 100
+            available: battery.batteryPresent
+            note: root.batteryNote
+            pageArrow: true
+            focusKey: "battery"
+            page: "omarchy.power"
+            // A level to read, not to set: a touch on it changes nothing.
+            onMoved: function(v) {}
+            onLongPressed: root.openPage("omarchy.power")
           }
         }
 

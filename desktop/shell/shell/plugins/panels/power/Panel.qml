@@ -152,7 +152,9 @@ Panel {
 
   // The actual battery state stays visible; whimsical flow phrases cannot
   // replace truthful charging/discharging feedback in this preview.
-  readonly property string heroStatusText: modeLabel()
+  // Without a battery (a page in the control center) it says so.
+  readonly property string heroStatusText: batteryPresent ? modeLabel()
+    : Commons.I18n.t("power.noBattery", "No battery found")
 
   function refresh() {
     status.refresh()
@@ -199,7 +201,9 @@ Panel {
 
   onOpenedChanged: {
     if (opened) {
-      if (!batteryPresent) {
+      // The bar's button hides without a battery; the control center's page
+      // still opens, and says there is none.
+      if (!batteryPresent && !hosted) {
         // Deferred: closing here writes the very property whose change
         // is being notified, which QML reports as a binding loop for
         // Panel.opened on every open attempt without a battery.
@@ -215,7 +219,7 @@ Panel {
   }
 
   onBatteryPresentChanged: {
-    if (!batteryPresent) close()
+    if (!batteryPresent && !hosted) close()
     else Qt.callLater(root.refresh)
   }
 
@@ -429,6 +433,7 @@ Panel {
 
           // ---------- Battery progress bar ----------
           Item {
+            visible: root.batteryPresent
             width: parent.width
             implicitHeight: Style.space(8)
 

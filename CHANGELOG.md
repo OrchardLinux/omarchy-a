@@ -42,6 +42,9 @@ Built on orchard 0.3.9.
 
 ### Desktop
 
+- The control center shows the battery: how full, whether it is charging
+  and at how many watts. Holding it opens the battery's page, which also
+  opens (and says so) on a device whose battery is not found yet.
 - Control center: holding the brightness or sound slider opens its page
   even when the device has no backlight driver or sound device yet.
 - Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
