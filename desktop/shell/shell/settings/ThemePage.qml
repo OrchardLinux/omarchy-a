@@ -33,7 +33,10 @@ Item {
       "for dir in ~/.config/omarchy/themes/*/ \"$OMARCHY_PATH\"/themes/*/; do",
       "  [[ -f $dir/colors.toml ]] || continue",
       "  name=${dir%/}; name=${name##*/}",
-      "  printf 't\\t%s\\t%s\\n' \"$name\" \"$(tr '\\n' ';' < \"$dir/colors.toml\")\"",
+      // The wallpaper a switch to it starts on: omarchy-theme-set's first.
+      "  bg=$(find -L \"$dir/backgrounds\" -maxdepth 1 -type f ! -name '._*' \\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \\) -printf '%f\\n' 2>/dev/null | sort | head -1)",
+      "  [[ -n $bg ]] && bg=${dir}backgrounds/$bg",
+      "  printf 't\\t%s\\t%s\\t%s\\n' \"$name\" \"$(tr '\\n' ';' < \"$dir/colors.toml\")\" \"$bg\"",
       "done"
     ].join("\n")]
     property string collected: ""
@@ -47,7 +50,7 @@ Item {
         var parts = lines[i].split("\t")
         if (parts[0] !== "t" || !parts[1] || seen[parts[1]]) continue
         seen[parts[1]] = true
-        out.push({ slug: parts[1], name: Model.displayName(parts[1]), colors: Model.parseColors((parts[2] || "").split(";").join("\n")) })
+        out.push({ slug: parts[1], name: Model.displayName(parts[1]), colors: Model.parseColors((parts[2] || "").split(";").join("\n")), wallpaper: parts[3] || "" })
       }
       page.themes = out
       page.ready = true
@@ -77,25 +80,53 @@ Item {
           width: parent.width
           height: Math.round(width * 0.56)
           color: tile.modelData.colors.background || "#000000"
-          border.width: tile.isCurrent ? 2 : 1
-          border.color: tile.isCurrent ? (settings ? settings.accent : "white") : (settings ? settings.line : "gray")
-          Text {
-            x: Style.space(12); y: Style.space(10)
-            text: "Aa"
-            color: tile.modelData.colors.foreground || "#ffffff"
-            font.family: Style.font.family
-            font.pixelSize: Style.font.title
-            font.bold: true
+          // The theme's own wallpaper behind, and over it a window in its
+          // colours: the desktop a switch to it starts on.
+          Image {
+            anchors.fill: parent
+            anchors.margins: parent.border.width
+            visible: status === Image.Ready
+            source: tile.modelData.wallpaper ? Util.fileUrl(tile.modelData.wallpaper) : ""
+            sourceSize.width: Math.ceil(width * 2)
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: false
           }
-          Row {
-            x: Style.space(12)
+          Rectangle {
+            id: sample
+            x: Style.space(10)
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: Style.space(12)
-            spacing: Style.space(4)
-            Repeater {
-              model: Model.swatchesOf(tile.modelData.colors)
-              Rectangle { required property var modelData; width: Style.space(13); height: width; color: modelData }
+            anchors.bottomMargin: Style.space(10)
+            width: Math.max(swatches.width, aa.width) + Style.space(20)
+            height: aa.height + swatches.height + Style.space(24)
+            color: tile.modelData.colors.background || "#000000"
+            Text {
+              id: aa
+              x: Style.space(10); y: Style.space(8)
+              text: "Aa"
+              color: tile.modelData.colors.foreground || "#ffffff"
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+              font.bold: true
             }
+            Row {
+              id: swatches
+              x: Style.space(10)
+              anchors.bottom: parent.bottom
+              anchors.bottomMargin: Style.space(10)
+              spacing: Style.space(4)
+              Repeater {
+                model: Model.swatchesOf(tile.modelData.colors)
+                Rectangle { required property var modelData; width: Style.space(13); height: width; color: modelData }
+              }
+            }
+          }
+          // The frame over the picture, so the current one's mark shows.
+          Rectangle {
+            anchors.fill: parent
+            color: "transparent"
+            border.width: tile.isCurrent ? 2 : 1
+            border.color: tile.isCurrent ? (settings ? settings.accent : "white") : (settings ? settings.line : "gray")
           }
         }
         Item {
