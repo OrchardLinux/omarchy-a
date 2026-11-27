@@ -45,7 +45,7 @@ jobs:
         run: |
           newest=$(timeout 60 gh api "repos/$TOOLS_REPO/releases?per_page=30" \
             | jq -r --arg pre "$TOOLS_INCLUDE_PRERELEASE" \
-                '[.[] | select(.draft | not) | select($pre == "true" or (.prerelease | not))][0].tag_name // empty')
+                '[.[] | select(.draft | not) | select(.tag_name | test("^v[0-9]")) | select($pre == "true" or (.prerelease | not))][0].tag_name // empty')
           if [[ -z "$newest" ]]; then
             echo "::notice::$TOOLS_REPO has no published release yet; nothing to stamp."
             exit 0
