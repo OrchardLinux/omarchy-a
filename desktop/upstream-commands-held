@@ -34,7 +34,6 @@ omarchy-hyprland-focus-app	plugins/notifications/Service.qml
 omarchy-hyprland-monitor-internal-mirror	plugins/panels/monitor/Panel.qml
 omarchy-hyprland-monitor-layout	bin/omarchy-hyprland-monitor-scaling plugins/panels/monitor/Panel.qml
 omarchy-hyprland-monitor-resolution	plugins/panels/monitor/Panel.qml
-omarchy-hyprland-monitor-rotate	plugins/panels/monitor/Panel.qml
 omarchy-hyprland-session-lock-stranded	plugins/lock/Service.qml
 omarchy-hyprland-workspace-layout-current	plugins/bar/widgets/Workspaces.qml
 omarchy-hyprland-workspace-layout-toggle	plugins/bar/widgets/Workspaces.qml

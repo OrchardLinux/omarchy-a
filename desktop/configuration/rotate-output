@@ -8,6 +8,12 @@ A quick half turn becomes one 180 degree change instead of two of 90: a settled
 reading waits a little longer while the tablet is still being turned, or while
 gravity already points at another orientation than the one reported (the
 sensor proxy reports the final orientation up to a second late).
+
+At start, the turn chosen in the Display panel (omarchy-hyprland-monitor-rotate,
+saved in omarchy-hyprland-monitor-persist's file) is put back when no
+accelerometer turns the panel (the J71, J81 and J85 iPads have none in Linux)
+or while the rotation lock holds it. With an accelerometer and no lock, the
+sensor decides, as before.
 """
 import collections
 import glob
@@ -22,6 +28,8 @@ import subprocess
 import time
 
 TRANSFORMS = {'normal': 'normal', 'bottom-up': '180', 'left-up': '90', 'right-up': '270'}
+# The persisted transform is Hyprland's number for the same wl_output transform.
+SAVED_TRANSFORMS = {'0': 'normal', '1': '90', '2': '180', '3': '270'}
 J120_SPEAKERS = Path('/sys/firmware/devicetree/base/sound-speaker-transport')
 
 
@@ -186,6 +194,41 @@ def seed_speaker_transform(path):
         print(f'speaker transform query failed: {error}', flush=True)
 
 
+def saved_transforms():
+    """Each output's saved quarter turn: mode, position, scale, transform, output."""
+    state = Path(os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state')))
+    saved = {}
+    try:
+        lines = (state / 'omarchy/monitors/settings').read_text().splitlines()
+    except OSError:
+        return saved
+    for line in lines:
+        fields = line.split('\t')
+        # Lines saved before rotation was saved have no transform field.
+        if len(fields) >= 5 and fields[3] in SAVED_TRANSFORMS:
+            saved[fields[-1]] = SAVED_TRANSFORMS[fields[3]]
+    return saved
+
+
+def restore_saved_transform():
+    """Put back the panel's turn chosen by hand, if one was saved and differs."""
+    saved = saved_transforms()
+    if not saved:
+        return
+    try:
+        result = subprocess.check_output(['wlr-randr', '--json'], text=True, timeout=3)
+        transforms = {output['name']: output.get('transform') or 'normal'
+                      for output in json.loads(result) if output.get('enabled')}
+        output = internal_output(list(transforms))
+        if output is None or output not in saved or transforms[output] == saved[output]:
+            return
+        subprocess.run(['wlr-randr', '--output', output, '--transform', saved[output]],
+                       check=True, timeout=4)
+        print(f'rotation restored: {output} -> {saved[output]}', flush=True)
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        print(f'rotation restore failed: {error}', flush=True)
+
+
 def apply(value, speaker_transform=None):
     started = time.monotonic()
     trace(f'output query start orientation={value}')
@@ -212,11 +255,14 @@ def main():
                         float(os.environ.get('ROTATE_COOLDOWN', '.75')))
     parent = int(os.environ.get('LABWC_PID', '0'))
     runtime = os.environ.get('XDG_RUNTIME_DIR')
+    sensors = glob.glob(os.environ.get('ROTATE_ACCEL', '/sys/bus/iio/devices/iio:device*') + '/in_accel_x_raw')
+    # Before the speakers are seeded, so they hear the restored turn.
+    if not sensors or lock.exists():
+        restore_saved_transform()
     speaker_transform = None
     if runtime and J120_SPEAKERS.is_dir():
         speaker_transform = Path(runtime) / 'omarchy-j120-speaker-transform'
         seed_speaker_transform(speaker_transform)
-    sensors = glob.glob(os.environ.get('ROTATE_ACCEL', '/sys/bus/iio/devices/iio:device*') + '/in_accel_x_raw')
     motion = Turning(os.path.dirname(sensors[0])) if sensors else None
     selector = selectors.DefaultSelector()
     def start_monitor():

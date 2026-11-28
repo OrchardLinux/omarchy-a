@@ -39,10 +39,14 @@ Panel {
   // Stay Awake are the control center's toggles.
   property bool autoAvailable: false
   property bool autoOn: false
-  // Orchard: the screen turns with the iPad (arch-ipad-rotate-output, under
-  // the rotation lock); labwc has no command to turn it by hand, so upstream's
-  // rotate menu stays shut.
-  readonly property bool rotateAvailable: false
+  // Orchard: the screen turns with the iPad where it has an accelerometer
+  // (arch-ipad-rotate-output, under the rotation lock), and by hand on every
+  // display: omarchy-hyprland-monitor-rotate turns it with wlr-randr and saves
+  // the turn, put back at login when no accelerometer turns the panel (J71,
+  // J81, J85). Upstream's rotate menu opens from the layout map or r; a lone
+  // panel has no map and a tablet often no keys, so the Rotation row below
+  // offers the same quarter turns to a finger.
+  readonly property bool rotateAvailable: true
   // Orchard: nor one to switch modes (an iPad's panel has a single mode), so
   // the resolution and refresh rows stay hidden.
   readonly property bool modeSwitching: false
@@ -69,6 +73,7 @@ Panel {
   //   "textsize"   - single slider row, the same -1 sentinel; one size for
   //                  every display.
   //   "scale"      - the shown display's scale presets.
+  //   "rotation"   - the shown display's quarter turns (Orchard).
   //   "resolution" - the resolutions it advertises, when it has more than one
   //                  to offer.
   //   "refresh"    - the refresh rates its resolution offers, when one is
@@ -105,6 +110,7 @@ Panel {
         current: display.width + "x" + display.height,
         scales: scales,
         scaleIndex: Model.matchingScaleIndex(scales, display.scale, display.width, display.height),
+        transform: Number(display.transform) || 0,
         resolutions: root.modeSwitching && resolutions.length > 1 ? resolutions : [],
         refreshes: root.modeSwitching ? Model.refreshOptions(display.availableModes, display.width, display.height) : [],
         refreshRate: Number(display.refreshRate) || 0,
@@ -257,6 +263,7 @@ Panel {
     if (currentBrightness >= 0) list.push("brightness")
     list.push("textsize")
     if (current && current.scales.length > 0) list.push("scale")
+    if (current && rotateAvailable) list.push("rotation")
     if (current && current.resolutions.length > 0) list.push("resolution")
     if (current && current.refreshes.length > 0) list.push("refresh")
     if (mirrorAvailable) list.push("mirror")
@@ -267,6 +274,7 @@ Panel {
   function sectionCount(section) {
     if (section === "displays") return segments.length
     if (section === "scale") return current ? current.scales.length : 0
+    if (section === "rotation") return rotationOptions.length
     if (section === "resolution") return current ? current.resolutions.length : 0
     if (section === "refresh") return current ? current.refreshes.length : 0
     if (section === "mirror") return mirrorModes.length
@@ -313,7 +321,7 @@ Panel {
       var next = Math.max(0, Math.min(segments.length - 1, currentIndex + delta))
       selectDisplay(segments[next].name)
       selectedIndex = next
-    } else if (focusSection === "scale" || focusSection === "resolution" || focusSection === "refresh" || focusSection === "mirror") {
+    } else if (focusSection === "scale" || focusSection === "rotation" || focusSection === "resolution" || focusSection === "refresh" || focusSection === "mirror") {
       selectedIndex = Math.max(0, Math.min(sectionCount(focusSection) - 1, selectedIndex + delta))
     }
   }
@@ -326,6 +334,8 @@ Panel {
     if (!current) return
     if (focusSection === "scale" && selectedIndex >= 0 && selectedIndex < current.scales.length)
       setScale(current.name, current.scales[selectedIndex])
+    else if (focusSection === "rotation" && selectedIndex >= 0 && selectedIndex < rotationOptions.length)
+      setRotation(current.name, rotationOptions[selectedIndex][0])
     else if (focusSection === "resolution" && selectedIndex >= 0 && selectedIndex < current.resolutions.length)
       setResolution(current.name, current.resolutions[selectedIndex])
     else if (focusSection === "refresh" && selectedIndex >= 0 && selectedIndex < current.refreshes.length)
@@ -555,6 +565,14 @@ Panel {
     mirrorSettle.restart()
     runAction(["omarchy-hyprland-monitor-internal-mirror", enabled ? "on" : "off"])
   }
+
+  // The quarter turns the rotate menu and the Rotation row offer.
+  readonly property var rotationOptions: [
+    [0, Commons.I18n.t("monitor.rotateNormal")],
+    [90, Commons.I18n.t("monitor.rotate90")],
+    [180, Commons.I18n.t("monitor.rotate180")],
+    [270, Commons.I18n.t("monitor.rotate270")]
+  ]
 
   function setRotation(name, degrees) {
     runAction(["omarchy-hyprland-monitor-rotate", "--monitor", name, String(degrees)])
@@ -1225,6 +1243,48 @@ Panel {
             }
           }
 
+          // ---------- Rotation (Orchard) ----------
+          PanelSeparator {
+            visible: root.current !== null && root.rotateAvailable
+            foreground: root.bar.foreground
+          }
+
+          Column {
+            visible: root.current !== null && root.rotateAvailable
+            width: parent.width
+            spacing: Style.space(6) + panelColumn.sliderInset
+            bottomPadding: panelColumn.sliderInset
+
+            PanelSectionHeader {
+              text: Commons.I18n.t("monitor.rotation")
+              foreground: root.bar.foreground
+              fontFamily: root.bar.fontFamily
+            }
+
+            Grid {
+              id: rotationGrid
+              width: parent.width
+              columns: root.rotationOptions.length
+              spacing: Style.spacing.xs
+
+              readonly property real cellWidth: (width - spacing * (columns - 1)) / columns
+
+              Repeater {
+                model: root.rotationOptions
+
+                RotationPill {
+                  required property var modelData
+                  required property int index
+
+                  degrees: modelData[0]
+                  rotationLabel: modelData[1]
+                  rotationIndex: index
+                  width: rotationGrid.cellWidth
+                }
+              }
+            }
+          }
+
           // ---------- Resolution ----------
           PanelSeparator {
             visible: root.current !== null && root.current.resolutions.length > 0
@@ -1467,12 +1527,7 @@ Panel {
           width: rotateMenu.width - rotateMenu.contentLeftInset - rotateMenu.contentRightInset
 
           Repeater {
-            model: [
-              [0, Commons.I18n.t("monitor.rotateNormal")],
-              [90, Commons.I18n.t("monitor.rotate90")],
-              [180, Commons.I18n.t("monitor.rotate180")],
-              [270, Commons.I18n.t("monitor.rotate270")]
-            ]
+            model: root.rotationOptions
 
             delegate: PopupMenuRow {
               required property var modelData
@@ -1513,6 +1568,30 @@ Panel {
 
     onClicked: if (root.current) root.setScale(root.current.name, scaleValue)
     onHovered: function(isHovered) { if (isHovered) root.pointAt("scale", pill.scaleIndex) }
+  }
+
+  // A quarter turn of the shown display (Orchard), saved for it and put back
+  // at login where no accelerometer turns the panel.
+  component RotationPill: Button {
+    id: rotationPill
+    required property int degrees
+    required property string rotationLabel
+    required property int rotationIndex
+
+    text: rotationLabel
+    fontSize: Style.font.caption
+    foreground: root.bar.foreground
+    fontFamily: root.bar.fontFamily
+    horizontalPadding: Style.spacing.sm
+    verticalPadding: Style.spacing.controlPaddingY
+    bordered: true
+
+    active: root.current !== null && root.current.transform === degrees / 90
+    hasCursor: root.cursorActive && root.focusSection === "rotation" && root.selectedIndex === rotationIndex
+    onHasCursorChanged: if (hasCursor) root.ensureCursorVisible(rotationPill)
+
+    onClicked: if (root.current) root.setRotation(root.current.name, degrees)
+    onHovered: function(isHovered) { if (isHovered) root.pointAt("rotation", rotationPill.rotationIndex) }
   }
 
   component ResolutionPill: Button {
