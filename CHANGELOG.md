@@ -11,7 +11,17 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
-## Unreleased
+## [0.3.9] - 2026-11-29
+
+Built on orchard 0.3.12.
+
+### Devices
+
+- From orchard 0.3.12: Bluetooth on the iPhone 8 Plus and on the iPad mini 2
+  and 3; charging, battery, Wi-Fi and storage on the iPhone 6; the iPad Air's
+  touch keeps working, its gyroscope and microphones work; the microphones of
+  the iPhone 6s Plus; sleep on the iPod touch 6; and Linux in RAM on the
+  iPhone XR.
 
 ### Desktop
 
@@ -25,6 +35,33 @@ is missing or empty.
   Display on a device without a rotation sensor, where it has nothing to do.
 - The launcher closes with a tap on an empty place, and with a swipe up from
   the bottom edge, which over the launcher no longer opens the overview.
+- Wi-Fi: tap a network while it says "Connecting…" to stop, in the
+  control center and in Settings; turning Wi-Fi off stops it too.
+  Settings now says "Wrong password" and asks again.
+- Phones: the control center's Wi-Fi page lists networks down the whole
+  screen instead of in a small box at the top.
+- Without the GPU desktop, the control center and the notification center
+  fade the screen behind them as they are pulled in, instead of darkening
+  it all at once.
+- Settings > Theme shows each theme on its default wallpaper.
+- A swipe up from the bottom edge opens the overview of open windows,
+  following the finger; swiped on past half the screen the launcher fades
+  in with the finger instead. It works over the on-screen keyboard too.
+  Phones without a Home button can reach both now. The keyboard still
+  opens on its own for a text field.
+- The control center shows the battery: how full, whether it is charging
+  and at how many watts. Holding it opens the battery's page, which also
+  opens (and says so) on a device whose battery is not found yet.
+- Control center: holding the brightness or sound slider opens its page
+  even when the device has no backlight driver or sound device yet.
+- The brightness slider on the display page changes the screen while you
+  drag, as the control center's does.
+- Pairing a Bluetooth device from the control center: the control center
+  closes so the pairing dialog shows, instead of opening behind it.
+- Launcher search: an app named exactly what you typed stays the marked
+  match, and Up and Down go on from the marked match.
+- Firefox fits a phone's screen: its window no longer opens wider than
+  the screen with the right side out of reach.
 
 ### System
 
@@ -65,33 +102,6 @@ Built on orchard 0.3.9.
 
 ### Desktop
 
-- Wi-Fi: tap a network while it says "Connecting…" to stop, in the
-  control center and in Settings; turning Wi-Fi off stops it too.
-  Settings now says "Wrong password" and asks again.
-- Phones: the control center's Wi-Fi page lists networks down the whole
-  screen instead of in a small box at the top.
-- Without the GPU desktop, the control center and the notification center
-  fade the screen behind them as they are pulled in, instead of darkening
-  it all at once.
-- Settings > Theme shows each theme on its default wallpaper.
-- A swipe up from the bottom edge opens the overview of open windows,
-  following the finger; swiped on past half the screen the launcher fades
-  in with the finger instead. It works over the on-screen keyboard too.
-  Phones without a Home button can reach both now. The keyboard still
-  opens on its own for a text field.
-- The control center shows the battery: how full, whether it is charging
-  and at how many watts. Holding it opens the battery's page, which also
-  opens (and says so) on a device whose battery is not found yet.
-- Control center: holding the brightness or sound slider opens its page
-  even when the device has no backlight driver or sound device yet.
-- The brightness slider on the display page changes the screen while you
-  drag, as the control center's does.
-- Pairing a Bluetooth device from the control center: the control center
-  closes so the pairing dialog shows, instead of opening behind it.
-- Launcher search: an app named exactly what you typed stays the marked
-  match, and Up and Down go on from the marked match.
-- Firefox fits a phone's screen: its window no longer opens wider than
-  the screen with the right side out of reach.
 - Qt is Arch's 6.12.1 again, which has the on-screen keyboard fix Orchard
   carried. On an installed tablet, `omarchy-update` no longer leaves a black
   screen; one that already has it gets the desktop back with the next
