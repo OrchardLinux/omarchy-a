@@ -68,6 +68,32 @@ class Repositories(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(re.findall(r'^\[([\w-]+)\]$', text, re.M), ['options', 'orchard', 'core', 'extra', 'alarm'])
 
+    def image(self, release, architecture='aarch64'):
+        """The image's pacman.conf, as assemble-rootfs writes it for RELEASE."""
+        with tempfile.TemporaryDirectory() as root:
+            (Path(root) / 'etc').mkdir()
+            conf = Path(root) / 'etc/pacman.conf'
+            conf.write_text(PACMAN_CONF)
+            script = (section('orchard_siglevel=', 'build_pacman=$(mktemp -d)')
+                      + section('repositories "$root/etc/pacman.conf"', '# Every dependency'))
+            result = bash(script, root=root, release=release, architecture=architecture)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return conf.read_text()
+
+    def test_a_nightly_image_takes_updates_from_the_nightly_channel(self):
+        for release in ('nightly-20261128-b65edc8ee0b1', 'preview-46147313746'):
+            text = self.image(release)
+            self.assertEqual(re.findall(r'^\[([\w-]+)\]$', text, re.M),
+                             ['options', 'omarchy-a-nightly', 'orchard', 'omarchy', 'core', 'extra', 'alarm'])
+            # The section omarchy-channel writes and removes.
+            self.assertIn('[omarchy-a-nightly]\nSigLevel = Optional TrustAll\n'
+                          'Server = https://github.com/OrchardLinux/omarchy-a/releases/download/pacman-nightly\n\n'
+                          '[orchard]\n', text)
+
+    def test_a_release_image_and_a_32_bit_one_stay_on_releases(self):
+        self.assertNotIn('omarchy-a-nightly', self.image('0.3.9'))
+        self.assertNotIn('omarchy-a-nightly', self.image('nightly-20261128-b65edc8ee0b1', 'armv7h'))
+
     def test_a_file_that_already_lists_one_is_refused(self):
         for name in ('orchard', 'omarchy'):
             source = PACMAN_CONF.replace('[core]', f'[{name}]\nServer = x\n\n[core]')
@@ -103,7 +129,7 @@ class Installation(unittest.TestCase):
                       '  *" -Dk "*) [[ -n $CONSISTENT ]];; esac; }\n'
                       'config=c root=/r gpgdir=g desktop=/d requested=(base labwc) local_names=($BUILT)\n'
                       + packages + block)
-            result = bash(script, LOG=str(log), architecture=architecture, PLANNED=' '.join(planned), OWNER=owner,
+            result = bash(script, LOG=str(log), architecture=architecture, release="1.2.3", PLANNED=' '.join(planned), OWNER=owner,
                           CONSISTENT='1' if consistent else '', OURS=ours, BUILT=' '.join(built), project=str(PROJECT))
             calls = [re.sub(r'^(download )?(--(config|root|gpgdir) \S+ )+', r'\1', line)
                      for line in log.read_text().splitlines()]
