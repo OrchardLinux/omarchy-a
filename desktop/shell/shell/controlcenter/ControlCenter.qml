@@ -299,7 +299,7 @@ Item {
     { key: "mic", glyph: root.micMuted ? "󰍭" : "󰍬", label: Commons.I18n.t("controlCenter.mic"),
       on: !root.micMuted, enabled: root.micKnown, act: root.toggleMic },
     { key: "rotation", glyph: "󰌾", label: Commons.I18n.t("controlCenter.rotation"),
-      on: rotation.locked, enabled: true, act: root.toggleRotation },
+      on: rotation.locked, enabled: rotation.sensor, act: root.toggleRotation },
     { key: "awake", glyph: "", label: Commons.I18n.t("controlCenter.awake"),
       on: root.stayAwake, enabled: !!root.idleService, act: root.toggleAwake },
     { key: "keyboard", glyph: "󰌌", label: Commons.I18n.t("controlCenter.keyboard"),

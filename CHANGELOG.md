@@ -21,6 +21,8 @@ is missing or empty.
   stays where it was.
 - Power and Volume Down pressed together take a screenshot, for phones
   without a Home button. Home and Power still do too.
+- The rotation lock is greyed out in the control center and in Settings >
+  Display on a device without a rotation sensor, where it has nothing to do.
 - The launcher closes with a tap on an empty place, and with a swipe up from
   the bottom edge, which over the launcher no longer opens the overview.
 

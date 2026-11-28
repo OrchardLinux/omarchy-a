@@ -107,6 +107,7 @@ Item {
         settings: page.settings
         first: true
         label: Commons.I18n.t("settings.rotationLock")
+        usable: rotation.sensor
         isSwitch: true
         switchOn: rotation.locked
         onActivated: {
