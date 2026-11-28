@@ -1538,6 +1538,14 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
             easing.type: Easing.OutCubic
           }
 
+          // The pages' empty places: the pager takes a press anywhere on
+          // it, so the background tap has to be in here, under the pages.
+          MouseArea {
+            width: pager.contentWidth
+            height: pager.contentHeight
+            onClicked: root.backgroundTap()
+          }
+
           Row {
             Repeater {
               model: root.pages
@@ -2481,6 +2489,14 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       Component.onCompleted: root.appGridView = padGrid
       Component.onDestruction: if (root.appGridView === padGrid) root.appGridView = null
 
+      // Below the last row: the background, which the grid would take.
+      MouseArea {
+        z: -1
+        width: padGrid.width
+        height: Math.max(padGrid.height, padGrid.contentHeight)
+        onClicked: root.backgroundTap()
+      }
+
       delegate: Item {
         required property int index
         width: root.cellWidth
@@ -2538,6 +2554,12 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       boundsBehavior: Flickable.StopAtBounds
       flickableDirection: Flickable.VerticalFlick
       clip: true
+
+      MouseArea {
+        width: groupsFlick.width
+        height: Math.max(groupsFlick.height, groupsFlick.contentHeight)
+        onClicked: root.backgroundTap()
+      }
 
       Column {
         id: groupsColumn
