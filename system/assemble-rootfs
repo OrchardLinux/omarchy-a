@@ -139,6 +139,16 @@ grep -qx 'omarchy-a-build/omarchy-a' <<< "$planned" ||
   { echo 'Expected omarchy-a built from this checkout' >&2; exit 1; }
 pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -S --noconfirm "${requested[@]}"
 repositories "$root/etc/pacman.conf" "$root/etc/pacman.conf"
+# A nightly or preview image (its release is not a version) takes updates from
+# the nightly channel, as `omarchy-channel nightly` sets it up: every merged
+# change reaches it with the next `pacman -Syu`. A release image stays on
+# releases. The channel is built for 64-bit only.
+if [[ ! $release =~ ^[0-9] && $architecture == aarch64 ]]; then
+  awk '$0 == "[orchard]" && !done {
+      print "[omarchy-a-nightly]"; print "SigLevel = Optional TrustAll"
+      print "Server = https://github.com/OrchardLinux/omarchy-a/releases/download/pacman-nightly"; print ""; done = 1 }
+    { print }' "$root/etc/pacman.conf" > "$root/etc/pacman.conf.new" && mv "$root/etc/pacman.conf.new" "$root/etc/pacman.conf"
+fi
 # Every dependency of every installed package is met.
 pacman --config "$config" --root "$root" --gpgdir "$gpgdir" -Dk
 if [[ $architecture == aarch64 ]]; then
