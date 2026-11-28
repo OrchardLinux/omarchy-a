@@ -218,6 +218,9 @@ def main():
         seed_speaker_transform(speaker_transform)
     sensors = glob.glob(os.environ.get('ROTATE_ACCEL', '/sys/bus/iio/devices/iio:device*') + '/in_accel_x_raw')
     motion = Turning(os.path.dirname(sensors[0])) if sensors else None
+    discovery_timeout = float(os.environ.get('ROTATE_DISCOVERY_TIMEOUT', '15'))
+    started = time.monotonic()
+    saw_proxy = False
     selector = selectors.DefaultSelector()
     def start_monitor():
         process = subprocess.Popen(['monitor-sensor', '--accel'], stdout=subprocess.PIPE)
@@ -249,7 +252,8 @@ def main():
                     os.kill(parent, 0)
                 except ProcessLookupError:
                     break
-            for key, _ in selector.select(.1):
+            wait_s = 0.1 if (state.waiting() or eof) else 1.0
+            for key, _ in selector.select(wait_s):
                 data = os.read(key.fd, 8192)
                 if not data:
                     eof = True
@@ -258,11 +262,24 @@ def main():
                 buffered += data
                 while b'\n' in buffered:
                     line, buffered = buffered.split(b'\n', 1)
-                    value = orientation(line.decode(errors='replace'))
+                    decoded = line.decode(errors='replace')
+                    if '=== No accelerometer' in decoded and not sensors:
+                        print('rotation: no accelerometer; exiting', flush=True)
+                        running = False
+                        break
+                    if '=== Has accelerometer' in decoded or 'iio-sensor-proxy appeared' in decoded:
+                        saw_proxy = True
+                    value = orientation(decoded)
                     if value is not None:
+                        saw_proxy = True
                         trace(f'sensor orientation={value}')
                         state.observe(value, time.monotonic())
             now = time.monotonic()
+            if not running:
+                break
+            if not sensors and not saw_proxy and discovery_timeout > 0 and now - started >= discovery_timeout:
+                print('rotation: no accelerometer or iio-sensor-proxy after discovery window; exiting', flush=True)
+                break
             if motion:
                 if state.waiting():
                     motion.sample(now)

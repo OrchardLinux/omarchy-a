@@ -105,6 +105,37 @@ class RotateOutput(unittest.TestCase):
             reaper.join()
         self.assertEqual(lines, ['--output Unknown-1 --transform normal'])
 
+    def test_exits_cleanly_when_board_has_no_accelerometer(self):
+        # On boards without an accelerometer (e.g. J96), exit instead of sitting
+        # in memory polling forever.
+        sensor = ("#!/bin/sh\necho '    Waiting for iio-sensor-proxy to appear'\n"
+                  "echo '=== No accelerometer'\nexec sleep 60\n")
+        compositor = subprocess.Popen(['sleep', '15'])
+        try:
+            lines = self.run_script(sensor, extra_env={'LABWC_PID': str(compositor.pid),
+                                                       'ROTATE_ACCEL': '/nonexistent'},
+                                    timeout=5)
+            self.assertEqual(lines, [])
+        finally:
+            compositor.terminate()
+            compositor.wait()
+
+    def test_exits_cleanly_when_proxy_never_appears(self):
+        # When iio-sensor-proxy is not running on a board with no IIO accel,
+        # monitor-sensor only prints 'Waiting for iio-sensor-proxy to appear'.
+        sensor = ("#!/bin/sh\necho '    Waiting for iio-sensor-proxy to appear'\n"
+                  "exec sleep 60\n")
+        compositor = subprocess.Popen(['sleep', '15'])
+        try:
+            lines = self.run_script(sensor, extra_env={'LABWC_PID': str(compositor.pid),
+                                                       'ROTATE_ACCEL': '/nonexistent',
+                                                       'ROTATE_DISCOVERY_TIMEOUT': '0.3'},
+                                    timeout=5)
+            self.assertEqual(lines, [])
+        finally:
+            compositor.terminate()
+            compositor.wait()
+
     def test_sensor_reader_ending_inside_a_session_is_restarted(self):
         # At login iio-sensor-proxy may not answer yet: the first reader ends
         # at once. Rotation must come back without a new login.
