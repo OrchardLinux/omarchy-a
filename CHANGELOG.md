@@ -26,7 +26,7 @@ is missing or empty.
 
 - `omarchy-channel nightly` puts a 64-bit tablet on the nightly channel:
   `pacman -Syu` (and Update > Omarchy) then brings every change merged into
-  Omarchy A, within one build of it, instead of waiting for the next
+  Omarchy A a few minutes after the merge, instead of waiting for the next
   release. `omarchy-channel stable` goes back to the releases.
 
 ## [0.3.8] - 2026-11-28

@@ -7,12 +7,12 @@
 # PACKAGE_DIR is release/package.py's output (package.json and the package).
 # A tablet on the nightly channel (omarchy-channel nightly) has
 #   [omarchy-a-nightly]
-#   Server = https://github.com/OrchardLinux/omarchy-a/releases/download/nightly
+#   Server = https://github.com/OrchardLinux/omarchy-a/releases/download/pacman-nightly
 # and fetches $Server/omarchy-a-nightly.db (and .files) and then the package
 # file the database names. Release assets are plain files and cannot be
 # links: the database goes up as a copy under the name pacman asks for, not
-# as repo-add's link to its .tar.gz. One architecture a repository: the
-# nightly builds aarch64 only.
+# as repo-add's link to its .tar.gz. One architecture a repository: CI
+# builds the aarch64 package only.
 set -euo pipefail
 (($# == 2)) || { echo 'Usage: ci/nightly-repo PACKAGE_DIR OUTPUT_DIR' >&2; exit 2; }
 package=$1 output=$2 repo=omarchy-a-nightly

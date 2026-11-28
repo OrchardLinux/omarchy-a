@@ -25,7 +25,7 @@ Include = /etc/pacman.d/mirrorlist
 '''
 NIGHTLY = '''[omarchy-a-nightly]
 SigLevel = Optional TrustAll
-Server = https://github.com/OrchardLinux/omarchy-a/releases/download/nightly
+Server = https://github.com/OrchardLinux/omarchy-a/releases/download/pacman-nightly
 
 '''
 
