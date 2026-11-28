@@ -19,6 +19,8 @@ is missing or empty.
   the lock screen's PIN keys are slightly larger and sit lower, within the
   thumb's reach, with more room between the PIN dots and the keys. The clock
   stays where it was.
+- Power and Volume Down pressed together take a screenshot, for phones
+  without a Home button. Home and Power still do too.
 
 ## [0.3.8] - 2026-11-28
 

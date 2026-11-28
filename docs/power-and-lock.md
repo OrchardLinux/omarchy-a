@@ -13,6 +13,7 @@ orchard `docs/bring-up/suspend.md`); this model decides when.
    backlight to dark over 240 ms. Home and Power pressed together on a lit
    screen take a screenshot (`omarchy-capture-screenshot fullscreen`) when the
    first of them comes up within 1.5 s; Home then does not open the dock.
+   Volume Down and Power do the same, for a phone without Home.
    Held longer (the DFU
    and restart combination), they do nothing. Sleep follows
    only after the screen stayed dark for a short while. Idle
@@ -54,7 +55,7 @@ resume (`apple_z2`, ~3.4 s in round 5) has to be fixed in the driver. Kernel log
 times inside resume cannot measure this (printk showed 133 ms for what ktime
 measured as 3.36 s); the key timestamps can. It:
 
-- reads the `gpio-keys` input device itself (Power, Home), with kernel
+- reads the `gpio-keys` input device itself (Power, Home, Volume Down), with kernel
   timestamps on `CLOCK_MONOTONIC`. labwc binds neither Power nor Home (Home
   only so that the focused app does not get it). Home let go after a press
   alone on a lit screen starts `omarchy-home-button` in the session at once:
@@ -127,7 +128,7 @@ part of `SUSPENDING` it does not run in; the log tells them apart (below).
 
 | Input | Source |
 |---|---|
-| `power`, `home` | gpio-keys, with the kernel timestamp: Home and a Power on a dark screen on key **down**; Power on a lit screen on key **up** after a short lone press. Home + Power is not a machine event: it runs the screenshot in the session |
+| `power`, `home` | gpio-keys, with the kernel timestamp: Home and a Power on a dark screen on key **down**; Power on a lit screen on key **up** after a short lone press. Home + Power and Volume Down + Power are no machine event: they run the screenshot in the session |
 | `idle` | shell: idle timeout, or the lock screen's blank timeout |
 | `dim`, `undim` | shell: ten seconds before the idle lock, a touch session dims the panel to half its range while lit (never brighter than it is); any input restores the level from before. Not machine events: the state stays `ON` |
 | `brightness PANEL LEVEL EXPECTED`, `als-state` | automatic brightness (`docs/tablet-sensors.md`): a write is accepted only while lit, not dimmed or fading, and only if the panel still holds `EXPECTED`, so a manual change or a dark screen stops it |

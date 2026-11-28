@@ -1,4 +1,5 @@
 """omarchy-powerd: the state machine (docs/power-and-lock.md) and its parsing."""
+import struct
 import importlib.machinery
 import importlib.util
 import json
@@ -429,6 +430,36 @@ class Buttons(unittest.TestCase):
         self.assertTrue(buttons.home_in_combo)
         buttons.edge('home', True, 5.0, True)
         self.assertFalse(buttons.home_in_combo)
+
+    def test_a_short_volume_down_and_power_press_takes_one_screenshot(self):
+        for edges in ([('power', True, 1.0), ('volume-down', True, 1.1), ('power', False, 1.3), ('volume-down', False, 1.4)],
+                      [('volume-down', True, 1.0), ('power', True, 1.05), ('volume-down', False, 1.3), ('power', False, 1.35)]):
+            with self.subTest(edges=edges):
+                self.assertEqual(self.events(edges), ['screenshot'])
+
+    def test_volume_down_and_power_held_do_nothing(self):
+        edges = [('volume-down', True, 1.0), ('power', True, 1.1), ('power', False, 11), ('volume-down', False, 11)]
+        self.assertEqual(self.events(edges), [])
+
+    def test_volume_down_alone_is_no_event(self):
+        self.assertEqual(self.events([('volume-down', True, 1.0), ('volume-down', False, 1.1)]), [])
+        edges = [('volume-down', True, 1.0), ('volume-down', False, 1.1), ('power', True, 2.0), ('power', False, 2.1)]
+        self.assertEqual(self.events(edges), ['power'])
+
+    def test_volume_down_and_power_is_no_home_combination(self):
+        buttons = powerd.Buttons()
+        for name, down, when in (('power', True, 1.0), ('volume-down', True, 1.1), ('volume-down', False, 1.3), ('power', False, 1.4)):
+            buttons.edge(name, down, when, True)
+        self.assertFalse(buttons.home_in_combo)
+        self.assertEqual(self.events([('home', True, 3.0), ('home', False, 3.1)]), ['home', 'home-up'])
+
+    def test_the_volume_keys_device_is_read(self):
+        width = struct.calcsize('L') * 8
+        words = [0] * 4
+        words[-1 - powerd.KEY_VOLUMEDOWN // width] |= 1 << powerd.KEY_VOLUMEDOWN % width
+        self.assertTrue(powerd.reports_keys(' '.join('%x' % w for w in words)))
+        self.assertEqual(powerd.key_edges(powerd.INPUT_EVENT.pack(5, 0, powerd.EV_KEY, powerd.KEY_VOLUMEDOWN, 1)),
+                         [('volume-down', True, 5.0)])
 
     def test_user_commands_look_groups_up_in_the_child(self):
         # os.getgrouplist would hold the interpreter lock through nss-systemd,
