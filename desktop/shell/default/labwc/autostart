@@ -25,10 +25,16 @@ qs -p "$OMARCHY_PATH/shell/shell.qml" > "$XDG_RUNTIME_DIR/omarchy-shell.log" 2>&
 
 # Removable storage mounts for the user through udisks (no programs run from
 # it; omarchy-powerd keeps new USB devices off while the screen is locked).
-# Unplugging is still an explicit safe removal.
-(
-  udiskie --no-notify --no-tray &
-  media=$!
-  trap 'kill "$media" 2>/dev/null || true; wait "$media" 2>/dev/null || true' EXIT
-  while kill -0 "$LABWC_PID" 2>/dev/null && kill -0 "$media" 2>/dev/null; do sleep 2; done
-) > "$XDG_RUNTIME_DIR/omarchy-media.log" 2>&1 &
+# Skip on peripheral-only boards without a USB host controller to avoid
+# starting udiskie + udisksd (~22 MB RAM, ~1 s boot).
+for _usb_hub in /sys/bus/usb/devices/usb*; do
+  if [ -e "$_usb_hub" ]; then
+    (
+      udiskie --no-notify --no-tray &
+      media=$!
+      trap 'kill "$media" 2>/dev/null || true; wait "$media" 2>/dev/null || true' EXIT
+      while kill -0 "$LABWC_PID" 2>/dev/null && kill -0 "$media" 2>/dev/null; do sleep 2; done
+    ) > "$XDG_RUNTIME_DIR/omarchy-media.log" 2>&1 &
+    break
+  fi
+done

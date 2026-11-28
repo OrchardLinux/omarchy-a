@@ -531,6 +531,7 @@ def make_source(args, conf):
     if args.source == "iio":
         return IioSource(root, conf["poll_hz"])
     announced = False
+    deadline = time.monotonic() + float(os.environ.get("IPAD_ALS_DISCOVERY_SECS", "15"))
     while True:
         if have_monitor_sensor() and proxy_has_light():
             return ProxySource()
@@ -539,10 +540,13 @@ def make_source(args, conf):
         if args.probe is not None:
             log("no ambient light sensor: iio-sensor-proxy has none and there is no IIO device")
             sys.exit(1)
+        if time.monotonic() >= deadline:
+            log("no ambient light sensor after discovery window; exiting")
+            sys.exit(0)
         if not announced:
             log("no ambient light sensor yet (iio-sensor-proxy has none, no IIO device); waiting")
             announced = True
-        time.sleep(10)
+        time.sleep(3)
 
 
 def list_sensors(args, conf):

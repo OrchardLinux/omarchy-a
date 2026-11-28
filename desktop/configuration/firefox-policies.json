@@ -5,6 +5,24 @@
         "installation_mode": "normal_installed",
         "install_url": "file:///usr/lib/firefox/distribution/extensions/@omafox.xpi"
       }
+    },
+    "Preferences": {
+      "browser.tabs.unloadOnLowMemory": {
+        "Value": true,
+        "Status": "default"
+      },
+      "dom.ipc.processCount": {
+        "Value": 2,
+        "Status": "default"
+      },
+      "network.prefetch-next": {
+        "Value": false,
+        "Status": "default"
+      },
+      "browser.sessionstore.interval": {
+        "Value": 60000,
+        "Status": "default"
+      }
     }
   }
 }

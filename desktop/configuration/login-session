@@ -66,36 +66,60 @@ if [[ -n $gpu ]]; then
   elif [[ -z $display || ! -x $gpu_probe ]]; then
     gpu_verdict='software desktop: no display card or no gpu-probe to test the GPU with'
   else
-    # The probe runs with the environment the desktop would get. The login
-    # waits for it 10 s at most and does not depend on it ending: a probe
-    # stuck in the kernel is left behind.
-    env -u LIBGL_ALWAYS_SOFTWARE "${gpu_desktop[@]}" "$gpu_probe" "/dev/dri/${gpu##*/}" "$display" \
-      >"$gpu_log" 2>&1 </dev/null &
-    gpu_pid=$!
-    gpu_ended=
-    gpu_verdict='software desktop: the GPU probe did not finish within 10 s'
-    for ((tick = 0; tick < 100; tick++)); do
-      if ! kill -0 "$gpu_pid" 2>/dev/null; then
-        gpu_detail=$(grep -m 1 GPU-PROBE "$gpu_log" 2>/dev/null || tail -n 1 "$gpu_log" 2>/dev/null || true)
-        gpu_ended=1
-        if wait "$gpu_pid"; then
-          gpu_verdict="GPU desktop after $((tick / 10)).$((tick % 10)) s: $gpu_detail"
-          export "${gpu_desktop[@]}"
-          # The shell (and every app) draws on the GPU too, not Qt's software renderer.
-          unset LIBGL_ALWAYS_SOFTWARE QT_QUICK_BACKEND
-          # Qt Quick draws without a depth or stencil buffer, as iOS draws its 2D
-          # UI: on these tile-based GPUs each window and each layer otherwise
-          # keeps a full-size depth/stencil buffer in memory that the UI never
-          # reads (on the iPod touch 6 that is about 50 MB in the shell alone).
-          export QSG_NO_DEPTH_BUFFER=1 QSG_NO_STENCIL_BUFFER=1
-        else
-          gpu_verdict="software desktop: ${gpu_detail:-the GPU probe failed}"
+    # Cache a passing GPU probe keyed by kernel release, display driver and
+    # Mesa/probe timestamps so repeat boots skip the ~1 s probe while any
+    # kernel, Mesa or DTB change re-runs it automatically.
+    gpu_cache_base=${XDG_CACHE_HOME:-${HOME:+$HOME/.cache}}
+    gpu_cache=${gpu_cache_base:+$gpu_cache_base/omarchy-a/gpu-probe.cache}
+    gpu_key=
+    if [[ -n $gpu_cache ]]; then
+      gpu_icd_sig=$(stat -Lc '%Y:%s' /usr/share/vulkan/icd.d/powervr_mesa_icd.json 2>/dev/null || echo icd)
+      gpu_probe_sig=$(stat -Lc '%Y:%s' "$gpu_probe" 2>/dev/null || echo probe)
+      gpu_key="$(uname -r)|${display_driver:-none}|$gpu_icd_sig|$gpu_probe_sig"
+    fi
+    if [[ -n $gpu_cache && -r $gpu_cache ]] && IFS= read -r cached_key <"$gpu_cache" && [[ $cached_key == "$gpu_key" ]]; then
+      gpu_detail=$(sed -n '2p' "$gpu_cache" 2>/dev/null || true)
+      gpu_verdict="GPU desktop (cached): ${gpu_detail:-GPU-PROBE PASS}"
+      export "${gpu_desktop[@]}" MESA_DISK_CACHE_SINGLE_FILE=1
+      unset LIBGL_ALWAYS_SOFTWARE QT_QUICK_BACKEND
+      export QSG_NO_DEPTH_BUFFER=1 QSG_NO_STENCIL_BUFFER=1
+    else
+      # The probe runs with the environment the desktop would get. The login
+      # waits for it 10 s at most and does not depend on it ending: a probe
+      # stuck in the kernel is left behind.
+      env -u LIBGL_ALWAYS_SOFTWARE "${gpu_desktop[@]}" "$gpu_probe" "/dev/dri/${gpu##*/}" "$display" \
+        >"$gpu_log" 2>&1 </dev/null &
+      gpu_pid=$!
+      gpu_ended=
+      gpu_verdict='software desktop: the GPU probe did not finish within 10 s'
+      for ((tick = 0; tick < 100; tick++)); do
+        if ! kill -0 "$gpu_pid" 2>/dev/null; then
+          gpu_detail=$(grep -m 1 GPU-PROBE "$gpu_log" 2>/dev/null || tail -n 1 "$gpu_log" 2>/dev/null || true)
+          gpu_ended=1
+          if wait "$gpu_pid"; then
+            gpu_verdict="GPU desktop after $((tick / 10)).$((tick % 10)) s: $gpu_detail"
+            export "${gpu_desktop[@]}" MESA_DISK_CACHE_SINGLE_FILE=1
+            # The shell (and every app) draws on the GPU too, not Qt's software renderer.
+            unset LIBGL_ALWAYS_SOFTWARE QT_QUICK_BACKEND
+            # Qt Quick draws without a depth or stencil buffer, as iOS draws its 2D
+            # UI: on these tile-based GPUs each window and each layer otherwise
+            # keeps a full-size depth/stencil buffer in memory that the UI never
+            # reads (on the iPod touch 6 that is about 50 MB in the shell alone).
+            export QSG_NO_DEPTH_BUFFER=1 QSG_NO_STENCIL_BUFFER=1
+            if [[ -n $gpu_cache ]]; then
+              mkdir -p "$(dirname "$gpu_cache")" 2>/dev/null || true
+              printf '%s\n%s\n' "$gpu_key" "$gpu_detail" >"$gpu_cache.tmp" 2>/dev/null &&
+                mv -f "$gpu_cache.tmp" "$gpu_cache" 2>/dev/null || true
+            fi
+          else
+            gpu_verdict="software desktop: ${gpu_detail:-the GPU probe failed}"
+          fi
+          break
         fi
-        break
-      fi
-      sleep 0.1
-    done
-    if [[ -z $gpu_ended ]]; then kill -KILL "$gpu_pid" 2>/dev/null || true; fi
+        sleep 0.1
+      done
+      if [[ -z $gpu_ended ]]; then kill -KILL "$gpu_pid" 2>/dev/null || true; fi
+    fi
   fi
   logger -t omarchy-gpu-probe -- "$gpu_verdict" 2>/dev/null || true
 fi
