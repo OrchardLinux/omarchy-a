@@ -15,6 +15,10 @@ is missing or empty.
 
 ### Desktop
 
+- On tall phones held upright (the iPhone XR and the other notched iPhones)
+  the lock screen's PIN keys are slightly larger and sit lower, within the
+  thumb's reach, with more room between the PIN dots and the keys. The clock
+  stays where it was.
 - Power and Volume Down pressed together take a screenshot, for phones
   without a Home button. Home and Power still do too.
 
