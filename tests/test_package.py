@@ -21,6 +21,51 @@ INSTALL = PROJECT / 'system/overlay/usr/lib/omarchy-a/package-install'
 OVERRIDES = ('etc/os-release', 'etc/bluetooth/main.conf')
 
 
+def rpmvercmp(a, b):
+    """pacman's version comparison (lib/libalpm/version.c rpmvercmp), for the test only."""
+    if a == b:
+        return 0
+    i = j = 0
+    while i < len(a) and j < len(b):
+        start_i, start_j = i, j
+        while i < len(a) and not a[i].isalnum():
+            i += 1
+        while j < len(b) and not b[j].isalnum():
+            j += 1
+        if i == len(a) or j == len(b):
+            break
+        if i - start_i != j - start_j:
+            return -1 if i - start_i < j - start_j else 1
+        start_i, start_j = i, j
+        numeric = a[i].isdigit()
+        kind = str.isdigit if numeric else str.isalpha
+        while i < len(a) and kind(a[i]):
+            i += 1
+        while j < len(b) and kind(b[j]):
+            j += 1
+        one, two = a[start_i:i], b[start_j:j]
+        if not two:
+            return 1 if numeric else -1
+        if numeric:
+            one, two = one.lstrip('0'), two.lstrip('0')
+            if len(one) != len(two):
+                return 1 if len(one) > len(two) else -1
+        if one != two:
+            return 1 if one > two else -1
+    rest_a, rest_b = a[i:], b[j:]
+    if not rest_a and not rest_b:
+        return 0
+    if (not rest_a and not rest_b[0].isalpha()) or (rest_a and rest_a[0].isalpha()):
+        return -1
+    return 1
+
+
+def vercmp(a, b):
+    """pacman's vercmp for VERSION-PKGREL without an epoch."""
+    (version_a, release_a), (version_b, release_b) = a.rsplit('-', 1), b.rsplit('-', 1)
+    return rpmvercmp(version_a, version_b) or rpmvercmp(release_a, release_b)
+
+
 @unittest.skipUnless(shutil.which('bash'), 'bash runs desktop/install-tree')
 class Contents(unittest.TestCase):
     def test_the_package_is_the_payload_the_helpers_and_the_overlay(self):
@@ -58,11 +103,32 @@ class Contents(unittest.TestCase):
 
 
 class Version(unittest.TestCase):
-    def test_the_version_is_the_last_release(self):
+    def described(self, output):
         with patch.dict(os.environ, {'OMARCHY_A_VERSION': ''}), \
-                patch.object(package.subprocess, 'check_output', return_value='v0.3.1\n') as git:
-            self.assertEqual(package.version(), '0.3.1')
-        self.assertIn('--abbrev=0', git.call_args.args[0])
+                patch.object(package.subprocess, 'check_output', return_value=output + '\n') as git:
+            value = package.version()
+        self.assertIn('--long', git.call_args.args[0])
+        return value
+
+    def test_a_release_tag_is_the_release(self):
+        self.assertEqual(self.described('v0.3.1-0-g0123abc'), '0.3.1')
+        self.assertEqual(self.described('v0.4.0-rc1-0-g0123abc'), '0.4.0.rc1')
+
+    def test_between_releases_the_version_counts_on_from_the_last(self):
+        self.assertEqual(self.described('v0.3.8-12-gabc1234'), '0.3.8.r12.gabc1234')
+        self.assertEqual(self.described('v0.4.0-rc1-3-gdef5678'), '0.4.0.rc1.r3.gdef5678')
+        with self.assertRaises(ValueError):
+            self.described('0123abc')
+
+    def test_pacman_takes_a_nightly_over_its_release_and_the_next_release_over_it(self):
+        # Oldest first, as pacman orders them (with their pkgrel, as the repositories list them).
+        ordered = ['0.3.7-1', '0.3.8-1', '0.3.8.r1.g0000000-1', '0.3.8.r9.gfff0000-1', '0.3.8.r12.gabc1234-1',
+                   '0.3.8.r100.g0000000-1', '0.3.9-1', '0.3.9.r1.gabc1234-1', '0.3.10-1']
+        for older, newer in zip(ordered, ordered[1:]):
+            with self.subTest(older=older, newer=newer):
+                self.assertEqual(vercmp(older, newer), -1)
+                self.assertEqual(vercmp(newer, older), 1)
+        self.assertEqual(vercmp('0.3.8.r12.gabc1234-1', '0.3.8.r12.gabc1234-1'), 0)
 
     def test_the_recipe_names_its_version(self):
         with patch.dict(os.environ, {'OMARCHY_A_VERSION': '0.4.0'}):

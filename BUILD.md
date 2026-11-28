@@ -2,7 +2,7 @@
 
 ## GitHub Actions
 
-`.github/workflows/build.yml` runs unit tests on pull requests and `main`. Version tags (`v*`), manual dispatches and the nightly additionally generate the loader artwork on macOS, build m1n1 on Linux ARM64, and the signed Arch Linux ARM userspace on a native ARM64 worker using the same pinned Arch job image and `install-toolchain` recipes as local builds. The one package built is `omarchy-a`, this commit's own files (below), with the Orchard package repository's recipe; the image installs it and Mesa, wlroots, Labwc, the video bridge, Omafox, Omactivity and Files from the Orchard package repository. Nothing is published as a package from here. What is compiled is only the keyboard and the cursor helper; rootfs package assembly runs as root in the disposable job. No nested Podman is used. Shared recipe path variables select actual CI paths instead of container mounts. Native execution is not a security or network sandbox.
+`.github/workflows/build.yml` runs unit tests on pull requests and `main`. Version tags (`v*`), manual dispatches and the nightly additionally generate the loader artwork on macOS, build m1n1 on Linux ARM64, and the signed Arch Linux ARM userspace on a native ARM64 worker using the same pinned Arch job image and `install-toolchain` recipes as local builds. The one package built is `omarchy-a`, this commit's own files (below), with the Orchard package repository's recipe; the image installs it and Mesa, wlroots, Labwc, the video bridge, Omafox, Omactivity and Files from the Orchard package repository. A push to `main` builds only that package, for the nightly channel (below), which is the one place it is published as a package. What is compiled is only the keyboard and the cursor helper; rootfs package assembly runs as root in the disposable job. No nested Podman is used. Shared recipe path variables select actual CI paths instead of container mounts. Native execution is not a security or network sandbox.
 
 The build jobs start beside the tests; assembly, and with it every draft release and preview, waits for the tests. One result is kept between runs in GitHub's cache: the boot artwork, per content of `boot/` (`boot-artwork-v1-…`), drawn on a Mac only when that changed; a newer ImageMagick or librsvg alone does not redraw it. Raise `v1` in the key to start from nothing.
 
@@ -22,6 +22,10 @@ curl -fsSL https://github.com/OrchardLinux/omarchy-a/releases/download/nightly/i
 installs the newest nightly; the same address under a dated name installs that one. Nightlies are untested on hardware and never GitHub's "latest" release, so the README's install command keeps installing the last version. A nightly links orchard's kernels and loaders from orchard's nightly instead of carrying copies, and orchard removes its nightlies after 14 days (its newest stays): an old nightly stops being installable then.
 
 `ci/nightly` holds the decision and the record. What a nightly is made of is a list of named inputs (`--input NAME=VALUE` in the workflow's first job and where the nightly is recorded, today `orchard` and `packages`); one more there adds an input. A dispatch with `nightly` ticked builds and publishes a nightly from `main` whether or not anything changed; from another branch it builds under the nightly's name and publishes nothing.
+
+### Nightly channel
+
+An installed tablet takes every change merged into `main` with `omarchy-channel nightly`: it lists the pacman repository `[omarchy-a-nightly]` (`Server = https://github.com/OrchardLinux/omarchy-a/releases/download/pacman-nightly`) above `[orchard]` and runs `pacman -Syu`; `omarchy-channel stable` takes it out and runs `pacman -Syuu`, back to the last release. Every push to `main` builds only the `omarchy-a` package (the userspace job without the image, about two minutes) and, once the tests pass, the `pacman-nightly` job publishes it and its database (`ci/nightly-repo`) into the rolling release `pacman-nightly`; the image nightly publishes its own package there too. The database is uploaded as plain files under the names pacman asks for (`omarchy-a-nightly.db`, `.files`), after the package it names; older packages are removed except the newest three, so runs close together can publish at once without a cancelled run (the last database written wins, and a tablet never goes back from a newer package it has). Between releases the package's version is `<release>.r<commits since>.g<commit>` (`git describe`, in `release/package.py`, read in the workflow's first job, which has the history), newer to pacman than that release and older than the next. CI builds the aarch64 package only, so the channel is for 64-bit tablets; `omarchy-channel` says so on an armv7h one.
 
 Assembly runs the same producers, artifact auditor, CLI resolution and publication staging as local builds. Version tags create **draft** releases; nightly runs publish pre-releases (below); manual builds only retain workflow artifacts. Nothing automatically announces a release or operates a device. Follow the [release order](https://github.com/OrchardLinux/orchard/blob/main/docs/ci.md), then qualify fresh installation and cold-restart launch on hardware.
 
@@ -105,10 +109,10 @@ release tags.
 - An image carries the package of its own commit: `release.package --output`
   runs the recipe's makepkg (from the package repository's `main`, or `--recipe` /
   `OMARCHY_A_RECIPE`: a checkout's `packages/omarchy-a/arch`) in the desktop's
-  builder, with a tarball of this checkout as its first source. The version is the last release tag
+  builder, with a tarball of this checkout as its first source. The version is the release tag
+  of the commit, or between releases `<last release>.r<commits since>.g<commit>`
   (`OMARCHY_A_VERSION` overrides it), so a release image's package is the
-  release's, and one built in between is newer than its version says until
-  the next release replaces it.
+  release's, and one built in between sorts after that release and before the next.
 - The layout is upstream Omarchy's: the Omarchy tree in `/usr/share/omarchy`
   (`OMARCHY_PATH`) with its commands in `/usr/bin`, session helpers in
   `/usr/libexec`, the tablet

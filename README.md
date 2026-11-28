@@ -18,7 +18,7 @@ You need a Mac or Linux computer, a USB cable, and a [compatible device](https:/
    ```
 5. **After a restart**, start it again from your computer: DFU mode, then `orchard launch`.
 
-Update from the device with **Update > Omarchy** in the menu. The Linux storage is not encrypted. For problems, see [Troubleshooting](docs/troubleshooting.md).
+Update from the device with **Update > Omarchy** in the menu. To get every merged change as it lands instead of waiting for a release, run `omarchy-channel nightly` in a terminal on the device; `omarchy-channel stable` goes back. The Linux storage is not encrypted. For problems, see [Troubleshooting](docs/troubleshooting.md).
 
 ## How it works
 

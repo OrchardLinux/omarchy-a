@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# The nightly channel's pacman repository, [omarchy-a-nightly]: the omarchy-a
+# package a nightly built, and a database that lists it.
+#
+#   ci/nightly-repo PACKAGE_DIR OUTPUT_DIR
+#
+# PACKAGE_DIR is release/package.py's output (package.json and the package).
+# A tablet on the nightly channel (omarchy-channel nightly) has
+#   [omarchy-a-nightly]
+#   Server = https://github.com/OrchardLinux/omarchy-a/releases/download/pacman-nightly
+# and fetches $Server/omarchy-a-nightly.db (and .files) and then the package
+# file the database names. Release assets are plain files and cannot be
+# links: the database goes up as a copy under the name pacman asks for, not
+# as repo-add's link to its .tar.gz. One architecture a repository: CI
+# builds the aarch64 package only.
+set -euo pipefail
+(($# == 2)) || { echo 'Usage: ci/nightly-repo PACKAGE_DIR OUTPUT_DIR' >&2; exit 2; }
+package=$1 output=$2 repo=omarchy-a-nightly
+[[ ! -e $output ]] || { echo "Choose a new output directory: $output" >&2; exit 1; }
+file=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["file"])' "$package/package.json")
+# GitHub renames an asset whose name has other characters (an epoch's ':', a
+# '+'), and pacman would then ask for a file that is not there.
+[[ $file =~ ^omarchy-a-[A-Za-z0-9._-]+\.pkg\.tar\.zst$ && -f $package/$file ]] ||
+  { echo "No omarchy-a package with a name a release keeps in $package: $file" >&2; exit 1; }
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+cp "$package/$file" "$work/"
+repo-add -q "$work/$repo.db.tar.gz" "$work/$file"
+mkdir -p "$output"
+cp "$work/$file" "$output/"
+cp "$work/$repo.db.tar.gz" "$output/$repo.db"
+cp "$work/$repo.files.tar.gz" "$output/$repo.files"
+ls -l "$output"

@@ -123,9 +123,13 @@ class Workflow(unittest.TestCase):
                       self.job('nightly'))
         self.assertIn('PACKAGES: ${{ needs.orchard.outputs.packages }}', self.job('nightly'))
         self.assertNotIn('needs:', plan)
-        for name in ('artwork-check', 'artwork', 'userspace'):
+        for name in ('artwork-check', 'artwork'):
             self.assertIn("    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || "
                           "needs.orchard.outputs.nightly == 'true'\n", self.job(name), name)
+        # The userspace job also runs on a push to main, for the package alone.
+        self.assertIn("    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || "
+                      "needs.orchard.outputs.nightly == 'true' || (github.event_name == 'push' && github.ref == "
+                      "'refs/heads/main')\n", self.job('userspace'))
 
     def test_only_a_nightly_run_on_main_publishes_and_the_pointer_installs_it(self):
         publish = self.job('nightly')
@@ -135,8 +139,38 @@ class Workflow(unittest.TestCase):
         self.assertIn('cp assets/nightly.json pointer/latest.json', publish)
         self.assertIn('cp assets/install.sh pointer/', publish)
         self.assertEqual(publish.count('--prerelease --verify-tag --latest=false'), 2)
-        self.assertEqual(self.text.count('contents: write'), 2)
+        self.assertEqual(self.text.count('contents: write'), 3)
         self.assertIn("    if: github.ref_type == 'tag'\n", self.job('draft'))
+
+    def test_a_push_to_main_builds_the_package_alone_and_publishes_it_to_the_nightly_channel(self):
+        userspace = self.job('userspace')
+        self.assertIn("IMAGE: ${{ github.event_name != 'push' || github.ref_type == 'tag' }}", userspace)
+        self.assertIn("if: inputs.reuse_run_id == '' && env.IMAGE == 'true'\n", userspace)
+        self.assertIn('if [[ $IMAGE == true ]]; then bash system/install-toolchain; fi', userspace)
+        self.assertIn('run: ci/nightly-repo out/package out/pacman-nightly', userspace)
+        # No image: no assembly, no image nightly, no draft (they need the image's jobs).
+        self.assertIn('needs: [test, orchard, artwork, userspace]', self.job('assets'))
+        channel = self.job('pacman-nightly')
+        self.assertIn("    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || "
+                      "needs.orchard.outputs.nightly == 'true')\n", channel)
+        self.assertIn('needs: [orchard, test, userspace]', channel)
+        # Its own rolling release, apart from the image nightly's; no concurrency group, which cancels waiting runs.
+        self.assertNotIn('    concurrency:', channel)
+        self.assertNotIn('omarchy-a-nightly.db', self.job('nightly'))
+        upload = channel.index('gh release upload pacman-nightly "repo/$package" --clobber')
+        self.assertLess(upload, channel.index('gh release upload pacman-nightly repo/omarchy-a-nightly.db '
+                                              'repo/omarchy-a-nightly.files --clobber'))
+        self.assertIn('| .[3:] |', channel)
+        self.assertIn('https://github.com/OrchardLinux/omarchy-a/releases/download/pacman-nightly',
+                      (ROOT / 'desktop/shell/bin/omarchy-channel').read_text())
+        repo = (ROOT / 'ci/nightly-repo').read_text()
+        self.assertIn('cp "$work/$repo.db.tar.gz" "$output/$repo.db"', repo)
+
+    def test_the_package_version_is_read_where_git_has_the_history(self):
+        plan = self.job('orchard')
+        self.assertIn('fetch-depth: 0', plan)
+        self.assertIn('python3 -m release.package --print-version', plan)
+        self.assertIn('VERSION: ${{ needs.orchard.outputs.version }}', self.job('userspace'))
 
     def test_orchard_comes_from_its_published_release_not_from_a_checkout(self):
         dependencies = (ROOT / 'ci/dependencies').read_text()
