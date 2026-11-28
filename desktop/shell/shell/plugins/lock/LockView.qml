@@ -87,8 +87,9 @@ Item {
   }
 
   property date now: new Date()
+  readonly property bool clockShowsSeconds: TimeFormat.time.indexOf("s") >= 0
   Timer {
-    interval: 1000
+    interval: root.clockShowsSeconds ? 1000 : Math.max(1000, 60050 - (root.now.getSeconds() * 1000 + root.now.getMilliseconds()))
     repeat: true
     running: root.visible
     triggeredOnStart: true
