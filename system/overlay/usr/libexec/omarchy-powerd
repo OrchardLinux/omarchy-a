@@ -286,7 +286,8 @@ def streams_running(dump):
     return False
 
 
-EV_KEY, KEY_POWER, KEY_HOMEPAGE = 1, 116, 172
+EV_KEY, KEY_VOLUMEDOWN, KEY_POWER, KEY_HOMEPAGE = 1, 114, 116, 172
+KEY_NAMES = {KEY_POWER: 'power', KEY_HOMEPAGE: 'home', KEY_VOLUMEDOWN: 'volume-down'}
 EV_SW, SW_MACHINE_COVER = 5, 0x10
 EV_SYN, SYN_REPORT, SYN_DROPPED = 0, 0, 3
 INPUT_EVENT = struct.Struct('qqHHi')
@@ -322,11 +323,11 @@ LONG_HOLD_SECONDS = 1.5
 
 
 def key_edges(data):
-    """(key name, down, kernel seconds) of every Power and Home press and release in evdev bytes."""
+    """(key name, down, kernel seconds) of every Power, Home and Volume Down press and release in evdev bytes."""
     edges = []
     for sec, usec, kind, code, value in INPUT_EVENT.iter_unpack(data):
-        if kind == EV_KEY and value in (0, 1) and code in (KEY_POWER, KEY_HOMEPAGE):
-            edges.append(('power' if code == KEY_POWER else 'home', value == 1, sec + usec / 1e6))
+        if kind == EV_KEY and value in (0, 1) and code in KEY_NAMES:
+            edges.append((KEY_NAMES[code], value == 1, sec + usec / 1e6))
     return edges
 
 
@@ -347,14 +348,14 @@ def reports_cover(capabilities_sw):
 
 
 def reports_keys(capabilities_key):
-    """Whether an input device's sysfs capabilities/key bitmap has KEY_POWER or KEY_HOMEPAGE."""
+    """Whether an input device's sysfs capabilities/key bitmap has Power, Home or Volume Down."""
     words = capabilities_key.split()
     # Hex words of the kernel's long, most significant first.
     width = struct.calcsize('L') * 8
     bits = 0
     for word in words:
         bits = bits << width | int(word, 16)
-    return bool(bits >> KEY_POWER & 1 or bits >> KEY_HOMEPAGE & 1)
+    return any(bits >> code & 1 for code in KEY_NAMES)
 
 
 def open_input(path):
@@ -405,7 +406,8 @@ class Buttons:
     after a short press alone. Home and Power pressed together on a lit
     screen take a screenshot when the first of them comes up, if that is
     soon: held (the DFU and restart combination), they do nothing, and a
-    restart never releases them at all. Home let go after a press alone on a
+    restart never releases them at all. Volume Down and Power do the same,
+    for a phone without Home; Volume Down alone stays labwc's. Home let go after a press alone on a
     lit screen is 'home-up': the session's Home action (omarchy-home-button).
     It comes from the button itself, so no keyboard state, compositor
     binding or held modifier stands between the press and the action.
@@ -415,6 +417,7 @@ class Buttons:
         self.held = None        # Power down on a lit screen since
         self.spoiled = False    # that Power press is not a press alone
         self.home_down = None   # Home down since
+        self.volume_down = None  # Volume Down down since
         self.combo = None       # both down on a lit screen since
         self.combo_spent = False
         self.home_in_combo = False  # the last Home press was part of a combination
@@ -422,7 +425,9 @@ class Buttons:
 
     def _start_combo(self, when):
         self.spoiled = True
-        self.combo, self.combo_spent, self.home_in_combo = when, False, True
+        self.combo, self.combo_spent = when, False
+        if self.home_down is not None:
+            self.home_in_combo = True
 
     def _end_combo(self, when):
         if self.combo is None or self.combo_spent:
@@ -431,11 +436,21 @@ class Buttons:
         return 'screenshot' if when - self.combo < LONG_HOLD_SECONDS else None
 
     def _both_up(self):
-        if self.held is None and self.home_down is None:
+        if self.held is None and self.home_down is None and self.volume_down is None:
             self.combo = None
 
     def edge(self, name, down, when, lit):
         """The event of one edge (a machine event or 'screenshot'), or None."""
+        if name == 'volume-down':
+            if down:
+                self.volume_down = when
+                if self.held is not None:
+                    self._start_combo(when)
+                return None
+            self.volume_down = None
+            event = self._end_combo(when)
+            self._both_up()
+            return event
         if name == 'home':
             if down:
                 self.home_down, self.home_in_combo, self.home_woke = when, False, not lit
@@ -454,7 +469,7 @@ class Buttons:
                 self.held = None
                 return 'power'
             self.held, self.spoiled = when, False
-            if self.home_down is not None:
+            if self.home_down is not None or self.volume_down is not None:
                 self._start_combo(when)
             return None
         if self.held is None:

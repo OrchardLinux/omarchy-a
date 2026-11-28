@@ -11,6 +11,13 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
+## Unreleased
+
+### Desktop
+
+- Power and Volume Down pressed together take a screenshot, for phones
+  without a Home button. Home and Power still do too.
+
 ## [0.3.8] - 2026-11-28
 
 Built on orchard 0.3.11.
