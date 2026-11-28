@@ -800,7 +800,10 @@ Item {
       root.menuEntry = null
       if (shown) return
     }
-    if (!root.searching) return
+    if (!root.searching) {
+      root.close()
+      return
+    }
     if (root.query.trim()) {
       keyCatcher.forceActiveFocus()
       Qt.inputMethod.hide()
@@ -1075,12 +1078,29 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       height: Math.max(0, parent.height - root.barInset)
     }
 
-    // Anywhere else that nothing takes: put search away, never close.
+    // Anywhere else that nothing takes: put search away, else close.
     MouseArea {
       y: root.barInset
       width: parent.width
       height: Math.max(0, parent.height - y)
       acceptedButtons: Qt.LeftButton | Qt.RightButton
+      onClicked: root.backgroundTap()
+    }
+
+    // The bottom edge: labwc leaves a swipe up here to the launcher
+    // (bottomSwipeIgnoreNamespace), which then closes rather than opening
+    // the overview. The strip is labwc's edge band, 20 px.
+    MouseArea {
+      z: 100
+      anchors.bottom: parent.bottom
+      width: parent.width
+      height: 20
+      preventStealing: true
+      property real startY: 0
+      onPressed: function(event) { startY = event.y }
+      onPositionChanged: function(event) {
+        if (root.opened && startY - event.y >= 24) root.close()
+      }
       onClicked: root.backgroundTap()
     }
 
@@ -2040,7 +2060,12 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
         root.openAppMenu(cell.app, cell.mapToItem(panel.contentItem, event.x, event.y), cell)
       }
       onClicked: function(event) {
-        if (!cell.app || travelled) return
+        if (travelled) return
+        // An empty place in the grid is the background.
+        if (!cell.app) {
+          root.backgroundTap()
+          return
+        }
         if (event.button === Qt.RightButton) {
           root.openAppMenu(cell.app, cell.mapToItem(panel.contentItem, event.x, event.y), cell)
           return

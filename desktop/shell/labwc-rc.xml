@@ -202,7 +202,7 @@
     bottomSwipeOverview="yes"
     bottomSwipeFarCommand="omarchy-shell omarchy.dock openApps"
     bottomSwipeFarSocket="omarchy-launcher-follow.sock"
-    bottomSwipeIgnoreNamespace="omarchy-notification-center,omarchy-control-center" />
+    bottomSwipeIgnoreNamespace="omarchy-notification-center,omarchy-control-center,omarchy-dock-apps" />
   <snapping>
     <!-- Keep titlebar double-click maximize; top-edge dragging tiles upward. -->
     <topMaximize>no</topMaximize>
