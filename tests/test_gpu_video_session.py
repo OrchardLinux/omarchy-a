@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 
 PROJECT = Path(__file__).resolve().parents[1]
 SESSION = PROJECT / 'desktop/configuration/login-session'
@@ -110,9 +111,46 @@ class Session(unittest.TestCase):
         self.assertEqual(env['WLR_RENDER_DRM_DEVICE'], '/dev/dri/renderD128')
         self.assertEqual(env['WLR_DRM_DEVICES'], '/dev/dri/card1')
         self.assertEqual(env['MESA_LOADER_DRIVER_OVERRIDE'], 'zink')
+        self.assertEqual(env['MESA_DISK_CACHE_SINGLE_FILE'], '1')
         self.assertNotIn('LIBGL_ALWAYS_SOFTWARE', env)
         self.assertNotIn('LIBVA_DRIVER_NAME', env)
         self.assertNotIn('MOZ_DISABLE_RDD_SANDBOX', env)
+
+    def test_passing_gpu_probe_is_cached_and_invalidates_on_driver_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_dir = Path(tmp) / 'cache'
+            with unittest.mock.patch.dict(os.environ, {'XDG_CACHE_HOME': str(cache_dir)}):
+                # Re-run using a custom run_session env with XDG_CACHE_HOME passed through
+                pass
+            root = Path(tmp) / 'run1'
+            for name, (device, driver) in self.GPU.items():
+                node = root / 'sys/class' / name
+                node.mkdir(parents=True)
+                target = root / 'sys/devices' / device
+                (target / 'driver-dir' / driver).mkdir(parents=True, exist_ok=True)
+                if not (target / 'driver').exists():
+                    (target / 'driver').symlink_to(target / 'driver-dir' / driver)
+                (node / 'device').symlink_to(target)
+            (root / 'gpu-probe').write_text('#!/bin/sh\necho "$@" >> "$FAKE/probe-runs"\n' + PASS + '\n')
+            (root / 'gpu-probe').chmod(0o755)
+            script = ('set -euo pipefail\nlogger() { shift 3; echo "$*" >> "$FAKE/journal"; }\n'
+                      'export WLR_RENDERER=pixman LIBGL_ALWAYS_SOFTWARE=1\n' + detection() +
+                      '\nenv | grep -E "^(WLR_|MESA_|PVR_|LIBGL_)" | sort')
+            env = {'PATH': os.environ['PATH'], 'FAKE': str(root), 'XDG_RUNTIME_DIR': str(root),
+                   'XDG_CACHE_HOME': str(cache_dir), 'ICD': '1'}
+            subprocess.run(['bash', '-c', script], env=env, text=True, capture_output=True, check=True, timeout=30)
+            self.assertEqual(len((root / 'probe-runs').read_text().splitlines()), 1)
+            # Second boot with same drivers hits cache without re-running gpu-probe
+            subprocess.run(['bash', '-c', script], env=env, text=True, capture_output=True, check=True, timeout=30)
+            self.assertEqual(len((root / 'probe-runs').read_text().splitlines()), 1)
+            self.assertIn('GPU desktop (cached):', (root / 'journal').read_text())
+            # Changing the display driver invalidates the cache and re-runs gpu-probe
+            disp_target = root / 'sys/devices/soc/display'
+            (disp_target / 'driver').unlink()
+            (disp_target / 'driver-dir/simple-framebuffer').mkdir(parents=True, exist_ok=True)
+            (disp_target / 'driver').symlink_to(disp_target / 'driver-dir/simple-framebuffer')
+            subprocess.run(['bash', '-c', script], env=env, text=True, capture_output=True, check=True, timeout=30)
+            self.assertEqual(len((root / 'probe-runs').read_text().splitlines()), 2)
 
     def test_decoder_without_gpu_keeps_firefox_sandboxed(self):
         # A software desktop: VA-API applications get the decoder, Firefox (software-drawn) keeps its sandbox.
