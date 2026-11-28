@@ -129,7 +129,7 @@ class Installation(unittest.TestCase):
                       '  *" -Dk "*) [[ -n $CONSISTENT ]];; esac; }\n'
                       'config=c root=/r gpgdir=g desktop=/d requested=(base labwc) local_names=($BUILT)\n'
                       + packages + block)
-            result = bash(script, LOG=str(log), architecture=architecture, PLANNED=' '.join(planned), OWNER=owner,
+            result = bash(script, LOG=str(log), architecture=architecture, release="1.2.3", PLANNED=' '.join(planned), OWNER=owner,
                           CONSISTENT='1' if consistent else '', OURS=ours, BUILT=' '.join(built), project=str(PROJECT))
             calls = [re.sub(r'^(download )?(--(config|root|gpgdir) \S+ )+', r'\1', line)
                      for line in log.read_text().splitlines()]
