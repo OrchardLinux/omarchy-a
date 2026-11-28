@@ -800,7 +800,10 @@ Item {
       root.menuEntry = null
       if (shown) return
     }
-    if (!root.searching) return
+    if (!root.searching) {
+      root.close()
+      return
+    }
     if (root.query.trim()) {
       keyCatcher.forceActiveFocus()
       Qt.inputMethod.hide()
@@ -1075,12 +1078,29 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       height: Math.max(0, parent.height - root.barInset)
     }
 
-    // Anywhere else that nothing takes: put search away, never close.
+    // Anywhere else that nothing takes: put search away, else close.
     MouseArea {
       y: root.barInset
       width: parent.width
       height: Math.max(0, parent.height - y)
       acceptedButtons: Qt.LeftButton | Qt.RightButton
+      onClicked: root.backgroundTap()
+    }
+
+    // The bottom edge: labwc leaves a swipe up here to the launcher
+    // (bottomSwipeIgnoreNamespace), which then closes rather than opening
+    // the overview. The strip is labwc's edge band, 20 px.
+    MouseArea {
+      z: 100
+      anchors.bottom: parent.bottom
+      width: parent.width
+      height: 20
+      preventStealing: true
+      property real startY: 0
+      onPressed: function(event) { startY = event.y }
+      onPositionChanged: function(event) {
+        if (root.opened && startY - event.y >= 24) root.close()
+      }
       onClicked: root.backgroundTap()
     }
 
@@ -1516,6 +1536,14 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
             property: "contentX"
             duration: Style.duration(220)
             easing.type: Easing.OutCubic
+          }
+
+          // The pages' empty places: the pager takes a press anywhere on
+          // it, so the background tap has to be in here, under the pages.
+          MouseArea {
+            width: pager.contentWidth
+            height: pager.contentHeight
+            onClicked: root.backgroundTap()
           }
 
           Row {
@@ -2040,7 +2068,12 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
         root.openAppMenu(cell.app, cell.mapToItem(panel.contentItem, event.x, event.y), cell)
       }
       onClicked: function(event) {
-        if (!cell.app || travelled) return
+        if (travelled) return
+        // An empty place in the grid is the background.
+        if (!cell.app) {
+          root.backgroundTap()
+          return
+        }
         if (event.button === Qt.RightButton) {
           root.openAppMenu(cell.app, cell.mapToItem(panel.contentItem, event.x, event.y), cell)
           return
@@ -2456,6 +2489,14 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       Component.onCompleted: root.appGridView = padGrid
       Component.onDestruction: if (root.appGridView === padGrid) root.appGridView = null
 
+      // Below the last row: the background, which the grid would take.
+      MouseArea {
+        z: -1
+        width: padGrid.width
+        height: Math.max(padGrid.height, padGrid.contentHeight)
+        onClicked: root.backgroundTap()
+      }
+
       delegate: Item {
         required property int index
         width: root.cellWidth
@@ -2513,6 +2554,12 @@ LC_ALL=C pacman -Qi omarchy-a 2>/dev/null | awk \'/^Depends On/ { on = 1 } /^Opt
       boundsBehavior: Flickable.StopAtBounds
       flickableDirection: Flickable.VerticalFlick
       clip: true
+
+      MouseArea {
+        width: groupsFlick.width
+        height: Math.max(groupsFlick.height, groupsFlick.contentHeight)
+        onClicked: root.backgroundTap()
+      }
 
       Column {
         id: groupsColumn
