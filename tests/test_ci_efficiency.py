@@ -41,12 +41,13 @@ class CIEfficiency(unittest.TestCase):
         for gone in ('ccache', 'makepkg', 'build-sources', 'build-labwc', 'labwc/install-toolchain', 'useradd',
                      'desktop/build '):
             self.assertNotIn(gone, body)
-        # The one package: this commit's omarchy-a, with the package repository's recipe; nothing publishes it.
+        # The one package: this commit's omarchy-a, with the package repository's recipe; only a
+        # nightly publishes it, as the nightly channel's repository (ci/nightly-repo), with no build of its own.
         self.assertIn('python -m release.package --output out/package --architecture aarch64', body)
-        self.assertIn('fetch-depth: 0', body)
         self.assertIn('system/build-rootfs --package out/package', body)
         for gone in ('publish-package', 'package-armv7h', 'package-aarch64', 'repo-add'):
             self.assertNotIn(gone, self.workflow)
+        self.assertEqual(self.workflow.count('release.package --output'), 1)
         self.assertFalse((ROOT / 'ci/publish-package').exists())
         self.assertFalse((ROOT / 'package').exists())
         for gone in ('desktop/build-sources', 'desktop/build-labwc', 'desktop/packages', 'desktop/labwc'):

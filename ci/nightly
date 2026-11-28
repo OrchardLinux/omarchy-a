@@ -3,13 +3,15 @@
 
 A nightly is made of its inputs, each a name and the value that identifies it:
 this repository's commit ("omarchy-a") and the orchard nightly whose tooling
-and components it takes ("orchard"). The record of the last nightly
+and components it takes ("orchard"). Every merge to main is a nightly: the
+nightly follows main within one build. The record of the last nightly
 (latest.json of the release `nightly`) names the inputs it was built from; a
-scheduled run builds only when they differ from today's. A further input
+scheduled run, which brings in a newer orchard or package repository, builds
+only when they differ from today's. A further input
 (--input NAME=VALUE, e.g. the checksum of a package repository's database)
 takes part without any other change.
 
-  ci/nightly plan --event EVENT --wanted BOOL --commit SHA --input NAME=VALUE ... [--previous latest.json]
+  ci/nightly plan --event EVENT [--ref REF] --wanted BOOL --commit SHA --input NAME=VALUE ... [--previous latest.json]
       prints nightly=true|false and name=nightly-YYYYMMDD-COMMIT (GitHub step outputs)
   ci/nightly record --name NAME --commit SHA --run-id ID --input NAME=VALUE ...
       prints the record: latest.json, and nightly.json of the dated release
@@ -26,6 +28,7 @@ import sys
 SCHEMA = 1
 NAME = re.compile(r'nightly-([0-9]{8})-[0-9a-f]{12}')
 COMMIT = re.compile(r'[0-9a-f]{40}')
+MAIN = 'refs/heads/main'
 
 
 def inputs(commit, pairs):
@@ -51,10 +54,12 @@ def previous_inputs(path):
     return found if isinstance(found, dict) else None
 
 
-def plan(event, wanted, current, previous):
-    """(build, reason): a scheduled run builds when the inputs changed, a dispatch when it asks for a nightly."""
+def plan(event, wanted, current, previous, ref=''):
+    """(build, reason): a merge to main builds, a scheduled run when the inputs changed, a dispatch when it asks."""
     if event == 'workflow_dispatch':
         return (True, 'asked for by this dispatch') if wanted else (False, 'this dispatch asked for no nightly')
+    if event == 'push':
+        return (True, 'a merge to main') if ref == MAIN else (False, f'a push to {ref or "(no ref)"} publishes no nightly')
     if event != 'schedule':
         return False, f'{event} runs publish no nightly'
     if previous is None:
@@ -90,6 +95,7 @@ def main(argv=None, now=None):
     actions = parser.add_subparsers(dest='action', required=True)
     planned = actions.add_parser('plan')
     planned.add_argument('--event', required=True)
+    planned.add_argument('--ref', default='')
     planned.add_argument('--wanted', default='')
     planned.add_argument('--previous', type=Path)
     recorded = actions.add_parser('record')
@@ -111,7 +117,7 @@ def main(argv=None, now=None):
             print(json.dumps(record(args.name, args.commit, args.run_id, now, current)))
             return 0
         build, reason = plan(args.event, args.wanted == 'true', current,
-                             previous_inputs(args.previous) if args.previous else None)
+                             previous_inputs(args.previous) if args.previous else None, args.ref)
     except ValueError as error:
         parser.error(str(error))
     print(('Nightly: ' if build else 'No nightly: ') + reason, file=sys.stderr)

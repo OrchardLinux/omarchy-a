@@ -21,9 +21,11 @@ on:
         type: boolean
         default: false
   # Nightly: main with orchard's newest nightly and the Orchard package
-  # repository's packages, as the rolling `nightly` pre-release, when any of
-  # them changed since the last one. After orchard's own nightly (03:17 UTC),
-  # so a change there is usually in the same night's build.
+  # repository's packages, as the rolling `nightly` pre-release. Every merge
+  # to main publishes one (ci/nightly); the schedule brings in a newer orchard
+  # or package repository when either changed since the last one. After
+  # orchard's own nightly (03:17 UTC), so a change there is usually in the
+  # same night's build.
   schedule:
     - cron: '30 4 * * *'
 permissions:
@@ -46,12 +48,23 @@ jobs:
       packages: ${{ steps.packages.outputs.index }}
       nightly: ${{ steps.plan.outputs.nightly }}
       name: ${{ steps.plan.outputs.name }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          sparse-checkout: ci/nightly
-          sparse-checkout-cone-mode: false
+          # The history and its tags, for the package's version; the files of this commit only.
+          fetch-depth: 0
+          filter: blob:none
+      # The omarchy-a package's version (release/package.py): this commit's
+      # release tag, or between releases <last release>.r<commits>.g<commit>,
+      # which pacman takes over the last release (the nightly channel). Here,
+      # where git has the history: the package job's container has no git.
+      - id: version
+        run: |
+          version=$(python3 -m release.package --print-version)
+          echo "omarchy-a $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - id: resolve
         env:
           REF_TYPE: ${{ github.ref_type }}
@@ -92,7 +105,7 @@ jobs:
           # No earlier nightly, or none that can be read: the run builds one.
           gh release download nightly --pattern latest.json --dir previous 2>/dev/null || true
           # A further input of the nightly is one more --input NAME=VALUE here and where it is recorded (the nightly job).
-          ci/nightly plan --event "$EVENT" --wanted "$WANTED" --commit "$GITHUB_SHA" \
+          ci/nightly plan --event "$EVENT" --ref "$GITHUB_REF" --wanted "$WANTED" --commit "$GITHUB_SHA" \
             --input "orchard=$ORCHARD_TAG" --input "packages=$PACKAGES" \
             --previous previous/latest.json | tee -a "$GITHUB_OUTPUT"
   test:
@@ -217,8 +230,6 @@ jobs:
         if: inputs.reuse_run_id == ''
         with:
           persist-credentials: false
-          # The package's version is the last release tag.
-          fetch-depth: 0
       - name: Install the same signed-package toolchains as local builds
         if: inputs.reuse_run_id == ''
         run: |
@@ -235,19 +246,16 @@ jobs:
         if: inputs.reuse_run_id == ''
         env:
           ORCHARD_CHECKOUT: ${{ github.workspace }}/.orchard
-          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.orchard.outputs.version }}
         run: |
-          # The package's version: this tag, or between releases the last
-          # release's (what release.package reads from git where it has one).
+          # The package's version: this tag, or between releases the one the
+          # first job read from git (this checkout has no history).
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             OMARCHY_A_VERSION=${GITHUB_REF_NAME#v}
           else
-            # No gh in this container.
-            OMARCHY_A_VERSION=$(curl -fsSL --retry 3 -H "Authorization: Bearer $GH_TOKEN" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest" |
-              python -c 'import json, sys; print(json.load(sys.stdin)["tag_name"])')
-            OMARCHY_A_VERSION=${OMARCHY_A_VERSION#v}
+            OMARCHY_A_VERSION=$VERSION
           fi
+          [[ -n $OMARCHY_A_VERSION ]]
           export OMARCHY_A_VERSION
           python -m release.package --output out/package --architecture aarch64
       - name: Build the signed Arch root filesystem
@@ -262,8 +270,15 @@ jobs:
           VERSION="preview-$RUN_ID"
           if [[ "$REF_TYPE" == tag ]]; then VERSION="${REF_NAME#v}"; elif [[ -n "$NIGHTLY" ]]; then VERSION="$NIGHTLY"; fi
           bash system/build-rootfs --package out/package --release "$VERSION" --output out/base
+          # A nightly's package is also the nightly channel's (ci/nightly-repo):
+          # a tablet on it updates to it with pacman -Syu.
+          parts=()
+          if [[ "$REF_TYPE" != tag && -n "$NIGHTLY" ]]; then
+            ci/nightly-repo out/package out/nightly-repo
+            parts=(nightly-repo)
+          fi
           # Not compressed again: the root archive in it already is.
-          tar -C out -cf out/omarchy-userspace.tar base
+          tar -C out -cf out/omarchy-userspace.tar base "${parts[@]}"
       - uses: actions/upload-artifact@v4
         with:
           name: omarchy-userspace
@@ -368,6 +383,12 @@ jobs:
             --index "$base/index.toml" --url "$base/install.sh" \
             --output out/publication/install.sh
           cp out/release/rootfs.json out/release/build-receipt.json out/publication/
+          # A nightly carries the nightly channel's pacman repository (the userspace job's).
+          if [[ "$REF_TYPE" != tag && -n "$NIGHTLY" ]]; then
+            [[ -f out/nightly-repo/omarchy-a-nightly.db ]] ||
+              { echo "::error::No nightly channel repository from the userspace job (reused from a run before it had one?)"; exit 1; }
+            cp out/nightly-repo/* out/publication/
+          fi
           git archive --format=tar.gz -o out/publication/omarchy-linux-source.tar.gz HEAD
           (cd out/publication && sha256sum ./* > ../SHA256SUMS && mv ../SHA256SUMS .)
       - name: Attest public build
@@ -450,7 +471,7 @@ jobs:
           path: source
           sparse-checkout: ci/nightly
           sparse-checkout-cone-mode: false
-      - name: Publish the nightly and point nightly at it
+      - name: Publish the nightly
         env:
           NAME: ${{ needs.orchard.outputs.name }}
           ORCHARD_TAG: ${{ needs.orchard.outputs.tag }}
@@ -469,13 +490,34 @@ jobs:
           gh release delete "$NAME" --cleanup-tag --yes 2>/dev/null || true
           gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$NAME" -f sha="$GITHUB_SHA" >/dev/null
           gh release create "$NAME" assets/* --prerelease --verify-tag --latest=false --title "$NAME" --notes-file notes.md
+      - name: Point nightly at it
+        env:
+          NAME: ${{ needs.orchard.outputs.name }}
+        run: |
+          # Two merges close together: a run that finishes after a newer one's
+          # leaves the pointer at the newer nightly.
+          current=
+          if gh release download nightly --pattern latest.json --dir current 2>/dev/null; then
+            current=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["commit"])' current/latest.json || true)
+          fi
+          if [[ -n "$current" && "$current" != "$GITHUB_SHA" ]] &&
+              [[ $(gh api "repos/$GH_REPO/compare/$GITHUB_SHA...$current" --jq .status) == ahead ]]; then
+            echo "nightly stays at $current, which is newer than $GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          base="https://github.com/$GH_REPO/releases/download"
           # The pointer: tag nightly at the same commit; its install.sh is the
           # nightly's own, which fetches and checks that nightly's installer.
+          # It is also the nightly channel's pacman repository,
+          # [omarchy-a-nightly] (ci/nightly-repo, omarchy-channel): made anew
+          # each time, so it holds this nightly's package and no older one.
           mkdir pointer
           cp assets/nightly.json pointer/latest.json
           cp assets/install.sh pointer/
+          cp assets/omarchy-a-nightly.db assets/omarchy-a-nightly.files assets/omarchy-a-*.pkg.tar.zst pointer/
           printf '%s\n' "Points at the newest nightly, $NAME (latest.json): omarchy-a main with orchard's newest nightly, untested on hardware." \
-            '' "Install it: \`curl -fsSL $base/nightly/install.sh | sh\`" > pointer-notes.md
+            '' "Install it: \`curl -fsSL $base/nightly/install.sh | sh\`" \
+            '' "An installed tablet takes every merged change with \`omarchy-channel nightly\` (pacman repository [omarchy-a-nightly]); \`omarchy-channel stable\` goes back to the releases." > pointer-notes.md
           gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
           gh api "repos/$GH_REPO/git/refs" -f ref=refs/tags/nightly -f sha="$GITHUB_SHA" >/dev/null
           gh release create nightly pointer/* --prerelease --verify-tag --latest=false --title "nightly → $NAME" \

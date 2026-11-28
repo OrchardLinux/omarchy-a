@@ -50,21 +50,28 @@ def safe_name(name):
 
 
 def version(project=PROJECT):
-    """The release this tree is or follows: its newest release tag (v0.3.1 -> 0.3.1).
+    """The version of this tree: its release tag's (v0.3.1 -> 0.3.1), or between releases one after the last.
 
-    A build between two releases has the version of the last one; the
-    published package is only ever a release's. OMARCHY_A_VERSION overrides
-    it, for a tree without git history (the recipe passes its pkgver).
+    A tree that is a release tag has that release's version. A tree N commits
+    after the last release tag is <release>.r<N>.g<commit> (0.3.8.r12.gabc1234),
+    which pacman takes as newer than 0.3.8 and older than 0.3.9: the nightly
+    channel's packages update a tablet on every change and give way to the
+    next release. OMARCHY_A_VERSION overrides it, for a tree without git
+    history (the recipe passes its pkgver).
     """
     value = os.environ.get('OMARCHY_A_VERSION')
     if not value:
         try:
-            tag = subprocess.check_output(
-                ['git', '-C', str(project), 'describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', 'HEAD'],
+            described = subprocess.check_output(
+                ['git', '-C', str(project), 'describe', '--tags', '--long', '--match', 'v[0-9]*', 'HEAD'],
                 text=True, stderr=subprocess.DEVNULL).strip()
         except (OSError, subprocess.CalledProcessError) as error:
             raise ValueError('No release tag in the git history (a shallow clone?); set OMARCHY_A_VERSION') from error
-        value = tag.removeprefix('v')
+        match = re.fullmatch(r'v(.+)-([0-9]+)-g([0-9a-f]+)', described)
+        if not match:
+            raise ValueError('Unexpected git describe output: ' + described)
+        tag, since, commit = match.groups()
+        value = tag.replace('-', '.') + (f'.r{since}.g{commit}' if since != '0' else '')
     value = value.replace('-', '.')
     if not re.fullmatch(r'[A-Za-z0-9._+]+', value) or value.startswith('.'):
         raise ValueError('Invalid package version: ' + value)

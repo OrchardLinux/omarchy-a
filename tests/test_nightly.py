@@ -33,10 +33,10 @@ def run(*argv, stdin=''):
 
 
 class Plan(unittest.TestCase):
-    def planned(self, previous, *extra, event='schedule', commit=COMMIT, orchard=ORCHARD, wanted=''):
+    def planned(self, previous, *extra, event='schedule', commit=COMMIT, orchard=ORCHARD, wanted='', ref=''):
         with tempfile.TemporaryDirectory() as directory:
-            argv = ['plan', '--event', event, '--wanted', wanted, '--commit', commit, '--input', 'orchard=' + orchard,
-                    *extra]
+            argv = ['plan', '--event', event, '--ref', ref, '--wanted', wanted, '--commit', commit,
+                    '--input', 'orchard=' + orchard, *extra]
             if previous is not None:
                 path = Path(directory) / 'latest.json'
                 path.write_text(previous if isinstance(previous, str) else json.dumps(previous))
@@ -76,8 +76,17 @@ class Plan(unittest.TestCase):
         last = self.last(orchard=ORCHARD)
         self.assertEqual(self.planned(last, event='workflow_dispatch', wanted='true')['nightly'], 'true')
         self.assertEqual(self.planned(last, event='workflow_dispatch', wanted='false'), {'nightly': 'false', 'name': ''})
-        for event in ('push', 'pull_request'):
-            self.assertEqual(self.planned(None, event=event, commit=OTHER)['nightly'], 'false')
+        self.assertEqual(self.planned(None, event='pull_request', commit=OTHER, ref='refs/pull/1/merge')['nightly'],
+                         'false')
+
+    def test_every_merge_to_main_is_a_nightly_and_a_tag_or_branch_push_is_not(self):
+        last = self.last(orchard=ORCHARD)
+        # Whatever the last nightly was built from: the nightly follows main.
+        self.assertEqual(self.planned(last, event='push', commit=OTHER, ref='refs/heads/main'),
+                         {'nightly': 'true', 'name': 'nightly-20261116-' + 'b' * 12})
+        for ref in ('refs/tags/v0.3.9', 'refs/heads/feature', ''):
+            with self.subTest(ref=ref):
+                self.assertEqual(self.planned(last, event='push', commit=OTHER, ref=ref), {'nightly': 'false', 'name': ''})
 
     def test_the_record_names_what_the_nightly_was_built_from(self):
         self.assertEqual(self.last(orchard=ORCHARD),
@@ -112,7 +121,7 @@ class Workflow(unittest.TestCase):
     def test_scheduled_after_orchards_nightly_and_decided_in_the_first_job(self):
         self.assertIn("    - cron: '30 4 * * *'", self.text)
         plan = self.job('orchard')
-        self.assertIn('ci/nightly plan', plan)
+        self.assertIn('ci/nightly plan --event "$EVENT" --ref "$GITHUB_REF"', plan)
         self.assertIn('--input "orchard=$ORCHARD_TAG"', plan)
         # The third input: the Orchard package repository's index, planned and recorded alike.
         self.assertIn('releases/download/repo-aarch64/orchard.db', plan)
@@ -137,6 +146,29 @@ class Workflow(unittest.TestCase):
         self.assertEqual(publish.count('--prerelease --verify-tag --latest=false'), 2)
         self.assertEqual(self.text.count('contents: write'), 2)
         self.assertIn("    if: github.ref_type == 'tag'\n", self.job('draft'))
+
+    def test_the_pointer_is_the_nightly_channels_pacman_repository(self):
+        # The userspace job makes it from the package it built, the assembly hosts it with the nightly.
+        self.assertIn('ci/nightly-repo out/package out/nightly-repo', self.job('userspace'))
+        self.assertIn('cp out/nightly-repo/* out/publication/', self.job('assets'))
+        publish = self.job('nightly')
+        self.assertIn('cp assets/omarchy-a-nightly.db assets/omarchy-a-nightly.files assets/omarchy-a-*.pkg.tar.zst '
+                      'pointer/', publish)
+        # Made anew each time: the old package goes with the old pointer.
+        self.assertIn('gh release delete nightly --cleanup-tag --yes', publish)
+        # An older run finishing last never moves it back.
+        self.assertIn('compare/$GITHUB_SHA...$current" --jq .status) == ahead', publish)
+        repo = (ROOT / 'ci/nightly-repo').read_text()
+        self.assertIn('repo=omarchy-a-nightly', repo)
+        self.assertIn('cp "$work/$repo.db.tar.gz" "$output/$repo.db"', repo)
+        self.assertIn('https://github.com/OrchardLinux/omarchy-a/releases/download/nightly',
+                      (ROOT / 'desktop/shell/bin/omarchy-channel').read_text())
+
+    def test_the_package_version_is_read_where_git_has_the_history(self):
+        plan = self.job('orchard')
+        self.assertIn('fetch-depth: 0', plan)
+        self.assertIn('python3 -m release.package --print-version', plan)
+        self.assertIn('VERSION: ${{ needs.orchard.outputs.version }}', self.job('userspace'))
 
     def test_orchard_comes_from_its_published_release_not_from_a_checkout(self):
         dependencies = (ROOT / 'ci/dependencies').read_text()

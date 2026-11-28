@@ -1,0 +1,78 @@
+#!/bin/sh
+
+# omarchy:summary=Take Omarchy A updates from the nightly channel (every merged change) or from releases
+# omarchy:args=nightly|stable
+# omarchy:examples=omarchy-channel nightly | omarchy-channel stable
+# omarchy:requires-sudo=true
+
+# The nightly channel is the pacman repository [omarchy-a-nightly]: the
+# omarchy-a package of main's newest build, published with the release
+# `nightly` (ci/nightly-repo). It goes above [orchard], so pacman takes
+# omarchy-a from it; its version (0.3.8.r12.gabc1234) is newer than the
+# release it follows and older than the next. `stable` removes it, and
+# pacman -Syuu goes back to [orchard]'s omarchy-a, the last release.
+
+set -eu
+
+conf=${OMARCHY_PACMAN_CONF:-/etc/pacman.conf}
+section=omarchy-a-nightly
+server=https://github.com/OrchardLinux/omarchy-a/releases/download/nightly
+# Unsigned, as [orchard] is (system/assemble-rootfs): pacman trusts what
+# GitHub serves over HTTPS.
+siglevel='Optional TrustAll'
+
+usage() {
+  echo 'Usage: omarchy-channel nightly|stable' >&2
+  exit 2
+}
+
+listed() {
+  grep -qx "\[$section\]" "$conf"
+}
+
+# CONF rewritten by the awk program in $1, as root; the file keeps its owner and mode.
+rewrite() {
+  new=$(mktemp)
+  if ! awk -v section="$section" -v siglevel="$siglevel" -v server="$server" "$1" "$conf" >"$new" ||
+    ! sudo cp "$new" "$conf"; then
+    rm -f "$new"
+    exit 1
+  fi
+  rm -f "$new"
+}
+
+[ $# -eq 1 ] || usage
+case $1 in
+nightly)
+  # The nightly builds the aarch64 package only: an armv7h tablet's would
+  # be another architecture's, which pacman refuses to install.
+  machine=$(uname -m)
+  case $machine in
+  aarch64 | arm64) ;;
+  *)
+    echo "The nightly channel has no omarchy-a package for $machine." >&2
+    exit 1
+    ;;
+  esac
+  grep -qx '\[orchard\]' "$conf" || {
+    echo "No [orchard] repository in $conf" >&2
+    exit 1
+  }
+  listed || rewrite '
+    $0 == "[orchard]" && !done {
+      print "[" section "]"; print "SigLevel = " siglevel; print "Server = " server; print ""; done = 1
+    }
+    { print }'
+  exec omarchy-update-pacman -Syu
+  ;;
+stable)
+  # The section runs to the next one.
+  ! listed || rewrite '
+    /^\[/ { inside = ($0 == "[" section "]") }
+    !inside { print }'
+  exec omarchy-update-pacman -Syuu
+  ;;
+*)
+  usage
+  ;;
+esac
