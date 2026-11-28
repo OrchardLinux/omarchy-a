@@ -11,6 +11,15 @@ releasing, rename that section to the version (`## [0.3.0] - YYYY-MM-DD`). The
 release workflow uses that section as the GitHub release notes and fails if it
 is missing or empty.
 
+## Unreleased
+
+### Desktop
+
+- On tall phones held upright (the iPhone XR and the other notched iPhones)
+  the lock screen's PIN keys are slightly larger and sit lower, within the
+  thumb's reach, with more room between the PIN dots and the keys. The clock
+  stays where it was.
+
 ## [0.3.8] - 2026-11-28
 
 Built on orchard 0.3.11.

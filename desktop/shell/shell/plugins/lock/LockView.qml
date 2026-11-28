@@ -51,11 +51,19 @@ Item {
   // it in landscape; a phone's own sizes. Points, scaled like the shell.
   readonly property bool phone: Math.min(width, height) < 600
   readonly property bool landscape: width > height
-  readonly property var metrics: phone
+  // A tall phone held upright (twice as tall as wide or more: the notched
+  // iPhones) has height to spare: slightly larger keys, a wider gap above
+  // them, and the PIN lower, within the thumb's reach, while the clock keeps
+  // its place ("Lock — PIN (iPhone XR)"). Shorter phones keep their layout.
+  readonly property bool tallPhone: phone && !landscape && height >= 2 * width
+  readonly property var metrics: tallPhone
     ? { lockIcon: 14, time: 60, date: 13, slot: 12, slotGap: 14, slotRow: 24, message: 28, gap: 12,
-        keyWidth: 72, keyHeight: landscape ? 44 : 48, keyGap: 8, keyColumnGap: 16, digit: 24, backspace: 22, failure: 13, between: landscape ? 48 : 32, stack: landscape ? 24 : 32 }
+        keyWidth: 76, keyHeight: 52, keyGap: 8, keyColumnGap: 16, digit: 25, backspace: 23, failure: 13, between: 68, stack: 48, lower: 68 }
+    : phone
+    ? { lockIcon: 14, time: 60, date: 13, slot: 12, slotGap: 14, slotRow: 24, message: 28, gap: 12,
+        keyWidth: 72, keyHeight: landscape ? 44 : 48, keyGap: 8, keyColumnGap: 16, digit: 24, backspace: 22, failure: 13, between: landscape ? 48 : 32, stack: landscape ? 24 : 32, lower: 0 }
     : { lockIcon: 16, time: landscape ? 90 : 96, date: 16, slot: 12, slotGap: 14, slotRow: 24, message: 40, gap: 16,
-        keyWidth: 80, keyHeight: 56, keyGap: 10, keyColumnGap: 20, digit: 26, backspace: 24, failure: 15, between: landscape ? 160 : 48, stack: 48 }
+        keyWidth: 80, keyHeight: 56, keyGap: 10, keyColumnGap: 20, digit: 26, backspace: 24, failure: 15, between: landscape ? 160 : 48, stack: 48, lower: 0 }
   function pt(name) { return Style.space(root.metrics[name]) }
   readonly property bool pinBusy: !root.inputEnabled || root.authenticatingPassword
   // A wrong PIN is drawn in the theme's red: some themes (Tokyo Night) give
@@ -220,7 +228,8 @@ Item {
     Item {
       id: content
       anchors.fill: parent
-      anchors.topMargin: Style.space(24)
+      // `lower` moves the centred group down by half its value.
+      anchors.topMargin: Style.space(24) + root.pt("lower")
       anchors.bottomMargin: Style.space(root.phone ? 16 : 24)
       anchors.leftMargin: Style.space(root.phone ? 16 : 24)
       anchors.rightMargin: anchors.leftMargin
